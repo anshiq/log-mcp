@@ -1,0 +1,11 @@
+{
+  "name": "nextjs-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "devDependencies": {
+    "next": "15.0.0"
+  }
+}
