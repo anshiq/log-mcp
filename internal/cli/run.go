@@ -62,8 +62,14 @@ func RunCommand(args []string, loaded *config.Loaded, logger *slog.Logger) error
 	}()
 	go watchExit(proc, os.Stderr)
 
-	tail(proc, os.Stdout, ctx)
+	next := proc.EntryFrom()
+	tail(proc, os.Stdout, ctx, &next)
 	<-stopDone
+	// The app may have written its final lines while rt.Stop was running (after
+	// tail returned on ctx.Done); drain them now so graceful-shutdown output is
+	// shown. drainLogs resumes from the same cursor tail advanced, so no line is
+	// printed twice or skipped.
+	drainLogs(proc.Logs, os.Stdout, &next)
 	return nil
 }
 
@@ -78,10 +84,9 @@ func watchExit(proc *process.ManagedProcess, w io.Writer) {
 	}
 }
 
-// tail prints new log entries until ctx is done.
-func tail(proc *process.ManagedProcess, w io.Writer, ctx context.Context) {
-	// From is inclusive; advance the cursor past the last printed entry.
-	next := proc.EntryFrom()
+// tail prints new log entries until ctx is done, then returns so the caller
+// can drain anything appended during the graceful stop.
+func tail(proc *process.ManagedProcess, w io.Writer, ctx context.Context, next *uint64) {
 	tick := time.NewTicker(150 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -89,19 +94,26 @@ func tail(proc *process.ManagedProcess, w io.Writer, ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			entries := proc.Logs.From(next)
-			if len(entries) == 0 {
-				continue
-			}
-			for _, e := range entries {
-				next = e.ID + 1
-				prefix := "stdout"
-				if e.Stream == logs.StreamStderr {
-					prefix = "stderr"
-				}
-				fmt.Fprintf(w, "[%s] %s\n", prefix, e.Line)
-			}
+			drainLogs(proc.Logs, w, next)
 		}
+	}
+}
+
+// drainLogs prints every entry at or after the *next cursor, advancing it past
+// the last printed entry so a later call never reprints a line. Shared by the
+// tail tick loop and the post-stop drain in RunCommand.
+func drainLogs(l *logs.ProcessLogs, w io.Writer, next *uint64) {
+	entries := l.From(*next)
+	if len(entries) == 0 {
+		return
+	}
+	for _, e := range entries {
+		*next = e.ID + 1
+		prefix := "stdout"
+		if e.Stream == logs.StreamStderr {
+			prefix = "stderr"
+		}
+		fmt.Fprintf(w, "[%s] %s\n", prefix, e.Line)
 	}
 }
 

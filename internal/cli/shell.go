@@ -66,7 +66,8 @@ func ShellCommand(args []string, loaded *config.Loaded, logger *slog.Logger) err
 	go watchExit(proc, os.Stderr)
 	go forwardStdin(rt, res.ProcessID, ctx)
 
-	tail(proc, os.Stdout, ctx)
+	next := proc.EntryFrom()
+	tail(proc, os.Stdout, ctx, &next)
 	<-stopDone
 	return nil
 }
