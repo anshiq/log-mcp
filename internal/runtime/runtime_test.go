@@ -1232,3 +1232,86 @@ func TestOpenShellRequiresTarget(t *testing.T) {
 		t.Fatal("expected error for empty open_shell request")
 	}
 }
+
+// TestOpenShellByPID shells into a process by OS pid, reading its workdir and
+// env from /proc/<pid>/cwd and /proc/<pid>/environ. The shell must start in
+// the process's resolved workdir with its env (proven via the OSHELL_PROBE
+// variable). shell_env is pinned to none so the base env is deterministic.
+func TestOpenShellByPID(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("pid shell requires /proc")
+	}
+	rt := newRuntimeWithConfig(t, "runtime:\n  shell_env: none\n")
+	workDir := t.TempDir()
+	res := startSh(t, rt, "sleep 30", api.StartRequest{WorkDir: workDir, Env: []string{"OSHELL_PROBE=fromproc"}})
+	waitFor(t, 5*time.Second, "running", func() bool {
+		st, _ := rt.Status(res.ProcessID)
+		return st.Status == "running"
+	})
+	st, err := rt.Status(res.ProcessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PID <= 0 {
+		t.Fatalf("no pid for process: %+v", st)
+	}
+
+	// /proc/<pid>/environ can transiently read empty in the fork/exec window
+	// right after "running"; poll until the probe is visible so the shell
+	// inherits it.
+	waitFor(t, 5*time.Second, "probe visible in /proc/<pid>/environ", func() bool {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", st.PID))
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(data), "OSHELL_PROBE=fromproc")
+	})
+
+	shell, err := rt.OpenShell(context.Background(), api.OpenShellRequest{PID: st.PID, Shell: "/bin/sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.ProcessID == "" || shell.Status != "running" || shell.Command != "/bin/sh" {
+		t.Fatalf("bad open_shell result: %+v", shell)
+	}
+	wantDir, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.WorkDir != wantDir {
+		t.Fatalf("shell workdir = %q, want %q (the process's resolved workdir)", shell.WorkDir, wantDir)
+	}
+
+	// The shell inherited the process's env: echo the probe through stdin.
+	if _, err := rt.SendStdin(shell.ProcessID, "echo $OSHELL_PROBE\n"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, "probe echoed by shell", func() bool {
+		logs, _ := rt.GetLogs(api.GetLogsRequest{ProcessID: shell.ProcessID, Lines: 20})
+		for _, e := range logs.Entries {
+			if strings.Contains(e.Line, "fromproc") {
+				return true
+			}
+		}
+		return false
+	})
+
+	rt.Stop(context.Background(), shell.ProcessID)
+	rt.Stop(context.Background(), res.ProcessID)
+}
+
+// TestOpenShellByPIDMissing verifies a bogus pid produces a clear error
+// mentioning /proc or an exited process.
+func TestOpenShellByPIDMissing(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("pid shell requires /proc")
+	}
+	rt := newRuntime(t)
+	_, err := rt.OpenShell(context.Background(), api.OpenShellRequest{PID: 2147483647, Shell: "/bin/sh"})
+	if err == nil {
+		t.Fatal("expected error for bogus pid")
+	}
+	if !strings.Contains(err.Error(), "/proc") && !strings.Contains(err.Error(), "exited") {
+		t.Fatalf("error %q does not mention /proc or an exited process", err)
+	}
+}

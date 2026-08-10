@@ -69,8 +69,9 @@ type processEnvIn struct {
 }
 
 type openShellIn struct {
-	ProcessID string `json:"process_id,omitempty" jsonschema:"Clone the environment+workdir of this running process. Mutually exclusive with app."`
-	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from agent-runtime.yaml. Mutually exclusive with process_id."`
+	ProcessID string `json:"process_id,omitempty" jsonschema:"Clone the environment+workdir of this running process. Mutually exclusive with app and pid."`
+	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from agent-runtime.yaml. Mutually exclusive with process_id and pid."`
+	PID       int    `json:"pid,omitempty" jsonschema:"OS process id: shell into any process's workdir+env via /proc/<pid> (Linux). Mutually exclusive with process_id and app."`
 	Shell     string `json:"shell,omitempty" jsonschema:"Shell to launch (absolute path or name). Default $SHELL, then /bin/sh."`
 }
 
@@ -244,10 +245,10 @@ func registerTools(server *mcp.Server, h *handlers) {
 		})
 
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "open_shell", Description: "Start an interactive shell INSIDE the environment of a process or app: same resolved workdir and environment (PATH, venv, nvm shims, config env). Returns a process_id you then drive with send_stdin / get_logs / wait_for_log — an ssh-into-the-app experience over MCP, fully logged and isolated. e.g. open_shell(app='api'), then send_stdin('uv run python -c ...\\n'), then get_logs. Stop it with stop_process when done."},
+		&mcp.Tool{Name: "open_shell", Description: "Start an interactive shell INSIDE the environment of a process, app, or any process on the machine by OS pid: same resolved workdir and environment (PATH, venv, nvm shims, config env). Returns a process_id you then drive with send_stdin / get_logs / wait_for_log — an ssh-into-the-app experience over MCP, fully logged and isolated. e.g. open_shell(app='api'), then send_stdin('uv run python -c ...\\n'), then get_logs. Pass pid=<os-pid> (Linux only) to attach to a process started in another session, e.g. open_shell(pid=12345). Stop it with stop_process when done."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in openShellIn) (*mcp.CallToolResult, *api.StartResult, error) {
 			h.log(ctx, "open_shell", in)
-			res, err := h.rt.OpenShell(ctx, api.OpenShellRequest{ProcessID: in.ProcessID, App: in.App, Shell: in.Shell})
+			res, err := h.rt.OpenShell(ctx, api.OpenShellRequest{ProcessID: in.ProcessID, App: in.App, PID: in.PID, Shell: in.Shell})
 			if err != nil {
 				return nil, nil, err
 			}

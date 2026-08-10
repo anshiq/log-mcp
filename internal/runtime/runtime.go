@@ -233,8 +233,10 @@ func (r *Runtime) ProcessEnv(req api.ProcessEnvRequest) (*api.ProcessEnvResult, 
 }
 
 // OpenShell starts an interactive shell inside the environment (resolved
-// workdir + complete env) of a running process or a configured app. The shell
-// is started as an ordinary managed process and returned to the caller.
+// workdir + complete env) of a running process, a configured app, or any
+// process on the machine by OS pid (read from /proc/<pid>/cwd and
+// /proc/<pid>/environ, Linux only). The shell is started as an ordinary
+// managed process and returned to the caller.
 func (r *Runtime) OpenShell(ctx context.Context, req api.OpenShellRequest) (*api.StartResult, error) {
 	var workDir string
 	var env []string
@@ -260,11 +262,33 @@ func (r *Runtime) OpenShell(ctx context.Context, req api.OpenShellRequest) (*api
 		workDir = spec.WorkDir
 		env = spec.Env
 		prof = p
+	case req.PID > 0:
+		cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", req.PID))
+		if err != nil {
+			return nil, fmt.Errorf("open shell for pid %d: %w (process may have exited, or /proc is unavailable)", req.PID, err)
+		}
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", req.PID))
+		if err != nil {
+			return nil, fmt.Errorf("open shell for pid %d: %w (process may have exited, or /proc is unavailable)", req.PID, err)
+		}
+		env, _ = config.ParseNulEnv(data)
+		if _, err := os.Stat(cwd); err != nil {
+			return nil, fmt.Errorf("open shell for pid %d: workdir %q: %w", req.PID, cwd, err)
+		}
+		workDir = cwd
+		// prof stays nil: generic profile, default stop grace.
 	default:
-		return nil, errors.New("open_shell requires process_id or app")
+		return nil, errors.New("open_shell requires process_id, app or pid")
 	}
 
-	shell := req.Shell
+	return r.startShell(ctx, req.Shell, workDir, env, prof)
+}
+
+// startShell launches a shell as a managed process in the given workdir+env
+// and returns the StartResult. prof may be nil, in which case the profile is
+// "generic" with the runtime's default stop grace. Shared by all OpenShell
+// branches.
+func (r *Runtime) startShell(ctx context.Context, shell, workDir string, env []string, prof *profile.Profile) (*api.StartResult, error) {
 	if shell == "" {
 		shell = os.Getenv("SHELL")
 	}

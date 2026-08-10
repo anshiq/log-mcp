@@ -102,7 +102,9 @@ key and exposed by `get_process_env` (spec mode) via the `source` map.
   (`live=true`). Secret-like keys (token/password/api_key/...) are redacted to
   `***` by default; pass `reveal=true` only when the raw value is actually
   needed.
-- `open_shell(process_id|app, shell)` — start an interactive shell inside the
-  resolved workdir + complete env of a running process or configured app
-  (ssh-like access). Drive it with `send_stdin` and read it with
+- `open_shell(process_id|app|pid, shell)` — start an interactive shell inside the
+  resolved workdir + complete env of a running process, configured app, or — with
+  `pid=<os-pid>` (Linux only) — ANY process, including ones started in another
+  agent-runtime session (its workdir+env are read from `/proc/<pid>/cwd` and
+  `/proc/<pid>/environ`). Drive it with `send_stdin` and read it with
   `get_logs`/`wait_for_log`; stop it like any managed process.

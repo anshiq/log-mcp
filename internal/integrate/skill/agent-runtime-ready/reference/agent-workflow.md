@@ -57,10 +57,12 @@ All signals go to the **whole process group**, so a graceful SIGINT reaches a
 
 ## Interactive debugging
 
-`open_shell(process_id|app, shell)` — ssh-into-the-app pattern: a shell
+`open_shell(process_id|app|pid, shell)` — ssh-into-the-app pattern: a shell
 inside the process's resolved workdir with its complete env. Drive it with
 `send_stdin`, read it with `get_logs`/`wait_for_log`, stop it like any
-managed process.
+managed process. You can also `agent-runtime shell --pid <os-pid>` (CLI) or
+`open_shell(pid=...)` to attach to any process on the machine, including ones
+started in another session.
 
 ```
 open_shell(app="api", shell="bash")

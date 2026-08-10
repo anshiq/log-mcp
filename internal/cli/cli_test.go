@@ -187,6 +187,7 @@ func TestParseShellArgs(t *testing.T) {
 		name      string
 		args      []string
 		wantShell string
+		wantPID   int
 		wantPos   []string
 		wantErr   string
 	}{
@@ -227,6 +228,28 @@ func TestParseShellArgs(t *testing.T) {
 			wantPos:   []string{"proc_a", "proc_b"},
 		},
 		{
+			name:      "pid space separated double dash",
+			args:      []string{"--pid", "1234", "--shell", "/bin/sh"},
+			wantShell: "/bin/sh",
+			wantPID:   1234,
+		},
+		{
+			name:    "pid space separated single dash",
+			args:    []string{"-pid", "1234"},
+			wantPID: 1234,
+		},
+		{
+			name:    "pid equals form",
+			args:    []string{"--pid=1234"},
+			wantPID: 1234,
+		},
+		{
+			name:    "pid after target still parses both",
+			args:    []string{"web", "--pid", "1234"},
+			wantPID: 1234,
+			wantPos: []string{"web"},
+		},
+		{
 			name:    "empty args",
 			args:    nil,
 			wantPos: []string{},
@@ -251,13 +274,33 @@ func TestParseShellArgs(t *testing.T) {
 			args:    []string{"-shell"},
 			wantErr: "--shell requires an argument",
 		},
+		{
+			name:    "pid flag at end without value",
+			args:    []string{"--pid"},
+			wantErr: "--pid requires an argument",
+		},
+		{
+			name:    "single dash pid flag at end without value",
+			args:    []string{"-pid"},
+			wantErr: "--pid requires an argument",
+		},
+		{
+			name:    "invalid pid value",
+			args:    []string{"--pid=abc"},
+			wantErr: `invalid --pid value "abc"`,
+		},
+		{
+			name:    "invalid pid value space form",
+			args:    []string{"--pid", "abc"},
+			wantErr: `invalid --pid value "abc"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotShell, gotPos, err := parseShellArgs(tt.args)
+			gotShell, gotPID, gotPos, err := parseShellArgs(tt.args)
 			if tt.wantErr != "" {
 				if err == nil {
-					t.Fatalf("expected error containing %q, got shell=%q pos=%v", tt.wantErr, gotShell, gotPos)
+					t.Fatalf("expected error containing %q, got shell=%q pid=%d pos=%v", tt.wantErr, gotShell, gotPID, gotPos)
 				}
 				if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
@@ -270,6 +313,9 @@ func TestParseShellArgs(t *testing.T) {
 			if gotShell != tt.wantShell {
 				t.Fatalf("shell = %q, want %q", gotShell, tt.wantShell)
 			}
+			if gotPID != tt.wantPID {
+				t.Fatalf("pid = %d, want %d", gotPID, tt.wantPID)
+			}
 			if len(gotPos) != len(tt.wantPos) {
 				t.Fatalf("pos = %v, want %v", gotPos, tt.wantPos)
 			}
@@ -279,6 +325,19 @@ func TestParseShellArgs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestShellCommandRejectsPidWithTarget verifies the combination check in
+// ShellCommand: --pid and a positional target are mutually exclusive. The
+// check fires before any runtime is constructed, so nil loaded/logger are fine.
+func TestShellCommandRejectsPidWithTarget(t *testing.T) {
+	err := ShellCommand([]string{"--pid", "1234", "web"}, nil, nil)
+	if err == nil {
+		t.Fatal("expected error combining --pid with a target")
+	}
+	if !strings.Contains(err.Error(), "cannot combine --pid with a target") {
+		t.Fatalf("error = %v, want combination error", err)
 	}
 }
 

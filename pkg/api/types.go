@@ -189,10 +189,12 @@ type ProcessEnvResult struct {
 }
 
 // OpenShellRequest is the input to open_shell: start an interactive shell
-// inside the environment (resolved workdir + env) of a running process or a
-// configured app. Either ProcessID or App must be set.
+// inside the environment (resolved workdir + env) of a running process, a
+// configured app, or any process on the machine by OS pid. Exactly one of
+// ProcessID, App or PID must be set.
 type OpenShellRequest struct {
 	ProcessID string `json:"process_id,omitempty"`
 	App       string `json:"app,omitempty"`
+	PID       int    `json:"pid,omitempty"`   // OS process id: start the shell inside the workdir+environment of ANY process (read from /proc/<pid>/cwd and /proc/<pid>/environ). Mutually exclusive with process_id and app. Linux only.
 	Shell     string `json:"shell,omitempty"` // absolute path or name; default $SHELL, then /bin/sh
 }

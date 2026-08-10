@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -525,6 +526,32 @@ func TestOpenShell(t *testing.T) {
 	// Unknown process id errors.
 	if _, ok := call[api.StartResult](t, session, "open_shell", map[string]any{"process_id": "nope"}); ok {
 		t.Fatal("expected error for unknown process")
+	}
+}
+
+// TestOpenShellByPID shells into the harness's own OS pid: the server (same
+// process as the test) reads its workdir+env from /proc/<self> and starts a
+// managed shell.
+func TestOpenShellByPID(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("pid shell requires /proc")
+	}
+	_, session := connect(t)
+	shell, ok := call[api.StartResult](t, session, "open_shell", map[string]any{
+		"pid": os.Getpid(), "shell": "sh",
+	})
+	if !ok {
+		t.Fatal("open_shell by pid failed")
+	}
+	if shell.ProcessID == "" || shell.Status != "running" || shell.Command != "sh" {
+		t.Fatalf("bad open_shell result: %+v", shell)
+	}
+	if shell.WorkDir == "" {
+		t.Fatal("open_shell workdir empty")
+	}
+	stop, ok := call[map[string]string](t, session, "stop_process", map[string]any{"process_id": shell.ProcessID})
+	if !ok || stop["status"] != "stopped" {
+		t.Fatalf("stopping shell failed: %+v", stop)
 	}
 }
 

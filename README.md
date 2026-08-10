@@ -155,10 +155,12 @@ Environment and process inspection:
   map) or the ground truth read live from `/proc/<pid>/environ`. Secret-like
   values are redacted to `***` by default; pass `reveal=true` only when the raw
   value is actually needed.
-- `open_shell(process_id|app, shell)` — start an interactive shell inside the
-  resolved workdir + complete env of a running process or configured app
-  (ssh-like). Drive it with `send_stdin`, read it with `get_logs` /
-  `wait_for_log`.
+- `open_shell(process_id|app|pid, shell)` — start an interactive shell inside the
+  resolved workdir + complete env of a running process, a configured app, or —
+  with `pid=<os-pid>` (Linux only) — ANY process on the machine, including ones
+  started in another agent-runtime session (its workdir+env are read from
+  `/proc/<pid>/cwd` and `/proc/<pid>/environ`). Drive it with `send_stdin`, read
+  it with `get_logs` / `wait_for_log`.
 
 ### Profiles
 
@@ -207,7 +209,7 @@ downloading needed.
 | `send_stdin`      | Write to a process's stdin (e.g. `"q\n"`)                      |
 | `signal_process`  | Deliver SIGINT/SIGTERM/SIGHUP/SIGQUIT/SIGUSR1/SIGUSR2/SIGKILL to the whole process group |
 | `get_process_env` | Complete env the runtime built (spec, with per-key `source` provenance) or live `/proc` env; secrets redacted unless `reveal` |
-| `open_shell`      | Interactive shell inside a process's/app's workdir + env; drive with `send_stdin`, read with `get_logs`/`wait_for_log` |
+| `open_shell`      | Interactive shell inside a process's/app's workdir + env (or by OS pid via `/proc`); drive with `send_stdin`, read with `get_logs`/`wait_for_log` |
 | `wait_for_log`    | Wait for `contains`/`pattern`/`ready` (profile readiness); returns on match, exit, or timeout |
 | `wait_for_exit`   | Wait for exit; returns the exit code; multiple waiters supported |
 | `remove_process`  | Delete a process from the registry and free its log buffers; refuses running processes unless `force` (stops it first) |
