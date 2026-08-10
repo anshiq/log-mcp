@@ -181,6 +181,18 @@ can't be opened the runtime warns and falls back to memory — persistence never
 prevents startup. The archive stores logs and instance history, not the process
 registry.
 
+## Skill: agent-runtime-ready
+
+Ships an embedded skill that teaches an AI coding agent how to build — or
+retrofit — runnable applications so they integrate perfectly with
+agent-runtime: a detectable readiness line, clean stdout/stderr, graceful
+SIGTERM/SIGINT shutdown within the grace period, env-only configuration, and a
+declared `apps:` entry in `agent-runtime.yaml`. Install it with
+`agent-runtime integrate skill --write` (writes to `~/.claude/skills` and
+`~/.config/opencode/skills`, or `.claude`/`.opencode` under the current
+directory with `--scope project`); it ships inside the binary, so no
+downloading needed.
+
 ## MCP tools
 
 | Tool              | Purpose                                                        |

@@ -87,7 +87,10 @@ func Integrate(args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic> [--write] [--scope global|project] [--yes] [--create] [--no-verify]")
+		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic|skill> [--write] [--scope global|project] [--yes] [--create] [--no-verify]")
+	}
+	if pos[0] == "skill" {
+		return integrateSkill(opts)
 	}
 	agent := integrate.Agent(pos[0])
 	exe, err := os.Executable()
@@ -119,6 +122,45 @@ func Integrate(args []string) error {
 		return err
 	}
 	fmt.Printf("wrote agent-runtime config to %s\n", path)
+	return nil
+}
+
+// integrateSkill prints the install plan for, or installs, the embedded
+// agent-runtime-ready skill bundle. The default scope is global; --scope
+// project installs into the current working directory's .claude/.opencode
+// skill trees.
+func integrateSkill(opts integrateOptions) error {
+	scope := integrate.ScopeGlobal
+	if opts.scope != "" {
+		if err := validateScope(opts.scope); err != nil {
+			return err
+		}
+		scope = integrate.Scope(opts.scope)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	dirs := integrate.SkillTargetDirs(scope, cwd)
+	if !opts.write {
+		fmt.Printf("agent-runtime-ready skill target dirs (%s):\n", scope)
+		for _, d := range dirs {
+			fmt.Printf("  %s\n", d)
+		}
+		fmt.Println("Files:")
+		for _, f := range integrate.SkillFiles() {
+			fmt.Printf("  %s\n", f)
+		}
+		fmt.Println("\n# To install: agent-runtime integrate skill --write")
+		return nil
+	}
+	for _, d := range dirs {
+		created, updated, unchanged, err := integrate.InstallSkillTree(d)
+		if err != nil {
+			return fmt.Errorf("%s: %w", d, err)
+		}
+		fmt.Printf("installed agent-runtime-ready skill to %s (created=%d updated=%d unchanged=%d)\n", d, created, updated, unchanged)
+	}
 	return nil
 }
 
@@ -448,6 +490,7 @@ Usage:
   agent-runtime run --app <name>   Start a named app from agent-runtime.yaml.
   agent-runtime shell <proc|app>   Start an interactive shell in a process's environment.
   agent-runtime integrate <agent>  Print MCP config for claude|codex|gemini|opencode|generic.
+  agent-runtime integrate skill     Print the agent-runtime-ready skill install plan (or --write to install).
   agent-runtime integrate <agent> --write
                                    Write the config into the agent's config file.
 

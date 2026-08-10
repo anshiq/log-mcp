@@ -29,6 +29,7 @@ internal/runtime/         the facade MCP and CLI talk to; waiters live here
 internal/mcp/             MCP server: thin tool handlers over the facade
 internal/cli/             serve / run / integrate / version
 internal/integrate/       agent config generation (claude/codex/gemini/opencode)
+internal/integrate/skill/agent-runtime-ready/   embedded skill (go:embed) installed via integrate skill
 internal/integration/     end-to-end tests against real runtimes
 pkg/api/                  shared request/response types
 examples/                 node / nextjs / django / java example apps
@@ -57,6 +58,10 @@ examples/                 node / nextjs / django / java example apps
 - Never send managed-process log lines to the agent automatically.
 - Preserve the byte-for-byte merge behavior in `internal/integrate/opencode.go`
   (JSONC installs must not rewrite anything the user didn't ask for).
+- If you change readiness regexes or tool names in `internal/profile` or
+  `internal/mcp`, update the embedded skill in
+  `internal/integrate/skill/agent-runtime-ready/` to match (SKILL.md readiness
+  table, agent-runtime-yaml.md profiles table, agent-workflow.md tool recipes).
 
 ## Environment resolution
 

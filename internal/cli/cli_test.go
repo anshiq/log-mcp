@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"agent-runtime/internal/logs"
 )
 
 func TestParseIntegrateArgs(t *testing.T) {
@@ -41,6 +46,18 @@ func TestParseIntegrateArgs(t *testing.T) {
 			args:     []string{"opencode", "--scope=project"},
 			wantOpts: integrateOptions{scope: "project"},
 			wantPos:  []string{"opencode"},
+		},
+		{
+			name:     "skill write",
+			args:     []string{"skill", "--write"},
+			wantOpts: integrateOptions{write: true},
+			wantPos:  []string{"skill"},
+		},
+		{
+			name:     "skill write project scope",
+			args:     []string{"skill", "--write", "--scope", "project"},
+			wantOpts: integrateOptions{write: true, scope: "project"},
+			wantPos:  []string{"skill"},
 		},
 		{
 			name:    "dangling scope",
@@ -126,6 +143,35 @@ func TestParseRunArgsRejectsBadFlag(t *testing.T) {
 	}
 }
 
+// TestDrainLogsPrintsPendingOnce exercises the shared drain helper: given a
+// cursor that has already consumed some entries (simulating what the tail tick
+// loop printed), it prints exactly the remaining pending entries once, advances
+// the cursor, and prints nothing on a second call.
+func TestDrainLogsPrintsPendingOnce(t *testing.T) {
+	pl := logs.NewProcessLogs(1000, nil)
+	pl.Append(logs.StreamStdout, "already printed by tail")
+	pl.Append(logs.StreamStdout, "server listening on http://127.0.0.1:8080")
+	pl.Append(logs.StreamStderr, "shutting down")
+
+	next := uint64(1) // past the first entry, as tail left it
+
+	var buf bytes.Buffer
+	drainLogs(pl, &buf, &next)
+	want := "[stdout] server listening on http://127.0.0.1:8080\n[stderr] shutting down\n"
+	if buf.String() != want {
+		t.Fatalf("drainLogs output = %q, want %q", buf.String(), want)
+	}
+	if next != 3 {
+		t.Fatalf("cursor after drain = %d, want 3", next)
+	}
+
+	buf.Reset()
+	drainLogs(pl, &buf, &next)
+	if buf.String() != "" {
+		t.Fatalf("second drain printed %q, want nothing (no double-print)", buf.String())
+	}
+}
+
 func TestShellCommandMissingTarget(t *testing.T) {
 	err := ShellCommand(nil, nil, nil)
 	if err == nil {
@@ -133,5 +179,43 @@ func TestShellCommandMissingTarget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("error = %v, want usage error", err)
+	}
+}
+
+// TestIntegrateSkillPrintsHint exercises the print-only path of `integrate
+// skill`: it must not write anything (only print), and the output must show
+// the install hint, the target dirs, and the embedded file list.
+func TestIntegrateSkillPrintsHint(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.txt")
+	f, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = f
+	err = Integrate([]string{"skill"})
+	f.Close()
+	os.Stdout = old
+	if err != nil {
+		t.Fatalf("Integrate([]string{\"skill\"}) = %v, want nil", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"# To install: agent-runtime integrate skill --write",
+		"SKILL.md",
+		"reference/logging.md",
+		"reference/agent-runtime-yaml.md",
+		"reference/agent-workflow.md",
+		"templates/agent-runtime.yaml",
+		".claude/skills/agent-runtime-ready",
+		".config/opencode/skills/agent-runtime-ready",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("output missing %q:\n%s", want, data)
+		}
 	}
 }
