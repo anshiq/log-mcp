@@ -44,6 +44,12 @@ func Run(args []string, logger *slog.Logger) error {
 			return err
 		}
 		return RunCommand(args[1:], loaded, logger)
+	case "shell":
+		loaded, err := config.LoadDefault()
+		if err != nil {
+			return err
+		}
+		return ShellCommand(args[1:], loaded, logger)
 	case "integrate":
 		return Integrate(args[1:])
 	case "version", "--version", "-v":
@@ -440,6 +446,7 @@ Usage:
   agent-runtime [serve]            Run the MCP server over stdio (default).
   agent-runtime run <cmd> [args]   Start a process in the foreground and tail its output.
   agent-runtime run --app <name>   Start a named app from agent-runtime.yaml.
+  agent-runtime shell <proc|app>   Start an interactive shell in a process's environment.
   agent-runtime integrate <agent>  Print MCP config for claude|codex|gemini|opencode|generic.
   agent-runtime integrate <agent> --write
                                    Write the config into the agent's config file.

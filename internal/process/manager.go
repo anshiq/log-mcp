@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -147,6 +148,31 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 		inst.finish()
 		return nil
 	}
+}
+
+// Signal delivers an arbitrary signal to the entire process group of the
+// process (mycli -> uv -> python tree). Unlike Stop it does not close stdin,
+// set stopReq or escalate; it is a single group-wide delivery.
+func (m *Manager) Signal(ctx context.Context, id string, sig syscall.Signal) error {
+	proc, _ := m.Get(id)
+	if proc == nil {
+		return ErrNotFound
+	}
+	switch info := proc.Info(); info.Status {
+	case StatusStopped, StatusExited, StatusFailed, StatusCreated:
+		return fmt.Errorf("process %q is not running", id)
+	}
+	inst := m.currentInstance(proc)
+	if inst == nil || inst.cmd.Process == nil {
+		return fmt.Errorf("process %q is not running", id)
+	}
+	err := signalGroup(inst.cmd.Process, sig)
+	// The process may have exited between the status check and the kill; a
+	// missing group is a benign race, not an error.
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
 }
 
 // Restart stops the current instance and starts a new one with the same

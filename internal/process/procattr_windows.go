@@ -12,18 +12,20 @@ import (
 // in v1. Only the direct child is signalled (documented limitation).
 func setProcAttr(cmd *exec.Cmd) {}
 
-// sigTerm signals only the direct child on Windows.
-func sigTerm(p *os.Process) error {
+// signalGroup signals only the direct child on Windows.
+func signalGroup(p *os.Process, sig syscall.Signal) error {
 	if p == nil {
 		return nil
 	}
-	return p.Signal(syscall.SIGTERM)
+	return p.Signal(sig)
+}
+
+// sigTerm signals only the direct child on Windows.
+func sigTerm(p *os.Process) error {
+	return signalGroup(p, syscall.SIGTERM)
 }
 
 // sigKill kills only the direct child on Windows.
 func sigKill(p *os.Process) error {
-	if p == nil {
-		return nil
-	}
-	return p.Kill()
+	return signalGroup(p, syscall.SIGKILL)
 }

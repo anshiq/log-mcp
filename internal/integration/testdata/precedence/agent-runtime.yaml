@@ -1,0 +1,17 @@
+# Precedence fixture: runtime.env sets a global default, the app env block
+# overrides it. Request env (passed to start_process) must override both.
+# shell_env is pinned to none for determinism.
+runtime:
+  shell_env: none
+  env:
+    - "PREC=global"
+
+apps:
+  echo:
+    workdir: .
+    command:
+      - sh
+      - -c
+      - 'echo "PREC=$PREC"'
+    env:
+      - "PREC=app"

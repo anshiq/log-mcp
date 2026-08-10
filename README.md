@@ -109,6 +109,57 @@ Then `start_process(app="backend")`. Relative `workdir`/`env_file` paths resolve
 against the directory containing the config file (found by walking up from the
 current directory).
 
+## Environment & process resolution
+
+Every process runs with a **complete merged environment** — the `env` the
+runtime reports for a process is the final result, never a delta. Layers, from
+lowest to highest precedence:
+
+1. **Base env** — the captured login-shell environment (`runtime.shell_env:
+   login`, the default; `$SHELL -lic 'env -0'`, ~3s timeout, silent fallback to
+   `os.Environ()`) or the parent process env (`shell_env: none`). Login-shell
+   capture is what lets nvm/pyenv/uv shims and their PATH entries reach managed
+   processes.
+2. **`runtime.env`** — a runtime-wide layer applied to every app/process.
+3. **`env_file`** — the app's (or request's) dotenv file.
+4. **app `env`** — the app's `env:` block in `agent-runtime.yaml`.
+5. **request `env`** — the `env` array passed to `start_process`.
+
+Later layers override earlier ones for the same key. `workdir` and `env_file`
+paths are resolved relative to the config file; workdirs are symlink-resolved
+(`filepath.EvalSymlinks`, for predictable uv/poetry walk-ups) and must exist
+before the process starts.
+
+```yaml
+runtime:
+  shell_env: login            # "login" (default) | "none" (use parent env)
+  env:
+    - "NODE_ENV=development"  # every app/process inherits this
+
+apps:
+  api:
+    workdir: ./services/api
+    env_file: ./services/api/.env   # e.g. DATABASE_URL=...
+    env:
+      - "LOG_LEVEL=info"            # per-app overrides
+    command: ["node", "server.js"]
+```
+
+Environment and process inspection:
+
+- `signal_process(process_id, signal)` — deliver SIGINT/SIGTERM/SIGHUP/SIGQUIT/
+  SIGUSR1/SIGUSR2/SIGKILL to the **whole process group**, so a graceful SIGINT
+  reaches a `mycli -> uv -> python` tree rather than just the direct child.
+- `get_process_env(process_id, live=false, reveal=false)` — the complete env
+  the runtime built for the process (spec mode, with a per-key `source` layer
+  map) or the ground truth read live from `/proc/<pid>/environ`. Secret-like
+  values are redacted to `***` by default; pass `reveal=true` only when the raw
+  value is actually needed.
+- `open_shell(process_id|app, shell)` — start an interactive shell inside the
+  resolved workdir + complete env of a running process or configured app
+  (ssh-like). Drive it with `send_stdin`, read it with `get_logs` /
+  `wait_for_log`.
+
 ### Profiles
 
 Built-in profiles: `nextjs`, `spring-boot`, `django`, `node`, `python`, `go`,
@@ -142,6 +193,9 @@ registry.
 | `get_logs`        | Tail with `stream` (all/stdout/stderr), `lines`, `contains`; bounded |
 | `clear_logs`      | Empty a process's buffer(s)                                    |
 | `send_stdin`      | Write to a process's stdin (e.g. `"q\n"`)                      |
+| `signal_process`  | Deliver SIGINT/SIGTERM/SIGHUP/SIGQUIT/SIGUSR1/SIGUSR2/SIGKILL to the whole process group |
+| `get_process_env` | Complete env the runtime built (spec, with per-key `source` provenance) or live `/proc` env; secrets redacted unless `reveal` |
+| `open_shell`      | Interactive shell inside a process's/app's workdir + env; drive with `send_stdin`, read with `get_logs`/`wait_for_log` |
 | `wait_for_log`    | Wait for `contains`/`pattern`/`ready` (profile readiness); returns on match, exit, or timeout |
 | `wait_for_exit`   | Wait for exit; returns the exit code; multiple waiters supported |
 | `remove_process`  | Delete a process from the registry and free its log buffers; refuses running processes unless `force` (stops it first) |
@@ -201,8 +255,8 @@ back-fill).
   listener; MCP is stdio-only.
 - Commands run via `exec.Command` with argument arrays, **never** a shell.
 - Working directories are validated to exist before start.
-- Environment variables are never dumped into logs, status responses, or MCP
-  output.
+- Environment variables are never dumped into logs or status responses;
+  `get_process_env` exposes them only on request, redacted by default.
 - No managed-process log is ever injected into the agent's context.
 
 ## Known limitations

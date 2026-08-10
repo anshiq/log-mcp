@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -929,5 +930,305 @@ func TestConfigSQLiteDefaults(t *testing.T) {
 		if !found {
 			t.Fatalf("persisted lines %v missing %q", lines, want)
 		}
+	}
+}
+
+// startSh starts `sh -c script` on the given runtime, failing the test on
+// error. Any extra request fields (Env, EnvFile, WorkDir) are preserved.
+func startSh(t *testing.T, rt *runtime.Runtime, script string, req api.StartRequest) *api.StartResult {
+	t.Helper()
+	req.Command = "sh"
+	req.Args = []string{"-c", script}
+	res, err := rt.Start(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// waitExitLine waits for the process to exit and asserts that a captured log
+// line equals want exactly (used with printf-style single-line output).
+func waitExitLine(t *testing.T, rt *runtime.Runtime, id, want string) {
+	t.Helper()
+	w, err := rt.WaitForExit(context.Background(), api.WaitForExitParams{ProcessID: id, TimeoutMS: 5000})
+	if err != nil || !w.Exited {
+		t.Fatalf("process did not exit: %v %+v", err, w)
+	}
+	got, err := rt.GetLogs(api.GetLogsRequest{ProcessID: id, Lines: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range got.Entries {
+		if e.Line == want {
+			return
+		}
+	}
+	var lines []string
+	for _, e := range got.Entries {
+		lines = append(lines, e.Line)
+	}
+	t.Fatalf("log lines %v missing %q", lines, want)
+}
+
+// TestStartEnvPrecedence exercises the full env pipeline for raw starts:
+// runtime.env is the base override layer, request.env wins over it.
+func TestStartEnvPrecedence(t *testing.T) {
+	rt := newRuntimeWithConfig(t, "runtime:\n  env: [\"FOO=global\"]\n")
+
+	// request.env wins over runtime.env.
+	res := startSh(t, rt, `printf %s "$FOO"`, api.StartRequest{Env: []string{"FOO=request"}})
+	waitExitLine(t, rt, res.ProcessID, "request")
+
+	// Without a request override the runtime.env layer applies.
+	res2 := startSh(t, rt, `printf %s "$FOO"`, api.StartRequest{})
+	waitExitLine(t, rt, res2.ProcessID, "global")
+}
+
+// TestStartEnvFileLayering exercises the raw-path env_file layer: it sits
+// below request.env but above the base layers.
+func TestStartEnvFileLayering(t *testing.T) {
+	rt := newRuntime(t)
+	envPath := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(envPath, []byte("FOO=file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// request.env wins over env_file.
+	res := startSh(t, rt, `printf %s "$FOO"`, api.StartRequest{EnvFile: envPath, Env: []string{"FOO=req"}})
+	waitExitLine(t, rt, res.ProcessID, "req")
+
+	// env_file alone supplies the value.
+	res2 := startSh(t, rt, `printf %s "$FOO"`, api.StartRequest{EnvFile: envPath})
+	waitExitLine(t, rt, res2.ProcessID, "file")
+}
+
+// TestBaseEnvPresent proves the complete-env contract: the child sees the
+// captured base environment (e.g. PATH) without the old os.Environ() prepend
+// in the process layer.
+func TestBaseEnvPresent(t *testing.T) {
+	rt := newRuntime(t)
+	res := startSh(t, rt, `printf %s "${PATH:+yes}"`, api.StartRequest{})
+	waitExitLine(t, rt, res.ProcessID, "yes")
+}
+
+// TestStartMissingWorkdir verifies a nonexistent workdir fails during
+// resolution, before any process is registered.
+func TestStartMissingWorkdir(t *testing.T) {
+	rt := newRuntime(t)
+	_, err := rt.Start(context.Background(), api.StartRequest{Command: "sh", WorkDir: "/nonexistent-xyz"})
+	if err == nil {
+		t.Fatal("expected workdir error")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent-xyz") {
+		t.Fatalf("error %q does not mention the workdir", err)
+	}
+	if list, _ := rt.List(); len(list.Processes) != 0 {
+		t.Fatalf("process registered despite failed start: %+v", list.Processes)
+	}
+}
+
+// TestStartSymlinkedWorkdir verifies the workdir is symlink-resolved before
+// exec: the child's pwd must be the resolved real path, not the link path.
+func TestStartSymlinkedWorkdir(t *testing.T) {
+	rt := newRuntime(t)
+	realDir := t.TempDir()
+	resolvedReal, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	res := startSh(t, rt, "pwd -P", api.StartRequest{WorkDir: linkDir})
+	waitExitLine(t, rt, res.ProcessID, resolvedReal)
+}
+
+// TestProcessEnvSpecMode exercises get_process_env spec mode: the env the
+// runtime constructed, with provenance and secret redaction. shell_env is
+// pinned to none so the base layer is exactly the parent env (deterministic
+// redaction count).
+func TestProcessEnvSpecMode(t *testing.T) {
+	rt := newRuntimeWithConfig(t, "runtime:\n  shell_env: none\n")
+	res := startSh(t, rt, "sleep 30", api.StartRequest{Env: []string{"API_KEY=sekrit", "FOO=bar"}})
+
+	env, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: res.ProcessID, Live: false, Reveal: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var redactedAPI, fooBar bool
+	for _, kv := range env.Env {
+		if kv == "API_KEY=***" {
+			redactedAPI = true
+		}
+		if kv == "FOO=bar" {
+			fooBar = true
+		}
+	}
+	if !redactedAPI {
+		t.Fatalf("API_KEY not redacted: %v", env.Env)
+	}
+	if !fooBar {
+		t.Fatalf("FOO=bar missing: %v", env.Env)
+	}
+	if env.Redacted != 1 {
+		t.Fatalf("Redacted = %d, want 1", env.Redacted)
+	}
+	if env.Source["FOO"] != "request.env" {
+		t.Fatalf("Source[FOO] = %q, want request.env", env.Source["FOO"])
+	}
+
+	// Reveal mode returns the raw value and redacts nothing.
+	env2, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: res.ProcessID, Reveal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawSeen bool
+	for _, kv := range env2.Env {
+		if kv == "API_KEY=sekrit" {
+			rawSeen = true
+		}
+	}
+	if !rawSeen {
+		t.Fatalf("raw API_KEY value missing with reveal=true: %v", env2.Env)
+	}
+	if env2.Redacted != 0 {
+		t.Fatalf("Redacted = %d, want 0 with reveal=true", env2.Redacted)
+	}
+}
+
+// TestProcessEnvLiveMode exercises get_process_env live mode against
+// /proc/<pid>/environ and cleans up through signal_process. shell_env is
+// pinned to none so the base layer is exactly the parent env (which is
+// guaranteed to contain PATH: the test harness needs it to exec sh).
+func TestProcessEnvLiveMode(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("live env read requires /proc")
+	}
+	rt := newRuntimeWithConfig(t, "runtime:\n  shell_env: none\n")
+	res := startSh(t, rt, "sleep 30", api.StartRequest{})
+	waitFor(t, 5*time.Second, "running", func() bool {
+		st, _ := rt.Status(res.ProcessID)
+		return st.Status == "running"
+	})
+
+	// /proc/<pid>/environ can transiently read empty in the fork/exec window
+	// right after "running"; poll until the live read is non-empty.
+	var env *api.ProcessEnvResult
+	waitFor(t, 5*time.Second, "non-empty live env", func() bool {
+		e, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: res.ProcessID, Live: true})
+		if err != nil {
+			return false
+		}
+		if len(e.Env) == 0 {
+			return false
+		}
+		env = e
+		return true
+	})
+
+	var hasPath bool
+	for _, kv := range env.Env {
+		if strings.HasPrefix(kv, "PATH=") {
+			hasPath = true
+		}
+	}
+	if !hasPath {
+		t.Fatalf("live env missing PATH: %v", env.Env)
+	}
+
+	// Clean up via signal_process (also exercises its happy path).
+	if _, err := rt.SignalProcess(context.Background(), api.SignalProcessRequest{
+		ProcessID: res.ProcessID, Signal: "SIGKILL",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w, err := rt.WaitForExit(context.Background(), api.WaitForExitParams{ProcessID: res.ProcessID, TimeoutMS: 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.Exited {
+		t.Fatalf("process did not exit after SIGKILL: %+v", w)
+	}
+}
+
+// TestSignalProcessSIGINT delivers SIGINT to a running process's group and
+// verifies it terminates.
+func TestSignalProcessSIGINT(t *testing.T) {
+	rt := newRuntime(t)
+	res := startSh(t, rt, "sleep 30", api.StartRequest{})
+	waitFor(t, 5*time.Second, "running", func() bool {
+		st, _ := rt.Status(res.ProcessID)
+		return st.Status == "running"
+	})
+	if _, err := rt.SignalProcess(context.Background(), api.SignalProcessRequest{
+		ProcessID: res.ProcessID, Signal: "SIGINT",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w, err := rt.WaitForExit(context.Background(), api.WaitForExitParams{ProcessID: res.ProcessID, TimeoutMS: 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.Exited {
+		t.Fatalf("process did not exit after SIGINT: %+v", w)
+	}
+}
+
+// TestSignalProcessBadName verifies an unsupported signal name is rejected.
+func TestSignalProcessBadName(t *testing.T) {
+	rt := newRuntime(t)
+	res := startSh(t, rt, "sleep 30", api.StartRequest{})
+	_, err := rt.SignalProcess(context.Background(), api.SignalProcessRequest{
+		ProcessID: res.ProcessID, Signal: "SIGFOO",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported signal error")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("error %q does not mention unsupported", err)
+	}
+	rt.Stop(context.Background(), res.ProcessID)
+}
+
+// TestOpenShellProcessBranch opens a shell in a running process's environment
+// and verifies it starts as a managed process; it also checks Status PGID ==
+// PID (Setpgid means pgid == pid).
+func TestOpenShellProcessBranch(t *testing.T) {
+	rt := newRuntime(t)
+	res := startSh(t, rt, "sleep 30", api.StartRequest{})
+	waitFor(t, 5*time.Second, "running", func() bool {
+		st, _ := rt.Status(res.ProcessID)
+		return st.Status == "running"
+	})
+
+	shell, err := rt.OpenShell(context.Background(), api.OpenShellRequest{ProcessID: res.ProcessID, Shell: "sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell.ProcessID == "" || shell.Status != "running" || shell.Command != "sh" {
+		t.Fatalf("bad open_shell result: %+v", shell)
+	}
+	if shell.WorkDir == "" {
+		t.Fatal("open_shell workdir empty")
+	}
+	st, err := rt.Status(shell.ProcessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PID <= 0 {
+		t.Fatalf("no pid for shell process: %+v", st)
+	}
+	if st.PGID != st.PID {
+		t.Fatalf("pgid = %d, want pid %d", st.PGID, st.PID)
+	}
+	rt.Stop(context.Background(), shell.ProcessID)
+}
+
+// TestOpenShellRequiresTarget verifies open_shell rejects empty requests.
+func TestOpenShellRequiresTarget(t *testing.T) {
+	rt := newRuntime(t)
+	if _, err := rt.OpenShell(context.Background(), api.OpenShellRequest{}); err == nil {
+		t.Fatal("expected error for empty open_shell request")
 	}
 }

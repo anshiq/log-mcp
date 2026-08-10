@@ -15,18 +15,21 @@ func setProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
-// sigTerm sends SIGTERM to the entire process group of p.
-func sigTerm(p *os.Process) error {
+// signalGroup sends sig to the whole process group of p (pgid == pid due to
+// Setpgid).
+func signalGroup(p *os.Process, sig syscall.Signal) error {
 	if p == nil {
 		return nil
 	}
-	return syscall.Kill(-p.Pid, syscall.SIGTERM)
+	return syscall.Kill(-p.Pid, sig)
+}
+
+// sigTerm sends SIGTERM to the entire process group of p.
+func sigTerm(p *os.Process) error {
+	return signalGroup(p, syscall.SIGTERM)
 }
 
 // sigKill sends SIGKILL to the entire process group of p.
 func sigKill(p *os.Process) error {
-	if p == nil {
-		return nil
-	}
-	return syscall.Kill(-p.Pid, syscall.SIGKILL)
+	return signalGroup(p, syscall.SIGKILL)
 }

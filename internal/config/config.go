@@ -52,6 +52,11 @@ type RuntimeConfig struct {
 	DBPath             string   `yaml:"db_path"`         // resolved against ProjectDir; default .agent-runtime/logs.db
 	DBMaxAgeDays       *int     `yaml:"db_max_age_days"` // nil -> 7; 0 = keep forever
 	DBMaxMB            *int64   `yaml:"db_max_mb"`       // nil -> 512; 0 = unlimited
+	ShellEnv           string   `yaml:"shell_env"`       // "" or "login" -> capture login-shell env as base layer; "none" -> os.Environ()
+	// Env is the runtime-wide env layer applied to every app/process: above
+	// the base env (login-shell env or os.Environ()) and below app-level
+	// env_file/env.
+	Env []string `yaml:"env"`
 }
 
 func (r *RuntimeConfig) defaults() {
@@ -83,6 +88,9 @@ func (r *RuntimeConfig) defaults() {
 	if r.DBMaxMB == nil {
 		v := int64(512)
 		r.DBMaxMB = &v
+	}
+	if r.ShellEnv == "" {
+		r.ShellEnv = "login"
 	}
 }
 

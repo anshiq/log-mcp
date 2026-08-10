@@ -5,9 +5,13 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -152,4 +156,347 @@ func TestExampleApps(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
+}
+
+// newRuntimeFromFixture loads agent-runtime.yaml from
+// internal/integration/testdata/<fixture> (resolved relative to the package
+// dir, which go test sets to the test's own directory) and returns a runtime
+// bound to it. Fixture configs pin shell_env: none so env resolution is
+// deterministic.
+func newRuntimeFromFixture(t *testing.T, fixture string) *runtime.Runtime {
+	t.Helper()
+	dir, err := filepath.Abs(filepath.Join("testdata", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := runtime.New(loaded, nil)
+	t.Cleanup(func() { rt.Shutdown() })
+	return rt
+}
+
+// waitRunning polls process_status until the process reports running.
+func waitRunning(t *testing.T, rt *runtime.Runtime, id string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ := rt.Status(id)
+		if st.Status == "running" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("process %s did not reach running", id)
+}
+
+// cleanupProcess stops (if running) and removes a process so nothing leaks.
+func cleanupProcess(rt *runtime.Runtime, id string) {
+	rt.RemoveProcess(id, true)
+}
+
+// parsePID extracts an integer from a log line of the form "label=123".
+func parsePID(line, label string) int {
+	if !strings.HasPrefix(line, label) {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(line, label))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// TestProcessTreeKillNoOrphans starts a 3-level process tree (middle sh ->
+// grandchild sh -> sleep), captures the grandchild's pid from its own output,
+// then verifies stop_process's process-group kill reaps both the middle and
+// the grandchild. This mirrors the mycli -> uv -> python tree: a group kill
+// must not leave orphans behind.
+func TestProcessTreeKillNoOrphans(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
+	}
+	rt := newRuntimeFromFixture(t, "basic")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// The middle sh stays alive (it waits on the background job); the
+	// grandchild prints its own pid, then sleeps. Both pids land in the
+	// captured stdout, which the harness reads via get_logs.
+	const treeScript = `echo "middle=$$"; sh -c 'echo "grandchild=$$"; sleep 30' & wait`
+	res, err := rt.Start(ctx, api.StartRequest{Command: "sh", Args: []string{"-c", treeScript}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, res.ProcessID) })
+
+	// Poll the log buffer until both pids have been printed.
+	var middle, grandchild int
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, err := rt.GetLogs(api.GetLogsRequest{ProcessID: res.ProcessID, Lines: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range logs.Entries {
+			if m := parsePID(e.Line, "middle="); m > 0 {
+				middle = m
+			}
+			if g := parsePID(e.Line, "grandchild="); g > 0 {
+				grandchild = g
+			}
+		}
+		if middle > 0 && grandchild > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if middle <= 0 || grandchild <= 0 {
+		t.Fatalf("tree pids not captured (middle=%d grandchild=%d)", middle, grandchild)
+	}
+
+	if err := rt.Stop(ctx, res.ProcessID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Poll kill(pid, 0) until the grandchild reports "no such process". If the
+	// assertion is about to fail, SIGKILL the survivors so nothing leaks.
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(grandchild, 0), syscall.ESRCH) {
+			if err := syscall.Kill(middle, 0); !errors.Is(err, syscall.ESRCH) {
+				syscall.Kill(middle, syscall.SIGKILL)
+				t.Fatalf("middle pid %d survived stop_process", middle)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	syscall.Kill(grandchild, syscall.SIGKILL)
+	syscall.Kill(middle, syscall.SIGKILL)
+	t.Fatalf("grandchild pid %d still alive after stop_process (leaked)", grandchild)
+}
+
+// TestSignalProcessSIGINTGraceful delivers SIGINT to a process whose trap
+// prints GOTINT and exits 0: the signal must reach the group, the trap must
+// run, and the exit code must be 0.
+func TestSignalProcessSIGINTGraceful(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
+	}
+	rt := newRuntimeFromFixture(t, "basic")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// READY is printed only after the INT trap is armed, so waiting for it
+	// guarantees the signal cannot land before the trap exists (status flips to
+	// "running" at exec time, which races the shell's startup).
+	const script = `trap "echo GOTINT; exit 0" INT; echo READY; while true; do sleep 1; done`
+	res, err := rt.Start(ctx, api.StartRequest{Command: "sh", Args: []string{"-c", script}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, res.ProcessID) })
+	wready, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: res.ProcessID, Contains: "READY", TimeoutMS: 10000})
+	if err != nil || !wready.Matched {
+		t.Fatalf("trap not armed (no READY): %v %+v", err, wready)
+	}
+
+	if _, err := rt.SignalProcess(ctx, api.SignalProcessRequest{ProcessID: res.ProcessID, Signal: "SIGINT"}); err != nil {
+		t.Fatal(err)
+	}
+
+	wl, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: res.ProcessID, Contains: "GOTINT", TimeoutMS: 5000})
+	if err != nil || !wl.Matched {
+		t.Fatalf("trap output GOTINT not seen after SIGINT: %v %+v", err, wl)
+	}
+	we, err := rt.WaitForExit(ctx, api.WaitForExitParams{ProcessID: res.ProcessID, TimeoutMS: 5000})
+	if err != nil || !we.Exited {
+		t.Fatalf("process did not exit after SIGINT: %v %+v", err, we)
+	}
+	if we.ExitCode == nil || *we.ExitCode != 0 {
+		t.Fatalf("exit code = %v, want 0", we.ExitCode)
+	}
+}
+
+// TestOpenShellSeesMergedEnv starts a process with request env, opens a shell
+// inside that process's environment and verifies the shell sees the merged
+// value: env set at start time must be visible to open_shell.
+func TestOpenShellSeesMergedEnv(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
+	}
+	rt := newRuntimeFromFixture(t, "basic")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	res, err := rt.Start(ctx, api.StartRequest{
+		Command: "sh", Args: []string{"-c", "sleep 30"},
+		Env: []string{"OPEN_SHELL_PROBE=hello"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, res.ProcessID) })
+	waitRunning(t, rt, res.ProcessID)
+
+	shell, err := rt.OpenShell(ctx, api.OpenShellRequest{ProcessID: res.ProcessID, Shell: "sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, shell.ProcessID) })
+	waitRunning(t, rt, shell.ProcessID)
+
+	if _, err := rt.SendStdin(shell.ProcessID, "echo $OPEN_SHELL_PROBE\n"); err != nil {
+		t.Fatal(err)
+	}
+	wl, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: shell.ProcessID, Contains: "hello", TimeoutMS: 5000})
+	if err != nil || !wl.Matched {
+		t.Fatalf("open shell did not see merged request env: %v %+v", err, wl)
+	}
+}
+
+// TestMonorepoIsolation runs two apps with nested workdirs, each with its own
+// .env file setting SERVICE to a different value, plus a runtime.env shared
+// default. Each app must see its own SERVICE and the shared default, and
+// get_process_env must agree (spec mode, provenance included).
+func TestMonorepoIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
+	}
+	rt := newRuntimeFromFixture(t, "monorepo")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	apiRes, err := rt.Start(ctx, api.StartRequest{App: "api"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerRes, err := rt.Start(ctx, api.StartRequest{App: "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupProcess(rt, apiRes.ProcessID)
+		cleanupProcess(rt, workerRes.ProcessID)
+	})
+
+	// Each app sees its own SERVICE from its own .env...
+	wa, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: apiRes.ProcessID, Contains: "SERVICE=api", TimeoutMS: 10000})
+	if err != nil || !wa.Matched {
+		t.Fatalf("api app missing SERVICE=api: %v %+v", err, wa)
+	}
+	ww, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: workerRes.ProcessID, Contains: "SERVICE=worker", TimeoutMS: 10000})
+	if err != nil || !ww.Matched {
+		t.Fatalf("worker app missing SERVICE=worker: %v %+v", err, ww)
+	}
+	// ...and both inherit the runtime.env shared default.
+	for id, name := range map[string]string{apiRes.ProcessID: "api", workerRes.ProcessID: "worker"} {
+		ws, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: id, Contains: "SHARED=global-default", TimeoutMS: 10000})
+		if err != nil || !ws.Matched {
+			t.Fatalf("%s app missing SHARED=global-default: %v %+v", name, err, ws)
+		}
+	}
+
+	// get_process_env (spec mode) agrees: SERVICE comes from each app's own
+	// env_file layer; workdirs resolve to each app's nested directory.
+	envAPI, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: apiRes.ProcessID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envWorker, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: workerRes.ProcessID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEnvHas(t, envAPI, "SERVICE=api", "SHARED=global-default")
+	assertEnvHas(t, envWorker, "SERVICE=worker", "SHARED=global-default")
+	if envAPI.Source["SERVICE"] != "env_file" || envWorker.Source["SERVICE"] != "env_file" {
+		t.Fatalf("SERVICE provenance = %q/%q, want env_file/env_file",
+			envAPI.Source["SERVICE"], envWorker.Source["SERVICE"])
+	}
+	for id, want := range map[string]string{apiRes.ProcessID: "api", workerRes.ProcessID: "worker"} {
+		st, err := rt.Status(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantAbs, err := filepath.Abs(filepath.Join("testdata", "monorepo", "services", want))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantDir, err := filepath.EvalSymlinks(wantAbs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.WorkDir != wantDir {
+			t.Fatalf("%s workdir = %q, want %q", want, st.WorkDir, wantDir)
+		}
+	}
+}
+
+// assertEnvHas fails the test unless env contains every listed entry.
+func assertEnvHas(t *testing.T, env *api.ProcessEnvResult, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		found := false
+		for _, kv := range env.Env {
+			if kv == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("env %v missing %q", env.Env, w)
+		}
+	}
+}
+
+// TestEnvPrecedenceEndToEnd exercises the full precedence chain through a
+// fixture app: request env beats app env beats runtime.env.
+func TestEnvPrecedenceEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
+	}
+	rt := newRuntimeFromFixture(t, "precedence")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// request env wins over the app env block and runtime.env.
+	res1, err := rt.Start(ctx, api.StartRequest{App: "echo", Env: []string{"PREC=req"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, res1.ProcessID) })
+	w1, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: res1.ProcessID, Contains: "PREC=req", TimeoutMS: 10000})
+	if err != nil || !w1.Matched {
+		t.Fatalf("request env did not win: %v %+v", err, w1)
+	}
+	env1, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: res1.ProcessID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEnvHas(t, env1, "PREC=req")
+	if env1.Source["PREC"] != "request.env" {
+		t.Fatalf("PREC provenance = %q, want request.env", env1.Source["PREC"])
+	}
+
+	// Without a request override the app env block wins over runtime.env.
+	res2, err := rt.Start(ctx, api.StartRequest{App: "echo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupProcess(rt, res2.ProcessID) })
+	w2, err := rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: res2.ProcessID, Contains: "PREC=app", TimeoutMS: 10000})
+	if err != nil || !w2.Matched {
+		t.Fatalf("app env did not win without request env: %v %+v", err, w2)
+	}
+	env2, err := rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: res2.ProcessID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEnvHas(t, env2, "PREC=app")
+	if env2.Source["PREC"] != "app.env" {
+		t.Fatalf("PREC provenance = %q, want app.env", env2.Source["PREC"])
+	}
 }

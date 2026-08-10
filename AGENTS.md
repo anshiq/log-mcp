@@ -57,3 +57,47 @@ examples/                 node / nextjs / django / java example apps
 - Never send managed-process log lines to the agent automatically.
 - Preserve the byte-for-byte merge behavior in `internal/integrate/opencode.go`
   (JSONC installs must not rewrite anything the user didn't ask for).
+
+## Environment resolution
+
+Every process is started with a **complete merged environment** — the `env`
+reported on `start_process` is the final result, never a delta. Layers, lowest
+to highest precedence:
+
+1. **Base env** — the captured login-shell environment (`runtime.shell_env:
+   login`, the default) or `os.Environ()` (`shell_env: none`, or when the
+   capture fails).
+2. **`runtime.env`** — a runtime-wide layer applied to every app/process.
+3. **`env_file`** — the app's (or the request's) dotenv file.
+4. **app `env`** — the app's `env:` block in `agent-runtime.yaml`.
+5. **request `env`** — the `env` array passed to `start_process`.
+
+Later layers override earlier ones for the same key. Provenance is tracked per
+key and exposed by `get_process_env` (spec mode) via the `source` map.
+
+- `runtime.shell_env` defaults to `login`: the base layer is captured once per
+  runtime via `$SHELL -lic 'env -0'` with a ~3s timeout, silently falling back
+  to `os.Environ()` on any failure. This is how nvm/pyenv/uv shims and their
+  PATH entries reach managed processes. Because the capture is
+  environment-dependent, **pin `shell_env: none` in test configs where
+  determinism matters** (mirroring `internal/runtime/runtime_test.go`).
+- `workdir` (apps and raw starts) is resolved relative to the directory
+  containing `agent-runtime.yaml`, then passed through `filepath.EvalSymlinks`
+  so uv/poetry walk-ups behave predictably. A missing workdir fails the start
+  during resolution, before anything is exec'd or registered.
+
+## Process control & inspection tools
+
+- `signal_process(process_id, signal)` — deliver SIGINT/SIGTERM/SIGHUP/SIGQUIT/
+  SIGUSR1/SIGUSR2/SIGKILL to the **whole process group** (so a graceful SIGINT
+  reaches a `mycli -> uv -> python` tree, not just the direct child).
+- `get_process_env(process_id, live=false, reveal=false)` — the complete env
+  the runtime constructed for the process (spec mode, with per-key `source`
+  provenance), or the ground-truth env read live from `/proc/<pid>/environ`
+  (`live=true`). Secret-like keys (token/password/api_key/...) are redacted to
+  `***` by default; pass `reveal=true` only when the raw value is actually
+  needed.
+- `open_shell(process_id|app, shell)` — start an interactive shell inside the
+  resolved workdir + complete env of a running process or configured app
+  (ssh-like access). Drive it with `send_stdin` and read it with
+  `get_logs`/`wait_for_log`; stop it like any managed process.

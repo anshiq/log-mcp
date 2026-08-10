@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"agent-runtime/internal/config"
@@ -37,6 +38,17 @@ type Runtime struct {
 	logger   *slog.Logger
 	sink     logs.Sink
 
+	// baseEnv is the lowest environment layer every process inherits: the
+	// captured login-shell environment (baseEnvName == "shell") or os.Environ()
+	// (baseEnvName == "parent") when capture fails or shell_env: none.
+	baseEnv     []string
+	baseEnvName string
+
+	// envSrc records, per process ID, which layer won for each env key
+	// (provenance for get_process_env spec mode).
+	envSrcMu sync.RWMutex
+	envSrc   map[string]map[string]string
+
 	rootCtx context.Context
 	cancel  context.CancelFunc
 }
@@ -57,15 +69,36 @@ func New(loaded *config.Loaded, logger *slog.Logger) *Runtime {
 		Logger:             logger,
 		Sink:               sink,
 	})
+	baseEnv, baseEnvName := captureBaseEnv(loaded, logger)
 	return &Runtime{
-		cfg:      loaded,
-		manager:  manager,
-		profiles: profile.Default(),
-		logger:   logger,
-		sink:     sink,
-		rootCtx:  rootCtx,
-		cancel:   cancel,
+		cfg:         loaded,
+		manager:     manager,
+		profiles:    profile.Default(),
+		logger:      logger,
+		sink:        sink,
+		baseEnv:     baseEnv,
+		baseEnvName: baseEnvName,
+		envSrc:      make(map[string]map[string]string),
+		rootCtx:     rootCtx,
+		cancel:      cancel,
 	}
+}
+
+// captureBaseEnv resolves the lowest environment layer for every process. With
+// shell_env: login (the default) the login-shell environment is captured once
+// at startup; on any capture failure the runtime falls back to os.Environ() so
+// process management never breaks. With shell_env: none os.Environ() is used
+// directly. The returned name is the provenance label for the layer.
+func captureBaseEnv(loaded *config.Loaded, logger *slog.Logger) (env []string, name string) {
+	if loaded.Config.Runtime.ShellEnv == "login" {
+		captured, err := config.CaptureShellEnv(os.Getenv("SHELL"), 3*time.Second)
+		if err != nil {
+			logger.Warn("shell env capture failed; falling back to os.Environ()", "error", err)
+			return os.Environ(), "parent"
+		}
+		return captured, "shell"
+	}
+	return os.Environ(), "parent"
 }
 
 // buildSink constructs the durable log archive when log_store: sqlite is
@@ -105,7 +138,7 @@ func (r *Runtime) Config() *config.Loaded { return r.cfg }
 // Start launches a process and returns immediately. The process continues
 // running independently of the calling MCP request.
 func (r *Runtime) Start(ctx context.Context, req api.StartRequest) (*api.StartResult, error) {
-	spec, prof, err := r.resolveStart(req)
+	spec, prof, source, err := r.resolveStart(req)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +155,9 @@ func (r *Runtime) Start(ctx context.Context, req api.StartRequest) (*api.StartRe
 		return nil, err
 	}
 	info := proc.Info()
+	r.envSrcMu.Lock()
+	r.envSrc[info.ID] = source
+	r.envSrcMu.Unlock()
 	return &api.StartResult{
 		ProcessID:  info.ID,
 		InstanceID: info.InstanceID,
@@ -143,6 +179,125 @@ func (r *Runtime) Restart(ctx context.Context, id string) error {
 	return r.manager.Restart(ctx, id)
 }
 
+// SignalProcess delivers a named signal to the entire process group of a
+// process (mycli -> uv -> python tree).
+func (r *Runtime) SignalProcess(ctx context.Context, req api.SignalProcessRequest) (*api.SignalProcessResult, error) {
+	sig, err := process.SignalByName(req.Signal)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.manager.Signal(ctx, req.ProcessID, sig); err != nil {
+		return nil, err
+	}
+	return &api.SignalProcessResult{ProcessID: req.ProcessID, Signal: req.Signal}, nil
+}
+
+// ProcessEnv returns a process's environment: either the complete env the
+// runtime constructed for it (spec mode, with provenance) or the ground-truth
+// environment read live from /proc/<pid>/environ. Secret-like values are
+// masked unless Reveal is set.
+func (r *Runtime) ProcessEnv(req api.ProcessEnvRequest) (*api.ProcessEnvResult, error) {
+	proc, ok := r.manager.Get(req.ProcessID)
+	if !ok {
+		return nil, fmt.Errorf("unknown process %q", req.ProcessID)
+	}
+	info := proc.Info()
+	res := &api.ProcessEnvResult{ProcessID: req.ProcessID, Live: req.Live, PID: info.PID}
+
+	var vars []string
+	if req.Live {
+		if info.PID <= 0 {
+			return nil, fmt.Errorf("process %q has no pid (status %s); cannot read live env", req.ProcessID, info.Status)
+		}
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", info.PID))
+		if err != nil {
+			return nil, fmt.Errorf("read /proc/%d/environ: %w (process may have exited)", info.PID, err)
+		}
+		vars, err = config.ParseNulEnv(data)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		vars = proc.Spec.Env
+		r.envSrcMu.RLock()
+		if src, ok := r.envSrc[req.ProcessID]; ok {
+			res.Source = src
+		}
+		r.envSrcMu.RUnlock()
+	}
+
+	env, n := config.RedactEnv(vars, req.Reveal)
+	res.Env = env
+	res.Redacted = n
+	return res, nil
+}
+
+// OpenShell starts an interactive shell inside the environment (resolved
+// workdir + complete env) of a running process or a configured app. The shell
+// is started as an ordinary managed process and returned to the caller.
+func (r *Runtime) OpenShell(ctx context.Context, req api.OpenShellRequest) (*api.StartResult, error) {
+	var workDir string
+	var env []string
+	var prof *profile.Profile
+
+	switch {
+	case req.ProcessID != "":
+		proc, ok := r.manager.Get(req.ProcessID)
+		if !ok {
+			return nil, fmt.Errorf("unknown process %q", req.ProcessID)
+		}
+		workDir = proc.Spec.WorkDir
+		env = proc.Spec.Env
+		prof = r.profiles.Lookup(proc.Profile)
+		if _, err := os.Stat(workDir); err != nil {
+			return nil, fmt.Errorf("open_shell workdir %q: %w", workDir, err)
+		}
+	case req.App != "":
+		spec, p, _, err := r.resolveStart(api.StartRequest{App: req.App})
+		if err != nil {
+			return nil, err
+		}
+		workDir = spec.WorkDir
+		env = spec.Env
+		prof = p
+	default:
+		return nil, errors.New("open_shell requires process_id or app")
+	}
+
+	shell := req.Shell
+	if shell == "" {
+		shell = os.Getenv("SHELL")
+	}
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	grace := r.cfg.Config.Runtime.StopGrace.Time()
+	if prof != nil && prof.Grace() > grace {
+		grace = prof.Grace()
+	}
+	profileName := "generic"
+	if prof != nil {
+		profileName = prof.Name
+	}
+
+	spec := process.StartSpec{Command: shell, WorkDir: workDir, Env: env}
+	proc, err := r.manager.Start(ctx, spec, profileName, grace)
+	if err != nil {
+		return nil, err
+	}
+	info := proc.Info()
+	return &api.StartResult{
+		ProcessID:  info.ID,
+		InstanceID: info.InstanceID,
+		Status:     string(info.Status),
+		Profile:    info.Profile,
+		Command:    info.Command,
+		Args:       info.Args,
+		WorkDir:    info.WorkDir,
+	}, nil
+}
+
 // Status returns a snapshot of a process.
 func (r *Runtime) Status(id string) (*api.StatusResult, error) {
 	proc, ok := r.manager.Get(id)
@@ -155,6 +310,7 @@ func (r *Runtime) Status(id string) (*api.StatusResult, error) {
 		InstanceID:  info.InstanceID,
 		Status:      string(info.Status),
 		PID:         info.PID,
+		PGID:        info.PID, // Setpgid on Unix means pgid == pid
 		Command:     info.Command,
 		Args:        info.Args,
 		WorkDir:     info.WorkDir,
@@ -425,6 +581,15 @@ func (r *Runtime) Apps() (*api.ListAppsResult, error) {
 	out := &api.ListAppsResult{Apps: make([]api.AppInfo, 0, len(r.cfg.Config.Apps))}
 	for name, app := range r.cfg.Config.Apps {
 		workDir := r.abs(app.WorkDir)
+		// Resolve symlinks for display consistency with start (so uv/poetry
+		// walk-ups are predictable). Apps is a listing: an unresolvable workdir
+		// skips the app rather than failing the whole list.
+		if target, err := filepath.EvalSymlinks(workDir); err == nil {
+			workDir = target
+		} else {
+			r.logger.Warn("list_apps: skipping app with unresolvable workdir", "app", name, "workdir", workDir, "error", err)
+			continue
+		}
 		prof := r.profiles.Lookup(app.Type)
 		if prof == nil {
 			prof = r.profiles.Detect(workDir)
@@ -461,18 +626,23 @@ func (r *Runtime) Shutdown() error {
 	return err
 }
 
-// resolveStart converts a StartRequest into a concrete StartSpec and profile.
-func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profile.Profile, error) {
+// resolveStart converts a StartRequest into a concrete StartSpec, profile and
+// env provenance map (key -> winning layer name).
+func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profile.Profile, map[string]string, error) {
 	var spec process.StartSpec
 	var prof *profile.Profile
+	var source map[string]string
 
 	switch {
 	case req.App != "":
 		app, ok := r.cfg.Config.Apps[req.App]
 		if !ok {
-			return spec, nil, fmt.Errorf("unknown app %q (configured apps: %s)", req.App, strings.Join(r.cfg.Names(), ", "))
+			return spec, nil, nil, fmt.Errorf("unknown app %q (configured apps: %s)", req.App, strings.Join(r.cfg.Names(), ", "))
 		}
-		workDir := r.abs(app.WorkDir)
+		workDir, err := r.resolveWorkDir(app.WorkDir)
+		if err != nil {
+			return spec, nil, nil, err
+		}
 		prof = r.profiles.Lookup(app.Type)
 		if prof == nil {
 			prof = r.profiles.Detect(workDir)
@@ -482,36 +652,65 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 			cmd = prof.Command(workDir)
 		}
 		if len(cmd) == 0 {
-			return spec, nil, fmt.Errorf("app %q has no start command; set one in agent-runtime.yaml", req.App)
+			return spec, nil, nil, fmt.Errorf("app %q has no start command; set one in agent-runtime.yaml", req.App)
 		}
-		// Precedence: env_file < app.env < request.env. exec.Cmd.Env keeps the
-		// last occurrence of a duplicate key, so later sources win.
-		env := make([]string, 0, len(app.Env)+len(req.Env))
+		layers := []config.EnvLayer{{Name: r.baseEnvName, Vars: r.baseEnv}}
+		if len(r.cfg.Config.Runtime.Env) > 0 {
+			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.cfg.Config.Runtime.Env})
+		}
 		if app.EnvFile != "" {
 			fileEnv, err := config.ParseEnvFile(r.abs(app.EnvFile))
 			if err != nil {
-				return spec, nil, fmt.Errorf("app %q env_file: %w", req.App, err)
+				return spec, nil, nil, fmt.Errorf("app %q env_file: %w", req.App, err)
 			}
-			env = append(env, fileEnv...)
+			layers = append(layers, config.EnvLayer{Name: "env_file", Vars: fileEnv})
 		}
-		env = append(env, app.Env...)
-		env = append(env, req.Env...)
-		spec = process.StartSpec{Command: cmd[0], Args: cmd[1:], WorkDir: workDir, Env: env}
+		layers = append(layers,
+			config.EnvLayer{Name: "app.env", Vars: app.Env},
+			config.EnvLayer{Name: "request.env", Vars: req.Env},
+		)
+		merged, src := config.MergeEnv(layers...)
+		source = src
+		spec = process.StartSpec{Command: cmd[0], Args: cmd[1:], WorkDir: workDir, Env: merged}
 
 	case req.Command != "":
-		workDir := req.WorkDir
-		if workDir == "" {
-			workDir = r.cfg.ProjectDir
-		} else if !filepath.IsAbs(workDir) {
-			workDir = filepath.Join(r.cfg.ProjectDir, workDir)
+		workDir, err := r.resolveWorkDir(req.WorkDir)
+		if err != nil {
+			return spec, nil, nil, err
 		}
 		prof = r.profiles.Detect(workDir)
-		spec = process.StartSpec{Command: req.Command, Args: req.Args, WorkDir: workDir, Env: req.Env}
+		layers := []config.EnvLayer{{Name: r.baseEnvName, Vars: r.baseEnv}}
+		if len(r.cfg.Config.Runtime.Env) > 0 {
+			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.cfg.Config.Runtime.Env})
+		}
+		if req.EnvFile != "" {
+			fileEnv, err := config.ParseEnvFile(r.abs(req.EnvFile))
+			if err != nil {
+				return spec, nil, nil, fmt.Errorf("env_file: %w", err)
+			}
+			layers = append(layers, config.EnvLayer{Name: "env_file", Vars: fileEnv})
+		}
+		layers = append(layers, config.EnvLayer{Name: "request.env", Vars: req.Env})
+		merged, src := config.MergeEnv(layers...)
+		source = src
+		spec = process.StartSpec{Command: req.Command, Args: req.Args, WorkDir: workDir, Env: merged}
 
 	default:
-		return spec, nil, errors.New("start_process requires either app or command")
+		return spec, nil, nil, errors.New("start_process requires either app or command")
 	}
-	return spec, prof, nil
+	return spec, prof, source, nil
+}
+
+// resolveWorkDir resolves a declared workdir against the project root and
+// follows symlinks, so uv/poetry walk-ups behave predictably. The error names
+// both the resolved path and the declared path for debuggability.
+func (r *Runtime) resolveWorkDir(declaredPath string) (string, error) {
+	workDir := r.abs(declaredPath)
+	target, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w (resolved from %q)", workDir, err, declaredPath)
+	}
+	return target, nil
 }
 
 // buildMatcher constructs the log-line matcher for wait_for_log.

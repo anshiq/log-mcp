@@ -24,18 +24,14 @@ import (
 // Unlike MCP mode, the managed process's lifetime is tied to this invocation:
 // when the command exits, the process is stopped.
 func RunCommand(args []string, loaded *config.Loaded, logger *slog.Logger) error {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	app := fs.String("app", "", "named app from agent-runtime.yaml")
-	workdir := fs.String("workdir", "", "working directory override")
-	if err := fs.Parse(args); err != nil {
+	opts, err := parseRunArgs(args)
+	if err != nil {
 		return err
 	}
 
-	req := api.StartRequest{App: *app, WorkDir: *workdir}
-	if pos := fs.Args(); len(pos) > 0 {
-		req.Command = pos[0]
-		req.Args = pos[1:]
-	}
+	req := api.StartRequest{App: opts.app, WorkDir: opts.workdir, Env: opts.env, EnvFile: opts.envFile}
+	req.Command = opts.command
+	req.Args = opts.args
 
 	rt := runtime.New(loaded, logger)
 	res, err := rt.Start(context.Background(), req)
@@ -44,7 +40,11 @@ func RunCommand(args []string, loaded *config.Loaded, logger *slog.Logger) error
 	}
 	fmt.Printf("process_id=%s instance_id=%s status=%s profile=%s\n",
 		res.ProcessID, res.InstanceID, res.Status, res.Profile)
-	fmt.Printf("command: %s %v (workdir %s)\n\n", res.Command, res.Args, res.WorkDir)
+	fmt.Printf("command: %s %v (workdir %s)\n", res.Command, res.Args, res.WorkDir)
+	if len(opts.env) > 0 || opts.envFile != "" {
+		fmt.Printf("env: %d override(s), env_file=%s\n", len(opts.env), opts.envFile)
+	}
+	fmt.Println()
 
 	proc, ok := rt.Manager().Get(res.ProcessID)
 	if !ok {
@@ -103,4 +103,50 @@ func tail(proc *process.ManagedProcess, w io.Writer, ctx context.Context) {
 			}
 		}
 	}
+}
+
+// stringList is a repeatable flag value: each --env occurrence appends to the
+// slice in order.
+type stringList []string
+
+// String renders the accumulated values for flag help.
+func (l *stringList) String() string {
+	return fmt.Sprintf("%v", []string(*l))
+}
+
+// Set appends one KEY=VALUE override.
+func (l *stringList) Set(v string) error {
+	*l = append(*l, v)
+	return nil
+}
+
+// runOptions is the parsed `run` flagset. Split out of RunCommand so tests can
+// exercise the flag wiring without starting a process.
+type runOptions struct {
+	app     string
+	workdir string
+	env     stringList
+	envFile string
+	command string
+	args    []string
+}
+
+// parseRunArgs parses the `run` flagset. Positional arguments after the flags
+// form the raw start command.
+func parseRunArgs(args []string) (runOptions, error) {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	app := fs.String("app", "", "named app from agent-runtime.yaml")
+	workdir := fs.String("workdir", "", "working directory override")
+	var env stringList
+	fs.Var(&env, "env", "KEY=VALUE environment override (repeatable)")
+	envFile := fs.String("env-file", "", "dotenv file layered below --env (resolved relative to the config file)")
+	if err := fs.Parse(args); err != nil {
+		return runOptions{}, err
+	}
+	opts := runOptions{app: *app, workdir: *workdir, env: env, envFile: *envFile}
+	if pos := fs.Args(); len(pos) > 0 {
+		opts.command = pos[0]
+		opts.args = pos[1:]
+	}
+	return opts, nil
 }

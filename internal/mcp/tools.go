@@ -57,6 +57,23 @@ type removeProcessIn struct {
 	Force     bool   `json:"force,omitempty" jsonschema:"Stop the process first if it is still running, then remove it. Default false (running processes are refused)."`
 }
 
+type signalProcessIn struct {
+	ProcessID string `json:"process_id" jsonschema:"The process_id returned by start_process."`
+	Signal    string `json:"signal" jsonschema:"Signal name (SIG prefix optional): SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2 or SIGKILL. Delivered to the entire process group (mycli -> uv -> python), not just the direct child."`
+}
+
+type processEnvIn struct {
+	ProcessID string `json:"process_id" jsonschema:"The process_id returned by start_process."`
+	Live      bool   `json:"live,omitempty" jsonschema:"false (default): the env the runtime constructed (layers merged at start). true: read /proc/<pid>/environ — the ground-truth env, including anything uv/poetry/nvm injected after start. Unix only."`
+	Reveal    bool   `json:"reveal,omitempty" jsonschema:"false (default): values of secret-like keys (secret/token/password/key patterns) are masked as ***. true: return raw values."`
+}
+
+type openShellIn struct {
+	ProcessID string `json:"process_id,omitempty" jsonschema:"Clone the environment+workdir of this running process. Mutually exclusive with app."`
+	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from agent-runtime.yaml. Mutually exclusive with process_id."`
+	Shell     string `json:"shell,omitempty" jsonschema:"Shell to launch (absolute path or name). Default $SHELL, then /bin/sh."`
+}
+
 func registerTools(server *mcp.Server, h *handlers) {
 	mcp.AddTool(server,
 		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from agent-runtime.yaml). Returns immediately with a process_id; the process keeps running in the background."},
@@ -198,6 +215,39 @@ func registerTools(server *mcp.Server, h *handlers) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in removeProcessIn) (*mcp.CallToolResult, *api.RemoveProcessResult, error) {
 			h.log(ctx, "remove_process", in)
 			res, err := h.rt.RemoveProcess(in.ProcessID, in.Force)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "signal_process", Description: "Forward a signal to a managed process's whole process group, e.g. SIGINT for Ctrl+C semantics or SIGHUP for config reloads. Unlike stop_process (SIGTERM then SIGKILL) this sends exactly the requested signal once. Unknown signal names are rejected."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in signalProcessIn) (*mcp.CallToolResult, *api.SignalProcessResult, error) {
+			h.log(ctx, "signal_process", in)
+			res, err := h.rt.SignalProcess(ctx, api.SignalProcessRequest{ProcessID: in.ProcessID, Signal: in.Signal})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "get_process_env", Description: "Inspect the environment a process runs with. Use to answer 'what PATH/nvm/venv is this process using?' or to debug why a toolchain resolved differently than expected. Redaction is on by default — pass reveal=true only when you need the actual secret values."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in processEnvIn) (*mcp.CallToolResult, *api.ProcessEnvResult, error) {
+			h.log(ctx, "get_process_env", in)
+			res, err := h.rt.ProcessEnv(api.ProcessEnvRequest{ProcessID: in.ProcessID, Live: in.Live, Reveal: in.Reveal})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "open_shell", Description: "Start an interactive shell INSIDE the environment of a process or app: same resolved workdir and environment (PATH, venv, nvm shims, config env). Returns a process_id you then drive with send_stdin / get_logs / wait_for_log — an ssh-into-the-app experience over MCP, fully logged and isolated. e.g. open_shell(app='api'), then send_stdin('uv run python -c ...\\n'), then get_logs. Stop it with stop_process when done."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in openShellIn) (*mcp.CallToolResult, *api.StartResult, error) {
+			h.log(ctx, "open_shell", in)
+			res, err := h.rt.OpenShell(ctx, api.OpenShellRequest{ProcessID: in.ProcessID, App: in.App, Shell: in.Shell})
 			if err != nil {
 				return nil, nil, err
 			}

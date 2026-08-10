@@ -1,0 +1,5 @@
+# Minimal fixture: pins shell_env to none so the base env layer is exactly the
+# parent environment (deterministic; the login-shell capture is
+# environment-dependent and slow).
+runtime:
+  shell_env: none

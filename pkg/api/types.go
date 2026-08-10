@@ -14,6 +14,7 @@ type StartRequest struct {
 	Args    []string `json:"args,omitempty"`
 	WorkDir string   `json:"workdir,omitempty"`
 	Env     []string `json:"env,omitempty"`
+	EnvFile string   `json:"env_file,omitempty"` // dotenv file applied to this start, resolved relative to the project root; layered below env
 }
 
 // StartResult is returned immediately after the process is launched.
@@ -43,6 +44,7 @@ type StatusResult struct {
 	Restarts    int      `json:"restarts"`
 	StdoutLines int      `json:"stdout_lines"`
 	StderrLines int      `json:"stderr_lines"`
+	PGID        int      `json:"pgid,omitempty"` // process group id; on Unix processes are started with Setpgid so pgid == pid, the group is what stop/signal target
 }
 
 // ProcessSummary is one row of list_processes.
@@ -155,4 +157,42 @@ type AppInfo struct {
 // ListAppsResult is the response of list_apps.
 type ListAppsResult struct {
 	Apps []AppInfo `json:"apps"`
+}
+
+// SignalProcessRequest is the input to signal_process.
+type SignalProcessRequest struct {
+	ProcessID string `json:"process_id"`
+	Signal    string `json:"signal"` // SIGINT | SIGTERM | SIGHUP | SIGQUIT | SIGUSR1 | SIGUSR2 | SIGKILL
+}
+
+// SignalProcessResult is the response of signal_process.
+type SignalProcessResult struct {
+	ProcessID string `json:"process_id"`
+	Signal    string `json:"signal"`
+}
+
+// ProcessEnvRequest is the input to get_process_env.
+type ProcessEnvRequest struct {
+	ProcessID string `json:"process_id"`
+	Live      bool   `json:"live,omitempty"`   // true: read /proc/<pid>/environ (ground truth); false: env the runtime constructed
+	Reveal    bool   `json:"reveal,omitempty"` // true: show secret values; false: redact keys matching secret/token/password/key patterns
+}
+
+// ProcessEnvResult is the response of get_process_env.
+type ProcessEnvResult struct {
+	ProcessID string            `json:"process_id"`
+	Live      bool              `json:"live"`
+	PID       int               `json:"pid,omitempty"`
+	Env       []string          `json:"env"`
+	Source    map[string]string `json:"source,omitempty"`   // key -> provenance layer name (spec mode only)
+	Redacted  int               `json:"redacted,omitempty"` // number of values masked
+}
+
+// OpenShellRequest is the input to open_shell: start an interactive shell
+// inside the environment (resolved workdir + env) of a running process or a
+// configured app. Either ProcessID or App must be set.
+type OpenShellRequest struct {
+	ProcessID string `json:"process_id,omitempty"`
+	App       string `json:"app,omitempty"`
+	Shell     string `json:"shell,omitempty"` // absolute path or name; default $SHELL, then /bin/sh
 }

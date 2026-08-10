@@ -395,6 +395,139 @@ func TestRemoveProcessTool(t *testing.T) {
 	}
 }
 
+func TestToolsRegistered(t *testing.T) {
+	_, session := connect(t)
+	res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool, len(res.Tools))
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	for _, want := range []string{"signal_process", "get_process_env", "open_shell"} {
+		if !names[want] {
+			t.Fatalf("tool %q not registered; have %v", want, names)
+		}
+	}
+}
+
+func TestSignalProcess(t *testing.T) {
+	_, session := connect(t)
+	// "graceful" installs a SIGTERM handler, prints RUNNING, then exits cleanly
+	// when it receives the signal.
+	start, _ := call[api.StartResult](t, session, "start_process", startArgs("graceful"))
+	res, ok := call[api.SignalProcessResult](t, session, "signal_process", map[string]any{
+		"process_id": start.ProcessID, "signal": "SIGTERM",
+	})
+	if !ok || res.ProcessID != start.ProcessID || res.Signal != "SIGTERM" {
+		t.Fatalf("signal_process failed: %+v", res)
+	}
+	// The single SIGTERM was delivered: the helper handles it and exits.
+	w, ok := call[api.WaitForExitResult](t, session, "wait_for_exit", map[string]any{
+		"process_id": start.ProcessID, "timeout_ms": 5000,
+	})
+	if !ok || !w.Exited {
+		t.Fatalf("process did not exit after SIGTERM: %+v", w)
+	}
+
+	// Unknown signal names are rejected.
+	if _, ok := call[api.SignalProcessResult](t, session, "signal_process", map[string]any{
+		"process_id": start.ProcessID, "signal": "SIGFOO",
+	}); ok {
+		t.Fatal("expected error for unknown signal name")
+	}
+	// Unknown process id errors.
+	if _, ok := call[api.SignalProcessResult](t, session, "signal_process", map[string]any{
+		"process_id": "nope", "signal": "SIGTERM",
+	}); ok {
+		t.Fatal("expected error for unknown process")
+	}
+}
+
+func TestGetProcessEnv(t *testing.T) {
+	_, session := connect(t)
+	args := startArgs("print")
+	args["env"] = []string{"API_KEY=sekrit", "FOO=bar"}
+	start, _ := call[api.StartResult](t, session, "start_process", args)
+
+	// Default (spec mode, redaction on).
+	env, ok := call[api.ProcessEnvResult](t, session, "get_process_env", map[string]any{
+		"process_id": start.ProcessID,
+	})
+	if !ok {
+		t.Fatal("get_process_env failed")
+	}
+	if env.Live {
+		t.Fatalf("expected spec-mode env by default: %+v", env)
+	}
+	var redactedAPI, fooBar bool
+	for _, kv := range env.Env {
+		switch kv {
+		case "API_KEY=***":
+			redactedAPI = true
+		case "FOO=bar":
+			fooBar = true
+		}
+	}
+	if !redactedAPI || !fooBar {
+		t.Fatalf("redaction or env values missing: %v", env.Env)
+	}
+
+	// reveal=true returns the raw secret value.
+	revealed, ok := call[api.ProcessEnvResult](t, session, "get_process_env", map[string]any{
+		"process_id": start.ProcessID, "reveal": true,
+	})
+	if !ok {
+		t.Fatal("get_process_env reveal failed")
+	}
+	var rawSeen bool
+	for _, kv := range revealed.Env {
+		if kv == "API_KEY=sekrit" {
+			rawSeen = true
+		}
+	}
+	if !rawSeen {
+		t.Fatalf("raw value missing with reveal=true: %v", revealed.Env)
+	}
+
+	// Unknown process id errors.
+	if _, ok := call[api.ProcessEnvResult](t, session, "get_process_env", map[string]any{"process_id": "nope"}); ok {
+		t.Fatal("expected error for unknown process")
+	}
+}
+
+func TestOpenShell(t *testing.T) {
+	_, session := connect(t)
+	start, _ := call[api.StartResult](t, session, "start_process", startArgs("print"))
+	shell, ok := call[api.StartResult](t, session, "open_shell", map[string]any{
+		"process_id": start.ProcessID, "shell": "sh",
+	})
+	if !ok {
+		t.Fatal("open_shell failed")
+	}
+	if shell.ProcessID == "" || shell.Status != "running" || shell.Command != "sh" {
+		t.Fatalf("bad open_shell result: %+v", shell)
+	}
+	if shell.WorkDir == "" {
+		t.Fatal("open_shell workdir empty")
+	}
+	// The shell is a managed process and can be stopped with stop_process.
+	stop, ok := call[map[string]string](t, session, "stop_process", map[string]any{"process_id": shell.ProcessID})
+	if !ok || stop["status"] != "stopped" {
+		t.Fatalf("stopping shell failed: %+v", stop)
+	}
+
+	// Neither process_id nor app set: error.
+	if _, ok := call[api.StartResult](t, session, "open_shell", map[string]any{}); ok {
+		t.Fatal("expected error for empty open_shell request")
+	}
+	// Unknown process id errors.
+	if _, ok := call[api.StartResult](t, session, "open_shell", map[string]any{"process_id": "nope"}); ok {
+		t.Fatal("expected error for unknown process")
+	}
+}
+
 func TestMalformedParameters(t *testing.T) {
 	_, session := connect(t)
 	// Non-object args should produce a tool error, not a crash.
@@ -407,7 +540,6 @@ func TestMalformedParameters(t *testing.T) {
 		}
 	}
 }
-
 func TestConcurrentCalls(t *testing.T) {
 	rt, session := connect(t)
 	var wg sync.WaitGroup

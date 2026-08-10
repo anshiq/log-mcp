@@ -32,7 +32,7 @@ func (m *Manager) startInstance(proc *ManagedProcess, grace time.Duration) error
 	// context: the process must outlive the MCP request that started it.
 	cmd := exec.CommandContext(m.rootCtx, proc.Spec.Command, proc.Spec.Args...)
 	cmd.Dir = proc.Spec.WorkDir
-	cmd.Env = append(os.Environ(), proc.Spec.Env...)
+	cmd.Env = proc.Spec.Env
 	setProcAttr(cmd)
 
 	// Child stdout/stderr are routed through in-memory pipes assigned as

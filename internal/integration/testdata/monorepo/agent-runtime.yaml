@@ -1,0 +1,23 @@
+# Monorepo fixture: two apps with nested workdirs, each with its own .env file
+# setting the SAME key to a different value, plus a runtime.env shared default.
+# shell_env is pinned to none for determinism.
+runtime:
+  shell_env: none
+  env:
+    - "SHARED=global-default"
+
+apps:
+  api:
+    workdir: services/api
+    env_file: services/api/.env
+    command:
+      - sh
+      - -c
+      - 'echo "SERVICE=$SERVICE SHARED=$SHARED"; sleep 30'
+  worker:
+    workdir: services/worker
+    env_file: services/worker/.env
+    command:
+      - sh
+      - -c
+      - 'echo "SERVICE=$SERVICE SHARED=$SHARED"; sleep 30'
