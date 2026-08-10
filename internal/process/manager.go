@@ -12,16 +12,20 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"agent-runtime/internal/events"
 	"agent-runtime/internal/logs"
 )
 
 // Options configures a Manager.
 type Options struct {
-	LogCapacity  int
-	DefaultGrace time.Duration
-	Events       *events.Bus
-	Logger       *slog.Logger
+	LogCapacity        int
+	DefaultGrace       time.Duration
+	MaxExitedProcesses int // max terminal (exited/stopped/failed) processes retained; 0 disables eviction
+	Events             *events.Bus
+	Logger             *slog.Logger
+	Sink               logs.Sink // optional durable log archive; nil disables persistence
 }
 
 // Manager owns all managed processes and is safe for concurrent use.
@@ -29,6 +33,7 @@ type Manager struct {
 	rootCtx context.Context
 	opts    Options
 	logs    *logs.Store
+	sink    logs.Sink
 
 	mu     sync.RWMutex
 	procs  map[string]*ManagedProcess
@@ -54,7 +59,8 @@ func New(rootCtx context.Context, opts Options) *Manager {
 	return &Manager{
 		rootCtx: rootCtx,
 		opts:    opts,
-		logs:    logs.NewStore(opts.LogCapacity),
+		logs:    logs.NewStoreWithSink(opts.LogCapacity, opts.Sink),
+		sink:    opts.Sink,
 		procs:   make(map[string]*ManagedProcess),
 	}
 }
@@ -70,17 +76,18 @@ func (m *Manager) Start(ctx context.Context, spec StartSpec, profile string, gra
 		ID:      id,
 		Spec:    spec,
 		Profile: profile,
-		Logs:    m.logs.Get(id),
-		logger:  m.opts.Logger,
 		wakeup:  newBroadcaster(),
+		logger:  m.opts.Logger,
 	}
-	m.logs.SetOnAppend(id, proc.wakeup.ping)
+	// The wakeup callback is wired in at construction, before the process is
+	// visible to readers, so it can never be mutated concurrently with Appends.
+	proc.Logs = m.logs.Get(id, proc.wakeup.ping)
 
 	m.mu.Lock()
 	m.procs[id] = proc
 	m.mu.Unlock()
 
-	if err := m.startInstance(ctx, proc, grace); err != nil {
+	if err := m.startInstance(proc, grace); err != nil {
 		m.mu.Lock()
 		delete(m.procs, id)
 		m.mu.Unlock()
@@ -116,21 +123,25 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	}
 
 	sigTerm(inst.cmd.Process)
+	graceTimer := time.NewTimer(grace)
+	defer graceTimer.Stop()
 	select {
 	case <-inst.done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(grace):
+	case <-graceTimer.C:
 	}
 
 	sigKill(inst.cmd.Process)
+	killTimer := time.NewTimer(2 * time.Second)
+	defer killTimer.Stop()
 	select {
 	case <-inst.done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(2 * time.Second):
+	case <-killTimer.C:
 		// Last resort: the process is unkillable or in an uninterruptible
 		// state. Mark the instance finished so callers can proceed.
 		inst.finish()
@@ -160,7 +171,71 @@ func (m *Manager) Restart(ctx context.Context, id string) error {
 	proc.mu.Lock()
 	proc.restarts++
 	proc.mu.Unlock()
-	return m.startInstance(ctx, proc, grace)
+	return m.startInstance(proc, grace)
+}
+
+// Remove deletes a process from the registry and frees its log buffers. A
+// starting, running or stopping process is refused unless force is true, in
+// which case it is stopped first. After removal no goroutine appends to the
+// process's buffers: for an already-terminal process the readers and waitLoop
+// have finished; for force removal Stop() waits for the instance to finish.
+func (m *Manager) Remove(id string, force bool) error {
+	proc, ok := m.Get(id)
+	if !ok {
+		return ErrNotFound
+	}
+	switch info := proc.Info(); info.Status {
+	case StatusStarting, StatusRunning, StatusStopping:
+		if !force {
+			return fmt.Errorf("process %q is %s; use force=true to stop and remove it", id, info.Status)
+		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), m.opts.DefaultGrace+3*time.Second)
+		err := m.Stop(stopCtx, id)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	delete(m.procs, id)
+	m.mu.Unlock()
+	m.logs.Delete(id)
+	return nil
+}
+
+// maybeEvictExited bounds the registry by removing the oldest terminal
+// (exited/stopped/failed) processes beyond the configured cap, oldest first
+// (LRU by exit time). Running processes are never touched.
+func (m *Manager) maybeEvictExited() {
+	cap := m.opts.MaxExitedProcesses
+	if cap <= 0 {
+		return
+	}
+	type term struct {
+		id   string
+		exit time.Time
+	}
+	m.mu.RLock()
+	var terms []term
+	for id, p := range m.procs {
+		info := p.Info()
+		switch info.Status {
+		case StatusExited, StatusStopped, StatusFailed:
+			exit := time.Time{}
+			if info.ExitedAt != nil {
+				exit = *info.ExitedAt
+			}
+			terms = append(terms, term{id: id, exit: exit})
+		}
+	}
+	m.mu.RUnlock()
+	if len(terms) <= cap {
+		return
+	}
+	sort.Slice(terms, func(i, j int) bool { return terms[i].exit.Before(terms[j].exit) })
+	for _, t := range terms[:len(terms)-cap] {
+		m.Remove(t.id, false)
+	}
 }
 
 // Get returns the managed process, if present.
@@ -189,20 +264,25 @@ func (m *Manager) Logs() *logs.Store { return m.logs }
 // Events exposes the shared event bus.
 func (m *Manager) Events() *events.Bus { return m.opts.Events }
 
-// Shutdown gracefully stops all managed processes. Returns an error only if a
-// process could not be stopped within the overall timeout.
+// Shutdown gracefully stops all managed processes, signalling them all
+// concurrently so the wall-clock cost is the slowest single process (bounded by
+// timeout), never N x timeout. Returns an error only if a process could not be
+// stopped within the overall timeout.
 func (m *Manager) Shutdown(timeout time.Duration) error {
 	procs := m.List()
-	var firstErr error
-	for _, p := range procs {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		err := m.Stop(ctx, p.ID)
-		cancel()
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
+	if len(procs) == 0 {
+		return nil
 	}
-	return firstErr
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	for _, p := range procs {
+		p := p
+		g.Go(func() error {
+			return m.Stop(ctx, p.ID)
+		})
+	}
+	return g.Wait()
 }
 
 func (m *Manager) validateSpec(spec StartSpec) error {

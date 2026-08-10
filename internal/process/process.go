@@ -58,16 +58,24 @@ type Info struct {
 	Restarts   int
 }
 
+// instanceSnapshot is an immutable view of an instance's lifecycle state. It
+// lives behind an atomic.Pointer so readers (Info, SendStdin, ...) can observe
+// it lock-free; writers build a new snapshot and swap it in under proc.mu to
+// avoid lost updates during status transitions.
+type instanceSnapshot struct {
+	status   Status
+	pid      int
+	started  time.Time
+	exited   *time.Time
+	exitCode *int
+}
+
 // instance represents a single run of a process. The logical ManagedProcess
 // identity is stable across restarts; instance IDs change on every run.
 type instance struct {
 	id        string
 	cmd       *exec.Cmd
-	status    Status
-	pid       int
-	started   time.Time
-	exited    *time.Time
-	exitCode  *int
+	snap      atomic.Pointer[instanceSnapshot]
 	done      chan struct{}
 	doneOnce  sync.Once
 	stopReq   atomic.Bool
@@ -76,11 +84,30 @@ type instance struct {
 	stdinR    io.Closer
 	stdinMu   sync.Mutex
 	stdinEOF  bool
-	entryFrom uint64 // first log entry ID that belongs to this instance
+	stdoutW   io.WriteCloser // write end of the stdout capture pipe
+	stderrW   io.WriteCloser // write end of the stderr capture pipe
+	entryFrom uint64         // first log entry ID that belongs to this instance
+	// readers tracks the stdout/stderr readLoop goroutines for this instance.
+	// waitLoop joins it after cmd.Wait() so the instance's done channel (and
+	// the Exited/Stopped event) only fires once the readers have flushed their
+	// final lines into the log buffers.
+	readers sync.WaitGroup
 }
 
 func (i *instance) finish() {
 	i.doneOnce.Do(func() { close(i.done) })
+}
+
+// closeWriters closes the write ends of the stdout/stderr capture pipes so the
+// readLoop goroutines see EOF. Called by waitLoop after cmd.Wait() has ensured
+// all child output has been copied into the pipes.
+func (i *instance) closeWriters() {
+	if i.stdoutW != nil {
+		i.stdoutW.Close()
+	}
+	if i.stderrW != nil {
+		i.stderrW.Close()
+	}
 }
 
 // ManagedProcess is the stable, logical identity of a supervised process. Its
@@ -98,23 +125,27 @@ type ManagedProcess struct {
 	logger   *slog.Logger
 }
 
-// Info returns a snapshot of the current instance.
+// Info returns a snapshot of the current instance. The instance pointer and
+// restarts counter are guarded by proc.mu; the per-instance lifecycle fields
+// are read lock-free from the immutable snapshot.
 func (p *ManagedProcess) Info() Info {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	inst := p.inst
+	restarts := p.restarts
+	p.mu.Unlock()
 	if inst == nil {
 		return Info{
 			ID: p.ID, Command: p.Spec.Command, Args: p.Spec.Args,
 			WorkDir: p.Spec.WorkDir, Profile: p.Profile,
-			Status: StatusCreated, Restarts: p.restarts,
+			Status: StatusCreated, Restarts: restarts,
 		}
 	}
+	snap := inst.snap.Load()
 	return Info{
-		ID: p.ID, InstanceID: inst.id, Status: inst.status,
+		ID: p.ID, InstanceID: inst.id, Status: snap.status,
 		Command: p.Spec.Command, Args: p.Spec.Args, WorkDir: p.Spec.WorkDir,
-		PID: inst.pid, StartedAt: inst.started, ExitedAt: inst.exited,
-		ExitCode: inst.exitCode, Profile: p.Profile, Restarts: p.restarts,
+		PID: snap.pid, StartedAt: snap.started, ExitedAt: snap.exited,
+		ExitCode: snap.exitCode, Profile: p.Profile, Restarts: restarts,
 	}
 }
 
@@ -152,10 +183,15 @@ func (p *ManagedProcess) EntryFrom() uint64 {
 
 func (p *ManagedProcess) setStatus(s Status) {
 	p.mu.Lock()
-	if p.inst != nil {
-		p.inst.status = s
+	defer p.mu.Unlock()
+	if p.inst == nil {
+		return
 	}
-	p.mu.Unlock()
+	old := p.inst.snap.Load()
+	p.inst.snap.Store(&instanceSnapshot{
+		status: s, pid: old.pid, started: old.started,
+		exited: old.exited, exitCode: old.exitCode,
+	})
 }
 
 // SubscribeLogs registers a waiter for new log entries. The returned channel is
@@ -175,8 +211,11 @@ func (p *ManagedProcess) SendStdin(data string) error {
 	p.mu.Lock()
 	inst := p.inst
 	p.mu.Unlock()
-	if inst == nil || inst.status == StatusFailed || inst.status == StatusStopped ||
-		inst.status == StatusExited {
+	if inst == nil {
+		return ErrAlreadyDead
+	}
+	if snap := inst.snap.Load(); snap.status == StatusFailed || snap.status == StatusStopped ||
+		snap.status == StatusExited {
 		return ErrAlreadyDead
 	}
 	inst.stdinMu.Lock()

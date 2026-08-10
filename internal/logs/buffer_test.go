@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -162,13 +163,26 @@ func TestConcurrentWritersAndReaders(t *testing.T) {
 			}
 		}(w)
 	}
+	// The reader must not spin forever after the writers finish (the buffers
+	// are never cleared), so it runs until the writers complete, then does a
+	// final scan and stops.
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		wg.Wait()
+	}()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for p.Len() > 0 {
+		for {
 			res := p.Query(Query{Stream: FilterAll, Lines: 50, Contains: "w"})
 			_ = res
 			p.After(0)
+			select {
+			case <-writerDone:
+				return
+			default:
+			}
 		}
 	}()
 	wg.Wait()
@@ -186,8 +200,8 @@ func TestConcurrentWritersAndReaders(t *testing.T) {
 
 func TestStoreIsolation(t *testing.T) {
 	s := NewStore(10)
-	p1 := s.Get("proc_a")
-	p2 := s.Get("proc_b")
+	p1 := s.Get("proc_a", nil)
+	p2 := s.Get("proc_b", nil)
 	p1.Append(StreamStdout, "a line")
 	p2.Append(StreamStdout, "b line")
 	if got := p1.Query(Query{}).Entries[0].Line; got != "a line" {
@@ -202,6 +216,50 @@ func TestStoreIsolation(t *testing.T) {
 	s.Delete("proc_a")
 	if s.GetOrNil("proc_a") != nil {
 		t.Fatal("proc_a should be deleted")
+	}
+}
+
+// TestOnAppendSetAtConstruction exercises B6: the callback is wired in by Get
+// at construction, fires once per append outside the lock, and is never
+// clobbered by a later Get for the same process.
+func TestOnAppendSetAtConstruction(t *testing.T) {
+	s := NewStore(10)
+	var calls atomic.Int32
+	p := s.Get("proc_cb", func() { calls.Add(1) })
+	// A later Get for the same process must return the same instance and must
+	// not reset the callback (it is immutable after construction).
+	if again := s.Get("proc_cb", nil); again != p {
+		t.Fatal("Get returned a different ProcessLogs for an existing process")
+	}
+	p.Append(StreamStdout, "one")
+	p.Append(StreamStderr, "two")
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("onAppend calls = %d, want 2", got)
+	}
+}
+
+// TestOnAppendConcurrentAppends runs concurrent Appends through the same
+// onAppend callback. This exercises the B6 contract (immutable callback,
+// invoked outside the lock) under -race.
+func TestOnAppendConcurrentAppends(t *testing.T) {
+	s := NewStore(100)
+	var calls atomic.Int32
+	p := s.Get("proc_race", func() { calls.Add(1) })
+	const writers = 4
+	const perWriter = 200
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				p.Append(StreamStdout, "line")
+			}
+		}()
+	}
+	wg.Wait()
+	if got := calls.Load(); got != writers*perWriter {
+		t.Fatalf("onAppend calls = %d, want %d", got, writers*perWriter)
 	}
 }
 

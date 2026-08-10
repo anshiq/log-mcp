@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -41,11 +42,16 @@ func (d Duration) Time() time.Duration { return time.Duration(d) }
 
 // RuntimeConfig holds runtime-wide knobs.
 type RuntimeConfig struct {
-	LogBufferLines  int      `yaml:"log_buffer_lines"`
-	ShutdownTimeout Duration `yaml:"shutdown_timeout"`
-	StopGrace       Duration `yaml:"stop_grace"`
-	MaxLogLines     int      `yaml:"max_log_lines"`
-	MaxLogBytes     int      `yaml:"max_log_bytes"`
+	LogBufferLines     int      `yaml:"log_buffer_lines"`
+	ShutdownTimeout    Duration `yaml:"shutdown_timeout"`
+	StopGrace          Duration `yaml:"stop_grace"`
+	MaxLogLines        int      `yaml:"max_log_lines"`
+	MaxLogBytes        int      `yaml:"max_log_bytes"`
+	MaxExitedProcesses int      `yaml:"max_exited_processes"`
+	LogStore           string   `yaml:"log_store"`       // "memory" (default) | "sqlite"
+	DBPath             string   `yaml:"db_path"`         // resolved against ProjectDir; default .agent-runtime/logs.db
+	DBMaxAgeDays       *int     `yaml:"db_max_age_days"` // nil -> 7; 0 = keep forever
+	DBMaxMB            *int64   `yaml:"db_max_mb"`       // nil -> 512; 0 = unlimited
 }
 
 func (r *RuntimeConfig) defaults() {
@@ -63,6 +69,20 @@ func (r *RuntimeConfig) defaults() {
 	}
 	if r.MaxLogBytes <= 0 {
 		r.MaxLogBytes = 512 * 1024
+	}
+	if r.MaxExitedProcesses <= 0 {
+		r.MaxExitedProcesses = 50
+	}
+	if r.LogStore == "" {
+		r.LogStore = "memory"
+	}
+	if r.DBMaxAgeDays == nil {
+		v := 7
+		r.DBMaxAgeDays = &v
+	}
+	if r.DBMaxMB == nil {
+		v := int64(512)
+		r.DBMaxMB = &v
 	}
 }
 
@@ -99,6 +119,7 @@ func (l *Loaded) Names() []string {
 	for n := range l.Config.Apps {
 		names = append(names, n)
 	}
+	sort.Strings(names)
 	return names
 }
 

@@ -1,6 +1,7 @@
 package events
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -76,4 +77,31 @@ func TestConcurrentPublish(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestPublishAssignsMonotonicIDs verifies every published event carries a
+// non-empty, monotonically increasing per-bus sequence ID.
+func TestPublishAssignsMonotonicIDs(t *testing.T) {
+	bus := New()
+	ch, unsub := bus.Subscribe()
+	defer unsub()
+	for i := 0; i < 10; i++ {
+		bus.Publish(Event{Type: Started})
+	}
+	var prev uint64
+	for i := 0; i < 10; i++ {
+		select {
+		case e := <-ch:
+			id, err := strconv.ParseUint(e.ID, 10, 64)
+			if err != nil {
+				t.Fatalf("bad event ID %q: %v", e.ID, err)
+			}
+			if id <= prev {
+				t.Fatalf("event IDs not strictly increasing: %d then %d", prev, id)
+			}
+			prev = id
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for event")
+		}
+	}
 }

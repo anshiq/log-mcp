@@ -2,7 +2,6 @@ package process
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +19,10 @@ const maxPendingLine = 256 * 1024
 
 // startInstance launches a new run of an existing logical process. It returns
 // as soon as the child has started; output capture continues asynchronously.
-func (m *Manager) startInstance(ctx context.Context, proc *ManagedProcess, grace time.Duration) error {
+// The caller's context is deliberately not used: the command derives from the
+// manager's root context so the process outlives the MCP request that started
+// it.
+func (m *Manager) startInstance(proc *ManagedProcess, grace time.Duration) error {
 	instID := m.newInstanceID()
 	if grace <= 0 {
 		grace = m.opts.DefaultGrace
@@ -33,14 +35,16 @@ func (m *Manager) startInstance(ctx context.Context, proc *ManagedProcess, grace
 	cmd.Env = append(os.Environ(), proc.Spec.Env...)
 	setProcAttr(cmd)
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("stderr pipe: %w", err)
-	}
+	// Child stdout/stderr are routed through in-memory pipes assigned as
+	// cmd.Stdout/cmd.Stderr (not StdoutPipe/StderrPipe). exec then runs its own
+	// copy goroutines, which cmd.Wait() awaits before returning: every byte the
+	// child writes is guaranteed to reach our readLoops before Wait completes.
+	// With StdoutPipe, Wait() would close the pipe read ends the moment the
+	// child exits, racing the readers and losing their final buffered lines.
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
 	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("stdin pipe: %w", err)
@@ -50,26 +54,34 @@ func (m *Manager) startInstance(ctx context.Context, proc *ManagedProcess, grace
 	inst := &instance{
 		id:        instID,
 		cmd:       cmd,
-		status:    StatusStarting,
 		done:      make(chan struct{}),
 		grace:     grace,
 		stdin:     stdinW,
 		stdinR:    stdinR,
+		stdoutW:   stdoutW,
+		stderrW:   stderrW,
 		entryFrom: proc.Logs.NextID(),
 	}
+	inst.snap.Store(&instanceSnapshot{status: StatusStarting})
 
 	proc.mu.Lock()
 	proc.inst = inst
 	proc.mu.Unlock()
 
 	if err := cmd.Start(); err != nil {
-		inst.exitCode = new(int)
-		*inst.exitCode = -1
-		inst.exited = new(time.Time)
-		*inst.exited = time.Now()
-		proc.setStatus(StatusFailed)
+		now := time.Now()
+		code := -1
+		proc.mu.Lock()
+		inst.snap.Store(&instanceSnapshot{
+			status: StatusFailed, exited: &now, exitCode: &code,
+		})
+		proc.mu.Unlock()
 		stdinW.Close()
 		stdinR.Close()
+		// No copy goroutines or readers were spawned; close the pipes so any
+		// (nonexistent) reader would unblock and the pipe can be GC'd.
+		stdoutW.Close()
+		stderrW.Close()
 		inst.finish()
 		m.Events().Publish(events.Event{
 			Type: events.Failed, ProcessID: proc.ID, InstanceID: instID,
@@ -78,20 +90,23 @@ func (m *Manager) startInstance(ctx context.Context, proc *ManagedProcess, grace
 		return fmt.Errorf("start %q: %w", proc.Spec.Command, err)
 	}
 
-	inst.pid = cmd.Process.Pid
-	inst.started = time.Now()
-	proc.setStatus(StatusRunning)
+	now := time.Now()
+	proc.mu.Lock()
+	inst.snap.Store(&instanceSnapshot{status: StatusRunning, pid: cmd.Process.Pid, started: now})
+	proc.mu.Unlock()
+	m.recordInstance(proc, inst, now, nil, nil)
 	m.opts.Logger.Debug("process started",
 		"process_id", proc.ID, "instance_id", instID,
-		"pid", inst.pid, "command", proc.Spec.Command, "args", proc.Spec.Args)
+		"pid", cmd.Process.Pid, "command", proc.Spec.Command, "args", proc.Spec.Args)
 
-	go m.readLoop(proc, inst, stdout, logs.StreamStdout)
-	go m.readLoop(proc, inst, stderr, logs.StreamStderr)
+	inst.readers.Add(2)
+	go m.readLoop(proc, inst, stdoutR, logs.StreamStdout)
+	go m.readLoop(proc, inst, stderrR, logs.StreamStderr)
 	go m.waitLoop(proc, inst)
 
 	m.Events().Publish(events.Event{
 		Type: events.Started, ProcessID: proc.ID, InstanceID: instID,
-		Timestamp: inst.started, Payload: map[string]any{"pid": inst.pid},
+		Timestamp: now, Payload: map[string]any{"pid": cmd.Process.Pid},
 	})
 	return nil
 }
@@ -100,6 +115,7 @@ func (m *Manager) startInstance(ctx context.Context, proc *ManagedProcess, grace
 // process output to the runtime's own logger: managed logs live only in the
 // bounded per-process buffers.
 func (m *Manager) readLoop(proc *ManagedProcess, inst *instance, r io.Reader, stream logs.Stream) {
+	defer inst.readers.Done()
 	br := bufio.NewReaderSize(r, 64*1024)
 	var pending string
 	for {
@@ -140,9 +156,31 @@ func splitLines(logs *logs.ProcessLogs, stream logs.Stream, pending string) stri
 	}
 }
 
+// recordInstance writes an instance lifecycle record to the durable sink, if
+// one is configured. exitedAt/exitCode are nil on the start record and set on
+// the exit record. Failures are logged at debug level only: instance metadata
+// is auxiliary and must never affect process management.
+func (m *Manager) recordInstance(proc *ManagedProcess, inst *instance, startedAt time.Time, exitedAt *time.Time, exitCode *int) {
+	if m.sink == nil {
+		return
+	}
+	var exNanos *int64
+	if exitedAt != nil {
+		v := exitedAt.UnixNano()
+		exNanos = &v
+	}
+	var code *int64
+	if exitCode != nil {
+		v := int64(*exitCode)
+		code = &v
+	}
+	_ = m.sink.RecordInstance(proc.ID, inst.id, proc.Spec.Command, proc.Spec.WorkDir, proc.Profile, startedAt.UnixNano(), exNanos, code)
+}
+
 // waitLoop waits for the child to exit, records the result and notifies
-// waiters. The stdout/stderr readers run independently and may finish slightly
-// after this returns.
+// waiters. It joins the stdout/stderr readers after cmd.Wait() so final lines
+// are flushed into the log buffers before done closes and the Exited/Stopped
+// event fires.
 func (m *Manager) waitLoop(proc *ManagedProcess, inst *instance) {
 	err := inst.cmd.Wait()
 	// The child has exited; release both ends of the stdin pipe so the fds are
@@ -161,16 +199,30 @@ func (m *Manager) waitLoop(proc *ManagedProcess, inst *instance) {
 	}
 	now := time.Now()
 
-	proc.mu.Lock()
-	inst.exitCode = &code
-	inst.exited = &now
-	if inst.stopReq.Load() {
-		inst.status = StatusStopped
-	} else {
-		inst.status = StatusExited
-	}
-	proc.mu.Unlock()
+	// cmd.Wait() has awaited exec's copy goroutines, so every byte the child
+	// wrote is now buffered in our io.Pipes. Close the write ends so the
+	// readers see EOF, then join them: this guarantees the final lines are
+	// flushed into the log buffers before done closes and the exit event fires.
+	inst.closeWriters()
+	inst.readers.Wait()
 
+	proc.mu.Lock()
+	old := inst.snap.Load()
+	status := StatusExited
+	if inst.stopReq.Load() {
+		status = StatusStopped
+	}
+	inst.snap.Store(&instanceSnapshot{
+		status: status, pid: old.pid, started: old.started,
+		exited: &now, exitCode: &code,
+	})
+	proc.mu.Unlock()
+	m.recordInstance(proc, inst, old.started, &now, &code)
+
+	// Evict oldest terminal processes beyond the cap BEFORE done closes, so
+	// once Done is observable the registry and log buffers are already bounded
+	// for the daemon's lifetime.
+	m.maybeEvictExited()
 	inst.finish()
 	proc.wakeup.ping() // wake waiters so they can re-scan for final lines
 

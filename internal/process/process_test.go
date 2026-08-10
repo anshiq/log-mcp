@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -416,6 +417,43 @@ func TestShutdownStopsEverything(t *testing.T) {
 	}
 }
 
+// TestShutdownConcurrent exercises R3: Shutdown must signal all processes at
+// once so total wall-clock is ~the per-process grace period, not N x grace.
+// Six SIGTERM-ignoring processes each take a 300ms grace before SIGKILL; a
+// sequential shutdown would take ~1.8s and blow the 1s budget.
+func TestShutdownConcurrent(t *testing.T) {
+	m := process.New(context.Background(), process.Options{DefaultGrace: 300 * time.Millisecond})
+	const n = 6
+	for i := 0; i < n; i++ {
+		if _, err := m.Start(context.Background(), helperCommand(t, "ignore-term"), "test", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, 5*time.Second, "all running", func() bool {
+		running := 0
+		for _, p := range m.List() {
+			if p.Info().Status == process.StatusRunning {
+				running++
+			}
+		}
+		return running == n
+	})
+
+	timeout := time.Second
+	start := time.Now()
+	if err := m.Shutdown(timeout); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > timeout {
+		t.Fatalf("shutdown took %v; concurrent shutdown must complete within the %v timeout (N x grace would take ~%v)", elapsed, timeout, n*300*time.Millisecond)
+	}
+	for _, p := range m.List() {
+		if p.Info().Status != process.StatusStopped {
+			t.Fatalf("process %s status = %q after shutdown", p.ID, p.Info().Status)
+		}
+	}
+}
+
 func TestPartialLineFragments(t *testing.T) {
 	m := newManager(t)
 	proc, err := m.Start(context.Background(), helperCommand(t, "print", "2"), "test", 0)
@@ -446,5 +484,208 @@ func TestListAfterExit(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("exited process missing from list")
+	}
+}
+
+// TestRemoveExitedProcess exercises R4: removing a terminal process deletes it
+// from the registry and frees its log buffers.
+func TestRemoveExitedProcess(t *testing.T) {
+	m := newManager(t)
+	proc, err := m.Start(context.Background(), helperCommand(t, "once"), "test", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-proc.Done()
+	if err := m.Remove(proc.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Get(proc.ID); ok {
+		t.Fatal("removed process still in registry")
+	}
+	if m.Logs().GetOrNil(proc.ID) != nil {
+		t.Fatal("removed process log buffers still present")
+	}
+	if err := m.Remove(proc.ID, false); err != process.ErrNotFound {
+		t.Fatalf("second remove error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestRemoveRunningRefused exercises R4: a running process cannot be removed
+// unless force is set.
+func TestRemoveRunningRefused(t *testing.T) {
+	m := newManager(t)
+	proc, err := m.Start(context.Background(), helperCommand(t, "ignore-term"), "test", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, "running", func() bool { return proc.Info().Status == process.StatusRunning })
+	if err := m.Remove(proc.ID, false); err == nil {
+		t.Fatal("expected error removing a running process without force")
+	}
+	if _, ok := m.Get(proc.ID); !ok {
+		t.Fatal("refused removal must leave the process in the registry")
+	}
+	if err := m.Stop(context.Background(), proc.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRemoveRunningForce exercises R4: force=true stops the process first, then
+// removes it.
+func TestRemoveRunningForce(t *testing.T) {
+	m := newManager(t)
+	proc, err := m.Start(context.Background(), helperCommand(t, "ignore-term"), "test", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, "running", func() bool { return proc.Info().Status == process.StatusRunning })
+	if err := m.Remove(proc.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Get(proc.ID); ok {
+		t.Fatal("force-removed process still in registry")
+	}
+	if m.Logs().GetOrNil(proc.ID) != nil {
+		t.Fatal("force-removed process log buffers still present")
+	}
+}
+
+// TestExitedProcessEviction exercises R4: terminal processes beyond the cap are
+// evicted oldest-first while running processes are untouched.
+func TestExitedProcessEviction(t *testing.T) {
+	m := process.New(context.Background(), process.Options{MaxExitedProcesses: 2})
+	t.Cleanup(func() { m.Shutdown(5 * time.Second) })
+	const n = 5
+	for i := 0; i < n; i++ {
+		proc, err := m.Start(context.Background(), helperCommand(t, "once"), "test", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-proc.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("process did not exit")
+		}
+	}
+	// Eviction runs synchronously in waitLoop before done closes; the last
+	// Done implies the registry has already been trimmed.
+	if got := len(m.List()); got > 2 {
+		t.Fatalf("registry has %d terminal processes, want <= 2", got)
+	}
+	for _, p := range m.List() {
+		switch p.Info().Status {
+		case process.StatusExited, process.StatusStopped, process.StatusFailed:
+		default:
+			t.Fatalf("eviction must keep only terminal processes, got %q", p.Info().Status)
+		}
+	}
+}
+
+// TestSendStdinConcurrentWithExitNoRace exercises B2: SendStdin reads the
+// instance status without holding proc.mu while waitLoop writes it under the
+// lock. A tight caller loop racing a short-lived process's exit must not trip
+// the race detector.
+func TestSendStdinConcurrentWithExitNoRace(t *testing.T) {
+	m := newManager(t)
+	for iter := 0; iter < 10; iter++ {
+		proc, err := m.Start(context.Background(), helperCommand(t, "stderr-exit"), "test", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						// Errors (dead process / stdin closed) are expected and fine.
+						_ = proc.SendStdin("data\n")
+					}
+				}
+			}()
+		}
+		select {
+		case <-proc.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("process did not exit")
+		}
+		time.Sleep(20 * time.Millisecond) // widen the transition window
+		close(stop)
+		wg.Wait()
+	}
+}
+
+// TestStartConcurrentInfoNoRace exercises B3: startInstance publishes
+// proc.inst and then mutates pid/started (success) or exitCode/exited
+// (failure) without proc.mu while Info() reads them under the lock. Polling
+// Info() during starts of both a failing and a short-lived command must not
+// trip the race detector.
+func TestStartConcurrentInfoNoRace(t *testing.T) {
+	m := newManager(t)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				for _, p := range m.List() {
+					_ = p.Info()
+				}
+			}
+		}
+	}()
+
+	for i := 0; i < 30; i++ {
+		// Failure path: cmd.Start() fails after inst is published.
+		spec := process.StartSpec{Command: "/nonexistent/binary-that-does-not-exist", WorkDir: t.TempDir()}
+		m.Start(context.Background(), spec, "test", 0)
+	}
+	for i := 0; i < 30; i++ {
+		// Success path: a short-lived command keeps inst alive while Info polls.
+		proc, err := m.Start(context.Background(), helperCommand(t, "once"), "test", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-proc.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("process did not exit")
+		}
+	}
+	close(stop)
+	wg.Wait()
+}
+
+// TestFinalLinesFlushedBeforeDone exercises B4: waitLoop previously closed the
+// done channel as soon as cmd.Wait() returned, potentially before the
+// stdout/stderr readers had flushed their final buffered lines. A process that
+// writes many lines and exits immediately must have ALL of them visible once
+// Done fires. Loop many times because the loss is timing-dependent.
+func TestFinalLinesFlushedBeforeDone(t *testing.T) {
+	m := newManager(t)
+	const lines = 50
+	for i := 0; i < 150; i++ {
+		proc, err := m.Start(context.Background(), helperCommand(t, "burst", strconv.Itoa(lines)), "test", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-proc.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("process did not exit")
+		}
+		got := proc.Logs.Count(logs.StreamStdout)
+		if got != lines {
+			t.Fatalf("iteration %d: stdout lines = %d, want %d (final lines lost before done)", i, got, lines)
+		}
 	}
 }

@@ -18,7 +18,8 @@ and how the pieces fit together.
 ```
 cmd/agent-runtime/        main.go — subcommand dispatch (stdlib flag)
 internal/process/         generic process manager, lifecycle, process-group kill
-internal/logs/            bounded ring buffers + querying
+internal/logs/            bounded ring buffers + querying (Sink interface in sink.go)
+internal/logstore/        optional durable SQLite log archive (async writer, retention)
 internal/events/          non-blocking pub/sub for lifecycle events
 internal/profile/         framework profiles (detection, readiness, defaults)
 internal/config/          agent-runtime.yaml parsing + dotenv env files
@@ -64,6 +65,13 @@ ManagedProcess                      (per logical process_id)
       └── wait goroutine ──► cmd.Wait() ──► status/exit code ──► events.Bus
 ```
 
+The wait goroutine (`waitLoop`) does not close the instance's `done` channel
+until the stdout/stderr readers have been joined: `cmd.Wait()` first awaits
+exec's copy goroutines, the pipe write ends are then closed so the readers see
+EOF, and the readers are joined before the final status snapshot is stored.
+Final log lines are therefore guaranteed flushed into the buffers (and the
+durable sink, when configured) before waiters observe exit.
+
 ### Process identity
 
 - `process_id` (`proc_<hex>`) is **logical and stable** across restarts. Logs
@@ -72,6 +80,15 @@ ManagedProcess                      (per logical process_id)
 - An *instance log floor* (`entryFrom`) marks the first log entry ID belonging
   to the current instance, so `wait_for_log` after a restart never matches the
   previous instance's output.
+- Instance lifecycle state lives in an **immutable snapshot** behind an
+  `atomic.Pointer`: status reads (`Info`, `SendStdin` checks, eviction scans)
+  are lock-free; writers build a fresh snapshot and swap it in under `proc.mu`.
+- The registry is **bounded**. `runtime.max_exited_processes` (default 50)
+  auto-evicts the oldest terminal (exited/stopped/failed) processes once the
+  cap is exceeded (LRU by exit time), running processes are never touched. The
+  `remove_process` tool deletes a process from the registry and frees its log
+  buffers (plus its archive rows when a sink is configured); it refuses running
+  processes unless `force=true`, which stops them first.
 
 ### Process-group termination (Unix)
 
@@ -87,9 +104,26 @@ child is signalled — documented limitation.
 - Default 10,000 lines per stream per process (configurable).
 - `logs.Entry{ID, Timestamp, Stream, Line}` with a single monotonic ID counter
   per process shared across stdout/stderr, enabling chronological merge and
-  `Since`/`After` scans for waiters.
+  `From`/`After` scans for waiters.
 - Reader uses `bufio.Reader.ReadString('\n')`, accumulates partial lines, and
   caps an unterminated line at 256 KiB to avoid unbounded growth.
+
+### SQLite archive (optional)
+
+With `runtime.log_store: sqlite`, every appended entry is also forwarded to a
+durable SQLite archive (`internal/logstore`, `modernc.org/sqlite`, pure Go, no
+cgo) in WAL mode with `synchronous=NORMAL`. Writes are asynchronous: a bounded
+queue is drained by a single writer goroutine that batches entries into
+transactions and flushes on a timer or when the batch fills; if the queue is
+full entries are dropped with a counter (readers are never blocked on disk).
+`get_logs` transparently back-fills from the archive when the in-memory ring can
+no longer satisfy the requested tail (older entries rotated out), merging by ID
+and reporting `source: "memory"` or `"memory+db"`. A retention janitor runs on
+boot and hourly, pruning by age (`db_max_age_days`) and file size (`db_max_mb`)
+with incremental vacuum. If the database cannot be opened the runtime warns and
+falls back to memory — persistence never prevents startup. `instances` rows
+record each start/exit for context; the archive is a log store, not a process
+registry.
 
 ### Waiters
 
@@ -99,10 +133,12 @@ child is signalled — documented limitation.
 2. Scan `From(entryFrom)` for a match.
 3. Else `select` on wakeup / process-done / ctx / timeout, then rescan.
 
-Because the buffer is the source of truth, dropped wakeups are harmless — a
-missed ping just means the next scan catches up. Multiple independent waiters
-and cancellation are supported. `wait_for_exit` is a `select` on the instance's
-`done` channel.
+`From`/`After` operate on the ID-sorted rings: each ring's suffix is located by
+binary search and the two suffixes are merged with a 2-way merge, so scans are
+O(n) in the matching entries — no full sort. Because the buffer is the source
+of truth, dropped wakeups are harmless — a missed ping just means the next scan
+catches up. Multiple independent waiters and cancellation are supported.
+`wait_for_exit` is a `select` on the instance's `done` channel.
 
 ### MCP
 
@@ -131,6 +167,9 @@ exact config block per agent:
 - **Codex** — `~/.codex/config.toml` `[mcp_servers.agent-runtime]`, appended if
   absent.
 - **Gemini CLI** — `~/.gemini/settings.json`, JSON-merged.
+- **opencode** — interactive installer: discovers project `opencode.json[.c]`,
+  `.opencode/opencode.json` and global `~/.config/opencode/opencode.json[.c]`,
+  asks where to install, and performs a byte-preserving JSONC merge.
 - **generic** — prints the stdio command line for any MCP client.
 
 `--write` is opt-in; the default is print-only (nothing outside the project is
@@ -138,9 +177,13 @@ touched without an explicit flag).
 
 ## Shutdown
 
-On `SIGINT`/`SIGTERM` or agent disconnect: the MCP transport closes, the runtime
-cancels its root context, and the manager stops every process (SIGTERM group →
-bounded grace → SIGKILL group). Never hangs waiting on a child.
+On `SIGINT`/`SIGTERM` or agent disconnect: the MCP transport closes, the manager
+stops every process, and the runtime cancels its root context. Stops are
+**concurrent**: all processes are signalled at once (via `errgroup`), so the
+wall-clock cost is the slowest single process — bounded by timeout — never N ×
+timeout. When a durable sink is configured it is flushed and closed *before*
+the root context is cancelled, so the archive's writer drains cleanly and the
+janitor observes cancellation only afterwards. Never hangs waiting on a child.
 
 ## Security boundary
 
@@ -153,7 +196,6 @@ auto-injected into agent context.
 
 - Recursive process-tree walking and detached-process tracking.
 - Windows job-object termination.
-- Persistent event/log store (SQLite).
 - Streamable HTTP / remote transport.
 - Background tasks, schedulers, watchers as first-class runtime entities.
 - Regex/custom filtering beyond `contains`.

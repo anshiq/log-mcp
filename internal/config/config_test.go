@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,6 +71,26 @@ func TestDefaults(t *testing.T) {
 	if rc.MaxLogBytes != 512*1024 {
 		t.Fatalf("default max_log_bytes = %d", rc.MaxLogBytes)
 	}
+	if rc.MaxExitedProcesses != 50 {
+		t.Fatalf("default max_exited_processes = %d", rc.MaxExitedProcesses)
+	}
+	if rc.LogStore != "memory" {
+		t.Fatalf("default log_store = %q, want memory", rc.LogStore)
+	}
+}
+
+func TestMaxExitedProcessesOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte("runtime:\n  max_exited_processes: 7\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Config.Runtime.MaxExitedProcesses; got != 7 {
+		t.Fatalf("max_exited_processes = %d, want 7", got)
+	}
 }
 
 func TestInvalidDuration(t *testing.T) {
@@ -78,6 +101,30 @@ func TestInvalidDuration(t *testing.T) {
 	}
 	if _, err := LoadFile(path); err == nil {
 		t.Fatal("expected error for invalid duration")
+	}
+}
+
+func TestNamesSorted(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("apps:\n")
+	names := []string{"zebra", "alpha", "mango", "delta", "bravo", "echo", "charlie", "foxtrot", "golf", "lima"}
+	for _, n := range names {
+		fmt.Fprintf(&b, "  %s:\n    command: [\"true\"]\n", n)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := l.Names()
+	if !sort.StringsAreSorted(got) {
+		t.Fatalf("Names() not sorted: %v", got)
+	}
+	if len(got) != len(names) {
+		t.Fatalf("Names() length = %d, want %d", len(got), len(names))
 	}
 }
 

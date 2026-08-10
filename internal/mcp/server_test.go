@@ -361,6 +361,40 @@ func TestListAppsTool(t *testing.T) {
 	}
 }
 
+func TestRemoveProcessTool(t *testing.T) {
+	_, session := connect(t)
+	// Exited process: removable.
+	once, _ := call[api.StartResult](t, session, "start_process", startArgs("once"))
+	call[api.WaitForExitResult](t, session, "wait_for_exit", map[string]any{
+		"process_id": once.ProcessID, "timeout_ms": 5000,
+	})
+	res, ok := call[api.RemoveProcessResult](t, session, "remove_process", map[string]any{"process_id": once.ProcessID})
+	if !ok || !res.Removed {
+		t.Fatalf("remove of exited process failed: %+v", res)
+	}
+	if _, ok := call[api.GetLogsResult](t, session, "get_logs", map[string]any{"process_id": once.ProcessID}); ok {
+		t.Fatal("logs should be gone after remove_process")
+	}
+	// Running process: refused without force.
+	running, _ := call[api.StartResult](t, session, "start_process", startArgs("ignore-term"))
+	if _, ok := call[api.RemoveProcessResult](t, session, "remove_process", map[string]any{"process_id": running.ProcessID}); ok {
+		t.Fatal("expected error removing a running process without force")
+	}
+	// Force removes a running process.
+	res, ok = call[api.RemoveProcessResult](t, session, "remove_process", map[string]any{"process_id": running.ProcessID, "force": true})
+	if !ok || !res.Removed {
+		t.Fatalf("force remove failed: %+v", res)
+	}
+	list, _ := call[api.ListResult](t, session, "list_processes", map[string]any{})
+	if len(list.Processes) != 0 {
+		t.Fatalf("registry not empty after removals: %+v", list.Processes)
+	}
+	// Unknown id errors.
+	if _, ok := call[api.RemoveProcessResult](t, session, "remove_process", map[string]any{"process_id": "nope"}); ok {
+		t.Fatal("expected error for unknown process")
+	}
+}
+
 func TestMalformedParameters(t *testing.T) {
 	_, session := connect(t)
 	// Non-object args should produce a tool error, not a crash.

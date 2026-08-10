@@ -115,8 +115,6 @@ func targetPath(agent Agent, projectDir string) string {
 		return filepath.Join(home, ".codex", "config.toml")
 	case Gemini:
 		return filepath.Join(home, ".gemini", "settings.json")
-	case OpenCode:
-		return filepath.Join(projectDir, "opencode.json")
 	}
 	return ""
 }
@@ -143,17 +141,12 @@ func Write(agent Agent, serverPath, projectDir string) (string, error) {
 		if err := mergeJSON(path, block, "mcpServers", "agent-runtime"); err != nil {
 			return "", err
 		}
-	case OpenCode:
-		if err := mergeJSON(path, block, "mcp", "agent-runtime"); err != nil {
-			return "", err
-		}
-		if err := ensureSchema(path); err != nil {
-			return "", err
-		}
 	case Codex:
 		if err := appendTOML(path, block); err != nil {
 			return "", err
 		}
+	default:
+		return "", fmt.Errorf("write is not supported for the %s agent; use the dedicated flow", agent)
 	}
 	return path, nil
 }
@@ -183,24 +176,6 @@ func mergeJSON(path, block, topKey, serverKey string) error {
 	top[serverKey] = entry
 
 	return writeJSON(path, existing)
-}
-
-// ensureSchema adds the opencode config schema pointer to an existing JSON
-// file without disturbing its other keys.
-func ensureSchema(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("%s is not valid JSON: %w", path, err)
-	}
-	if _, ok := cfg["$schema"]; ok {
-		return nil
-	}
-	cfg["$schema"] = "https://opencode.ai/config.json"
-	return writeJSON(path, cfg)
 }
 
 func writeJSON(path string, v any) error {

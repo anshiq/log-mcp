@@ -52,6 +52,11 @@ type waitForExitIn struct {
 	TimeoutMS int    `json:"timeout_ms,omitempty" jsonschema:"Timeout in milliseconds (default 30000, max 600000)."`
 }
 
+type removeProcessIn struct {
+	ProcessID string `json:"process_id" jsonschema:"The process_id returned by start_process."`
+	Force     bool   `json:"force,omitempty" jsonschema:"Stop the process first if it is still running, then remove it. Default false (running processes are refused)."`
+}
+
 func registerTools(server *mcp.Server, h *handlers) {
 	mcp.AddTool(server,
 		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from agent-runtime.yaml). Returns immediately with a process_id; the process keeps running in the background."},
@@ -182,6 +187,17 @@ func registerTools(server *mcp.Server, h *handlers) {
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *api.ListAppsResult, error) {
 			h.log(ctx, "list_apps", nil)
 			res, err := h.rt.Apps()
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "remove_process", Description: "Remove a terminated process from the registry and free its log buffers. Refuses to remove a process that is still running unless force=true, which stops it first. Use to keep long-running daemons bounded by removing exited processes you no longer need."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in removeProcessIn) (*mcp.CallToolResult, *api.RemoveProcessResult, error) {
+			h.log(ctx, "remove_process", in)
+			res, err := h.rt.RemoveProcess(in.ProcessID, in.Force)
 			if err != nil {
 				return nil, nil, err
 			}

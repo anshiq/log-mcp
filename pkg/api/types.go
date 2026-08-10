@@ -83,6 +83,7 @@ type GetLogsResult struct {
 	Truncated      bool       `json:"truncated"`
 	ReturnedLines  int        `json:"returned_lines"`
 	AvailableLines int        `json:"available_lines"`
+	Source         string     `json:"source,omitempty"` // "memory" (default) or "memory+db" when back-filled from the archive
 }
 
 // ClearLogsResult is the response of clear_logs.
@@ -95,6 +96,18 @@ type ClearLogsResult struct {
 // SendStdinResult is the response of send_stdin.
 type SendStdinResult struct {
 	Written int `json:"written_bytes"`
+}
+
+// RemoveProcessRequest is the input to remove_process.
+type RemoveProcessRequest struct {
+	ProcessID string `json:"process_id"`
+	Force     bool   `json:"force,omitempty"` // stop a running process before removing it
+}
+
+// RemoveProcessResult is the response of remove_process.
+type RemoveProcessResult struct {
+	ProcessID string `json:"process_id"`
+	Removed   bool   `json:"removed"`
 }
 
 // WaitForLogRequest is the input to wait_for_log. Exactly one matcher must be

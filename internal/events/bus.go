@@ -1,7 +1,9 @@
 package events
 
 import (
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,6 +22,9 @@ const (
 
 // Event is a single runtime event.
 type Event struct {
+	// ID is a monotonic per-bus sequence number assigned by Publish. It makes
+	// events individually addressable (a future get_events tool can page by
+	// ID); it is empty only for events that were never published.
 	ID         string
 	Type       Type
 	ProcessID  string
@@ -33,6 +38,7 @@ type Event struct {
 // routed through here; the per-process log buffers are the source of truth.
 type Bus struct {
 	mu   sync.RWMutex
+	seq  atomic.Uint64
 	subs map[chan Event]struct{}
 }
 
@@ -41,8 +47,10 @@ func New() *Bus {
 }
 
 // Publish fans an event out to all subscribers without blocking. Slow or
-// absent subscribers simply miss this event.
+// absent subscribers simply miss this event. Each event is stamped with the
+// bus's next monotonic sequence ID.
 func (b *Bus) Publish(e Event) {
+	e.ID = strconv.FormatUint(b.seq.Add(1), 10)
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for ch := range b.subs {
