@@ -182,6 +182,142 @@ func TestShellCommandMissingTarget(t *testing.T) {
 	}
 }
 
+func TestParseShellArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantShell string
+		wantPos   []string
+		wantErr   string
+	}{
+		{
+			name:      "flag after target",
+			args:      []string{"proc_abc", "--shell", "/bin/sh"},
+			wantShell: "/bin/sh",
+			wantPos:   []string{"proc_abc"},
+		},
+		{
+			name:      "flag before target",
+			args:      []string{"--shell", "/bin/sh", "proc_abc"},
+			wantShell: "/bin/sh",
+			wantPos:   []string{"proc_abc"},
+		},
+		{
+			name:      "inline double dash",
+			args:      []string{"proc_abc", "--shell=/bin/sh"},
+			wantShell: "/bin/sh",
+			wantPos:   []string{"proc_abc"},
+		},
+		{
+			name:      "inline single dash",
+			args:      []string{"-shell=/bin/bash", "proc_abc"},
+			wantShell: "/bin/bash",
+			wantPos:   []string{"proc_abc"},
+		},
+		{
+			name:      "single dash space separated",
+			args:      []string{"-shell", "/bin/sh", "proc_abc"},
+			wantShell: "/bin/sh",
+			wantPos:   []string{"proc_abc"},
+		},
+		{
+			name:      "multiple targets still returned",
+			args:      []string{"proc_a", "proc_b", "--shell", "/bin/sh"},
+			wantShell: "/bin/sh",
+			wantPos:   []string{"proc_a", "proc_b"},
+		},
+		{
+			name:    "empty args",
+			args:    nil,
+			wantPos: []string{},
+		},
+		{
+			name:    "unknown flag",
+			args:    []string{"proc_abc", "--bogus"},
+			wantErr: `unknown flag "--bogus"`,
+		},
+		{
+			name:    "help treated as unknown flag",
+			args:    []string{"--help"},
+			wantErr: `unknown flag "--help"`,
+		},
+		{
+			name:    "shell flag at end without value",
+			args:    []string{"proc_abc", "--shell"},
+			wantErr: "--shell requires an argument",
+		},
+		{
+			name:    "single dash shell flag at end without value",
+			args:    []string{"-shell"},
+			wantErr: "--shell requires an argument",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotShell, gotPos, err := parseShellArgs(tt.args)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got shell=%q pos=%v", tt.wantErr, gotShell, gotPos)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotShell != tt.wantShell {
+				t.Fatalf("shell = %q, want %q", gotShell, tt.wantShell)
+			}
+			if len(gotPos) != len(tt.wantPos) {
+				t.Fatalf("pos = %v, want %v", gotPos, tt.wantPos)
+			}
+			for i := range tt.wantPos {
+				if gotPos[i] != tt.wantPos[i] {
+					t.Fatalf("pos = %v, want %v", gotPos, tt.wantPos)
+				}
+			}
+		})
+	}
+}
+
+func TestShellTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		target     string
+		wantProcID string
+		wantApp    string
+	}{
+		{
+			name:       "proc id",
+			target:     "proc_abc",
+			wantProcID: "proc_abc",
+			wantApp:    "",
+		},
+		{
+			name:       "app name",
+			target:     "web",
+			wantProcID: "",
+			wantApp:    "web",
+		},
+		{
+			name:       "empty target",
+			target:     "",
+			wantProcID: "",
+			wantApp:    "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			procID, app := shellTarget(tt.target)
+			if procID != tt.wantProcID || app != tt.wantApp {
+				t.Fatalf("shellTarget(%q) = (%q, %q), want (%q, %q)", tt.target, procID, app, tt.wantProcID, tt.wantApp)
+			}
+		})
+	}
+}
+
 // TestIntegrateSkillPrintsHint exercises the print-only path of `integrate
 // skill`: it must not write anything (only print), and the output must show
 // the install hint, the target dirs, and the embedded file list.
