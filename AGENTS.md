@@ -18,7 +18,7 @@ go test -bench=. -benchmem ./internal/logs/   # log-path benchmarks
 ## Repo layout
 
 ```
-cmd/agent-runtime/        main.go — subcommand dispatch (stdlib flag)
+cmd/agent-runtime/        main.go — entry point
 internal/process/         generic process manager, lifecycle, process-group kill
 internal/logs/            bounded ring buffers + querying (Sink interface in sink.go)
 internal/logstore/        optional durable SQLite log archive (async writer, retention)
@@ -27,13 +27,30 @@ internal/profile/         framework profiles (detection, readiness, defaults)
 internal/config/          agent-runtime.yaml parsing + dotenv env files
 internal/runtime/         the facade MCP and CLI talk to; waiters live here
 internal/mcp/             MCP server: thin tool handlers over the facade
-internal/cli/             serve / run / integrate / version
+internal/cli/             cobra command tree (root.go), interactive REPL (repl.go), run/shell/integrate helpers
 internal/integrate/       agent config generation (claude/codex/gemini/opencode)
-internal/integrate/skill/agent-runtime-ready/   embedded skill (go:embed) installed via integrate skill
+internal/integrate/skill/ embedded skills (go:embed): agent-runtime-ready/, agent-runtime-logging/ — installed via integrate skill
 internal/integration/     end-to-end tests against real runtimes
 pkg/api/                  shared request/response types
-examples/                 node / nextjs / django / java example apps
 ```
+
+## CLI
+
+- `agent-runtime serve` — the MCP stdio server (what coding agents launch).
+- `agent-runtime` with no arguments — the interactive setup wizard: init
+  `agent-runtime.yaml`, install the embedded skills, connect an AI coding agent
+  (claude/codex/gemini/opencode), remove installed skills or an agent's MCP
+  config, open the process manager, or show project status.
+- `agent-runtime repl` — the interactive process manager (REPL). Its commands
+  map 1:1 to the MCP tools: `start --app <name>`, `ps`, `apps`, `status`,
+  `logs`, `wait`, `waitfor`, `signal`, `stop`, `restart`, `remove`, `env`,
+  `send`, `clear`, `shell`, `exit`. Ctrl-C aborts a blocking command or exits
+  the session when idle; Ctrl-D exits.
+- `agent-runtime run|shell|integrate|version` — one-shot helpers (unchanged).
+- `agent-runtime integrate skill --write` — installs the embedded skills
+  (agent-runtime-ready, agent-runtime-logging) into Claude Code's
+  `.claude/skills` and opencode's `.config/opencode/skills` (global) or
+  `.claude/skills` + `.opencode/skills` (project, `--scope project`).
 
 ## Invariants (non-negotiable)
 
@@ -62,6 +79,8 @@ examples/                 node / nextjs / django / java example apps
   `internal/mcp`, update the embedded skill in
   `internal/integrate/skill/agent-runtime-ready/` to match (SKILL.md readiness
   table, agent-runtime-yaml.md profiles table, agent-workflow.md tool recipes).
+  Keep `internal/integrate/skill/agent-runtime-logging/` in sync when log
+  structure or readiness-line guidance changes.
 
 ## Environment resolution
 

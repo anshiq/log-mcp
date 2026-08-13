@@ -104,9 +104,9 @@ func opencodeBlock(cmd []string) (string, error) {
 	return string(b) + "\n", nil
 }
 
-// targetPath returns where an agent's config lives. projectDir is used for
+// TargetPath returns where an agent's config lives. projectDir is used for
 // Claude's project-scoped .mcp.json.
-func targetPath(agent Agent, projectDir string) string {
+func TargetPath(agent Agent, projectDir string) string {
 	home, _ := os.UserHomeDir()
 	switch agent {
 	case Claude:
@@ -123,7 +123,7 @@ func targetPath(agent Agent, projectDir string) string {
 // JSON and are merged into any existing file; Codex's TOML config is appended
 // if the section is not already present. It returns the file path written.
 func Write(agent Agent, serverPath, projectDir string) (string, error) {
-	path := targetPath(agent, projectDir)
+	path := TargetPath(agent, projectDir)
 	if path == "" {
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
@@ -149,6 +149,109 @@ func Write(agent Agent, serverPath, projectDir string) (string, error) {
 		return "", fmt.Errorf("write is not supported for the %s agent; use the dedicated flow", agent)
 	}
 	return path, nil
+}
+
+// Remove removes the agent-runtime MCP server entry from an agent's config. It
+// returns the config path and whether anything was removed. A config that does
+// not exist or never had agent-runtime configured is a no-op (changed=false),
+// not an error.
+func Remove(agent Agent, projectDir string) (string, bool, error) {
+	path := TargetPath(agent, projectDir)
+	if path == "" {
+		return "", false, fmt.Errorf("unknown agent %q", agent)
+	}
+	switch agent {
+	case Claude:
+		changed, err := removeJSONEntry(path, "mcpServers", "agent-runtime")
+		return path, changed, err
+	case Gemini:
+		changed, err := removeJSONEntry(path, "mcpServers", "agent-runtime")
+		return path, changed, err
+	case Codex:
+		changed, err := removeTOMLSection(path, "mcp_servers.agent-runtime")
+		return path, changed, err
+	default:
+		return "", false, fmt.Errorf("remove is not supported for the %s agent; use the dedicated flow", agent)
+	}
+}
+
+// removeJSONEntry deletes serverKey under topKey from a JSON config file,
+// preserving every other key. If the containing object becomes empty the topKey
+// member is removed too.
+func removeJSONEntry(path, topKey, serverKey string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	doc := map[string]any{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return false, fmt.Errorf("%s is not valid JSON: %w", path, err)
+	}
+	top, ok := doc[topKey].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	if _, ok := top[serverKey]; !ok {
+		return false, nil
+	}
+	delete(top, serverKey)
+	if len(top) == 0 {
+		delete(doc, topKey)
+	}
+	return true, writeJSON(path, doc)
+}
+
+// removeTOMLSection removes a TOML table section (its header plus all keys up
+// to the next top-level table or EOF) from a config file, leaving every other
+// section untouched. It returns whether the section was found and removed.
+func removeTOMLSection(path, key string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	lines := strings.Split(string(data), "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "["+key+"]" {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return false, nil
+	}
+	end := start + 1
+	for end < len(lines) {
+		t := strings.TrimSpace(lines[end])
+		if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+			break
+		}
+		end++
+	}
+	out := make([]string, 0, len(lines)-(end-start))
+	out = append(out, lines[:start]...)
+	out = append(out, lines[end:]...)
+	out = collapseBlankLines(out)
+	return true, os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o644)
+}
+
+// collapseBlankLines collapses runs of two or more consecutive blank lines into
+// one, cleaning up the doubled blanks a section removal can leave behind.
+func collapseBlankLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if len(out) > 0 && out[len(out)-1] == "" && l == "" {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // mergeJSON merges a JSON config block's "mcpServers.agent-runtime" entry into

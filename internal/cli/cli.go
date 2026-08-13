@@ -1,6 +1,8 @@
-// Package cli implements the agent-runtime command-line interface. The primary
-// mode is the stdio MCP server ("serve"); run/integrate/version are debugging
-// and setup helpers.
+// Package cli implements the agent-runtime command-line interface. Running
+// with no arguments opens the interactive setup wizard (setup.go); the MCP
+// server runs under "serve" and the process manager under "repl" (repl.go).
+// run/shell/integrate/version are one-shot helpers, and the CLI wiring lives
+// in root.go.
 package cli
 
 import (
@@ -25,45 +27,6 @@ import (
 	"agent-runtime/internal/runtime"
 )
 
-// Run dispatches the top-level subcommand. Invoked from main with os.Args[1:].
-func Run(args []string, logger *slog.Logger) error {
-	cmd := "serve"
-	if len(args) > 0 {
-		cmd = args[0]
-	}
-	switch cmd {
-	case "serve":
-		loaded, err := config.LoadDefault()
-		if err != nil {
-			return err
-		}
-		return Serve(loaded, logger)
-	case "run":
-		loaded, err := config.LoadDefault()
-		if err != nil {
-			return err
-		}
-		return RunCommand(args[1:], loaded, logger)
-	case "shell":
-		loaded, err := config.LoadDefault()
-		if err != nil {
-			return err
-		}
-		return ShellCommand(args[1:], loaded, logger)
-	case "integrate":
-		return Integrate(args[1:])
-	case "version", "--version", "-v":
-		fmt.Printf("agent-runtime %s\n", rtmcp.Version)
-		return nil
-	case "help", "--help", "-h":
-		usage()
-		return nil
-	default:
-		usage()
-		return fmt.Errorf("unknown command %q", cmd)
-	}
-}
-
 // Serve runs the MCP stdio server until the client disconnects or a shutdown
 // signal arrives, then gracefully stops all managed processes.
 func Serve(loaded *config.Loaded, logger *slog.Logger) error {
@@ -79,20 +42,23 @@ func Serve(loaded *config.Loaded, logger *slog.Logger) error {
 	return err
 }
 
-// Integrate prints (or, with --write, installs) the MCP client configuration
-// for the requested agent.
+// Integrate prints (or, with --write, installs; with --remove, uninstalls) the
+// MCP client configuration for the requested agent.
 func Integrate(args []string) error {
 	opts, pos, err := parseIntegrateArgs(args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic|skill> [--write] [--scope global|project] [--yes] [--create] [--no-verify]")
+		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic|skill> [--write] [--remove] [--scope global|project] [--yes] [--create] [--no-verify]")
 	}
 	if pos[0] == "skill" {
 		return integrateSkill(opts)
 	}
 	agent := integrate.Agent(pos[0])
+	if opts.remove {
+		return integrateRemove(agent, opts)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -125,10 +91,9 @@ func Integrate(args []string) error {
 	return nil
 }
 
-// integrateSkill prints the install plan for, or installs, the embedded
-// agent-runtime-ready skill bundle. The default scope is global; --scope
-// project installs into the current working directory's .claude/.opencode
-// skill trees.
+// integrateSkill prints the install plan for, installs (--write), or removes
+// (--remove) the embedded skill bundle. The default scope is global; --scope
+// project targets the current working directory's .claude/.opencode trees.
 func integrateSkill(opts integrateOptions) error {
 	scope := integrate.ScopeGlobal
 	if opts.scope != "" {
@@ -141,9 +106,43 @@ func integrateSkill(opts integrateOptions) error {
 	if err != nil {
 		return err
 	}
+	if opts.remove {
+		var present []string
+		for _, d := range integrate.SkillTargetDirs(scope, cwd) {
+			if _, err := os.Stat(d); err == nil {
+				present = append(present, d)
+			}
+		}
+		if len(present) == 0 {
+			fmt.Printf("no installed skills to remove (%s scope)\n", scope)
+			return nil
+		}
+		fmt.Printf("skills installed (%s scope):\n", scope)
+		for _, d := range present {
+			fmt.Printf("  %s\n", d)
+		}
+		if isTTY(os.Stdin) {
+			ok, err := confirm("Remove these skill directories? [y/N]", false)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return errors.New("removal cancelled")
+			}
+		}
+		removed, err := integrate.RemoveSkillTrees(scope, cwd)
+		if err != nil {
+			return err
+		}
+		for _, d := range removed {
+			fmt.Printf("removed %s\n", d)
+		}
+		return nil
+	}
 	dirs := integrate.SkillTargetDirs(scope, cwd)
 	if !opts.write {
-		fmt.Printf("agent-runtime-ready skill target dirs (%s):\n", scope)
+		fmt.Printf("embedded skills: %s\n", strings.Join(integrate.SkillNames(), ", "))
+		fmt.Printf("skill target dirs (%s):\n", scope)
 		for _, d := range dirs {
 			fmt.Printf("  %s\n", d)
 		}
@@ -159,7 +158,7 @@ func integrateSkill(opts integrateOptions) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", d, err)
 		}
-		fmt.Printf("installed agent-runtime-ready skill to %s (created=%d updated=%d unchanged=%d)\n", d, created, updated, unchanged)
+		fmt.Printf("installed %s (created=%d updated=%d unchanged=%d)\n", d, created, updated, unchanged)
 	}
 	return nil
 }
@@ -167,6 +166,7 @@ func integrateSkill(opts integrateOptions) error {
 // integrateOptions holds the parsed flags for `integrate`.
 type integrateOptions struct {
 	write        bool
+	remove       bool
 	yes          bool
 	create       bool
 	noVerify     bool
@@ -185,6 +185,8 @@ func parseIntegrateArgs(args []string) (integrateOptions, []string, error) {
 		switch {
 		case a == "--write" || a == "-write":
 			opts.write = true
+		case a == "--remove" || a == "-remove":
+			opts.remove = true
 		case a == "--yes" || a == "-y":
 			opts.yes = true
 		case a == "--create" || a == "-c":
@@ -248,7 +250,7 @@ func integrateOpenCode(opts integrateOptions, exe string) error {
 	case len(existing) > 1 && !interactive:
 		return fmt.Errorf("multiple opencode configs found; pick one with --scope %s", scopesOf(existing))
 	case len(existing) > 1:
-		target, err = pickExisting(cands, existing)
+		target, err = pickExisting(existing, "install")
 		if err != nil {
 			return err
 		}
@@ -304,6 +306,99 @@ func integrateOpenCode(opts integrateOptions, exe string) error {
 	return nil
 }
 
+// integrateRemove removes the agent-runtime MCP entry from an agent's config,
+// confirming first when run interactively.
+func integrateRemove(agent integrate.Agent, opts integrateOptions) error {
+	if agent == integrate.OpenCode {
+		return removeOpenCode(opts)
+	}
+	if agent == integrate.Generic {
+		return errors.New("--remove is not supported for the generic agent")
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	path := integrate.TargetPath(agent, cwd)
+	if path == "" {
+		return fmt.Errorf("unknown agent %q", agent)
+	}
+	if isTTY(os.Stdin) {
+		ok, err := confirm(fmt.Sprintf("Remove agent-runtime from %s? [y/N]", path), false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("removal cancelled")
+		}
+	}
+	_, changed, err := integrate.Remove(agent, cwd)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		fmt.Printf("agent-runtime is not configured in %s\n", path)
+		return nil
+	}
+	fmt.Printf("removed agent-runtime from %s\n", path)
+	return nil
+}
+
+// removeOpenCode removes the agent-runtime entry from an existing opencode
+// config. Like integrateOpenCode it discovers the real config locations and
+// lets the user pick when several exist.
+func removeOpenCode(opts integrateOptions) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	cands := integrate.DiscoverOpenCode(cwd)
+	existing := existingCandidates(cands)
+	if opts.scope != "" {
+		if err := validateScope(opts.scope); err != nil {
+			return err
+		}
+		existing = existingCandidates(filterScope(cands, integrate.Scope(opts.scope)))
+	}
+	interactive := isTTY(os.Stdin)
+	var target integrate.Candidate
+	switch {
+	case len(existing) == 0 && !interactive:
+		return fmt.Errorf("no opencode config found with agent-runtime configured")
+	case len(existing) == 0:
+		fmt.Println("no opencode config found with agent-runtime configured")
+		return nil
+	case len(existing) > 1 && !interactive:
+		return fmt.Errorf("multiple opencode configs found; pick one with --scope %s", scopesOf(existing))
+	case len(existing) > 1:
+		target, err = pickExisting(existing, "remove")
+		if err != nil {
+			return err
+		}
+	default:
+		target = existing[0]
+	}
+	if interactive {
+		ok, err := confirm(fmt.Sprintf("Remove agent-runtime from %s? [y/N]", target.Path), false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("removal cancelled")
+		}
+	}
+	changed, err := integrate.RemoveOpenCodeConfig(target.Path)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		fmt.Printf("agent-runtime is not configured in %s\n", target.Path)
+		return nil
+	}
+	fmt.Printf("removed agent-runtime from %s\n", target.Path)
+	return nil
+}
+
 func existingCandidates(cands []integrate.Candidate) []integrate.Candidate {
 	var out []integrate.Candidate
 	for _, c := range cands {
@@ -355,18 +450,18 @@ func describeCandidates(cands []integrate.Candidate) string {
 	return sb.String()
 }
 
-func pickExisting(cands, existing []integrate.Candidate) (integrate.Candidate, error) {
+func pickExisting(existing []integrate.Candidate, action string) (integrate.Candidate, error) {
 	fmt.Println("Existing opencode config(s):")
 	for i, c := range existing {
 		fmt.Printf("  %d) %s  (%s)\n", i+1, c.Path, c.Scope)
 	}
 	fmt.Println("  q) quit")
-	choice, err := prompt("\nChoose where to install [1-%d]: ", len(existing))
+	choice, err := prompt("\nChoose where to %s [1-%d]: ", action, len(existing))
 	if err != nil {
 		return integrate.Candidate{}, err
 	}
 	if choice == "q" || choice == "Q" {
-		return integrate.Candidate{}, errors.New("install cancelled")
+		return integrate.Candidate{}, fmt.Errorf("%s cancelled", action)
 	}
 	idx := 0
 	if _, err := fmt.Sscanf(choice, "%d", &idx); err != nil || idx < 1 || idx > len(existing) {
@@ -442,15 +537,6 @@ func verifyOpenCode(path string) error {
 	return nil
 }
 
-// isTTY reports whether f is an interactive terminal.
-func isTTY(f *os.File) bool {
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
-}
-
 // prompt prints a prompt and reads one line from stdin. Interactive only.
 func prompt(msg string, args ...any) (string, error) {
 	fmt.Printf(msg, args...)
@@ -479,27 +565,4 @@ func confirm(q string, def bool) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("invalid answer %q (y/n)", answer)
-}
-
-func usage() {
-	fmt.Print(`agent-runtime - local async process supervisor for AI coding agents.
-
-Usage:
-  agent-runtime [serve]            Run the MCP server over stdio (default).
-  agent-runtime run <cmd> [args]   Start a process in the foreground and tail its output.
-  agent-runtime run --app <name>   Start a named app from agent-runtime.yaml.
-  agent-runtime shell <proc|app>   Start an interactive shell in a process's environment.
-  agent-runtime integrate <agent>  Print MCP config for claude|codex|gemini|opencode|generic.
-  agent-runtime integrate skill     Print the agent-runtime-ready skill install plan (or --write to install).
-  agent-runtime integrate <agent> --write
-                                   Write the config into the agent's config file.
-
-  opencode install flags:
-    --scope global|project         Which config to target (required when ambiguous).
-    --yes                          Non-interactive: use the default target, no prompts.
-    --create                       Allow creating a config file that does not exist.
-    --no-verify                    Skip the post-install ` + "`opencode mcp list`" + ` check.
-
-  agent-runtime version
-`)
 }

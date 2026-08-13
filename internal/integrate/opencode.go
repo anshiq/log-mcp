@@ -121,6 +121,48 @@ func MergeOpenCodeConfig(path string, cmd []string) (bool, error) {
 	return true, nil
 }
 
+// RemoveOpenCodeConfig surgically removes the agent-runtime entry from the mcp
+// object of an opencode config. It reports whether the config was changed. Like
+// MergeOpenCodeConfig it only touches the mcp.agent-runtime member — comments,
+// formatting and every other key survive byte-for-byte.
+func RemoveOpenCodeConfig(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	v, err := hujson.Parse(data)
+	if err != nil {
+		return false, fmt.Errorf("%s: not valid JSON/JSONC: %w", path, err)
+	}
+	root, ok := v.Value.(*hujson.Object)
+	if !ok {
+		return false, fmt.Errorf("%s: top level must be a JSON object", path)
+	}
+	for i := range root.Members {
+		lit, ok := root.Members[i].Name.Value.(hujson.Literal)
+		if !ok || string(lit) != `"mcp"` {
+			continue
+		}
+		obj, ok := root.Members[i].Value.Value.(*hujson.Object)
+		if !ok {
+			return false, fmt.Errorf("%s: \"mcp\" must be a JSON object", path)
+		}
+		for j := range obj.Members {
+			mlit, ok := obj.Members[j].Name.Value.(hujson.Literal)
+			if !ok || string(mlit) != `"agent-runtime"` {
+				continue
+			}
+			obj.Members = append(obj.Members[:j], obj.Members[j+1:]...)
+			if err := os.WriteFile(path, v.Pack(), 0o644); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		return false, nil // "mcp" present but no agent-runtime entry
+	}
+	return false, nil // no top-level "mcp"
+}
+
 // renderMember renders a `"name": <entry>` pair indented at nameIndent (the
 // indent of the line the member's name sits on).
 func renderMember(name string, cmd []string, nameIndent string) string {
