@@ -1,7 +1,7 @@
 BINARY := agent-runtime
 BIN_DIR := bin
 
-.PHONY: build test race vet fmt tidy clean install
+.PHONY: build test race vet fmt tidy clean install snapshot
 
 build:
 	go build -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
@@ -26,3 +26,6 @@ clean:
 
 install:
 	go install ./cmd/agent-runtime
+
+snapshot:
+	goreleaser release --snapshot --clean

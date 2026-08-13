@@ -1,0 +1,53 @@
+version: 2
+
+project_name: agent-runtime
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: agent-runtime
+    main: ./cmd/agent-runtime
+    binary: agent-runtime
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X agent-runtime/internal/mcp.Version={{ .Version }}
+
+archives:
+  - id: agent-runtime
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-SNAPSHOT"
+
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
