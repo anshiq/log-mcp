@@ -26,6 +26,9 @@ type StartResult struct {
 	Command    string   `json:"command"`
 	Args       []string `json:"args,omitempty"`
 	WorkDir    string   `json:"workdir"`
+	// Readiness lists the armed readiness regex patterns for this process
+	// (empty when the process has no readiness gating).
+	Readiness []string `json:"readiness,omitempty"`
 }
 
 // StatusResult is a snapshot of a process for process_status.
@@ -45,6 +48,30 @@ type StatusResult struct {
 	StdoutLines int      `json:"stdout_lines"`
 	StderrLines int      `json:"stderr_lines"`
 	PGID        int      `json:"pgid,omitempty"` // process group id; on Unix processes are started with Setpgid so pgid == pid, the group is what stop/signal target
+	// Health is the supervision health state: "unknown" | "healthy" | "unhealthy".
+	Health              string `json:"health,omitempty"`
+	ConsecutiveFailures int    `json:"consecutive_failures,omitempty"`
+	// BackoffState is a human-readable view of the restart budget, e.g.
+	// "restarted=3 within window". Omitted when no restarts have occurred.
+	BackoffState string `json:"backoff_state,omitempty"`
+	// RestartPolicy is the effective policy: "never" | "on-failure" | "always".
+	RestartPolicy string `json:"restart_policy,omitempty"`
+	// MemoryBytes and CPUUsageNanos report live resource usage from the
+	// process's cgroup v2 slice (Phase 7), when one is configured.
+	MemoryBytes   int64 `json:"memory_bytes,omitempty"`
+	CPUUsageNanos int64 `json:"cpu_usage_nanos,omitempty"`
+}
+
+// SetRestartPolicyRequest is the input to set_restart_policy.
+type SetRestartPolicyRequest struct {
+	ProcessID string `json:"process_id"`
+	Policy    string `json:"policy"` // never | on-failure | always
+}
+
+// SetRestartPolicyResult is the response of set_restart_policy.
+type SetRestartPolicyResult struct {
+	ProcessID     string `json:"process_id"`
+	RestartPolicy string `json:"restart_policy"`
 }
 
 // ProcessSummary is one row of list_processes.
@@ -67,6 +94,9 @@ type GetLogsRequest struct {
 	Stream    string `json:"stream,omitempty"` // "all" | "stdout" | "stderr"
 	Lines     int    `json:"lines,omitempty"`  // default 100, capped at the configured maximum
 	Contains  string `json:"contains,omitempty"`
+	// Level filters lines by a cheap level heuristic parsed from `level=...` /
+	// `"level":"..."` prefixes: debug|info|warn|error. Empty = no filter.
+	Level string `json:"level,omitempty"`
 }
 
 // LogEntry is one log line returned to callers.

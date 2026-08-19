@@ -142,6 +142,40 @@ get_process_env(process_id=<worker>)  # PORT from services/worker/.env, differen
 Each process owns its env, buffers, lifecycle, and waiters — one broken app
 never affects the other.
 
+## Supervision (v2) — crash & health are watched for you
+
+For apps that declare a `restart` policy and/or a `health_check` in
+`agent-runtime.yaml`, agent-runtime supervises **continuously**: it notices a
+3am crash or a failing health probe on its own and restarts with exponential
+backoff. You do not need to poll `process_status`.
+
+- `process_status(process_id)` now reports `health` (unknown/healthy/unhealthy),
+  `consecutive_failures`, `backoff_state` (restarts within the window), and
+  `restart_policy` (never/on-failure/always).
+- A process that exhausts its restart budget shows `status="crashed"`. Manual
+  `restart_process(process_id)` clears it and resets the budget.
+- **A manual `stop_process` never triggers a restart**, whatever the policy —
+  so a supervised app you deliberately stop stays stopped.
+- Ad-hoc processes started without an app entry opt into supervision with
+  `set_restart_policy(process_id, policy)` (never|on-failure|always).
+
+## Events — subscribe instead of polling (v2)
+
+Lifecycle events are **never pushed**. Instead of polling `process_status` in a
+loop, open a subscription and drain it:
+
+```
+subscribe_events(process_id="<id>", types=["process.crashed","process.exited"], since="last")
+   -> {subscription_id}
+get_events(subscription_id=<id>, limit=100)
+   -> {events: [...], dropped: N}   # dropped = events lost to a full 256-ring
+unsubscribe_events(subscription_id=<id>)
+```
+
+Hard caps: 8 subscriptions per client, 256 buffered events each. `since` is an
+event id to backfill from (pass `"last"` or empty to start fresh). `get_events`
+returns immediately — events accumulate in the ring until you drain.
+
 ## Restart loop discipline
 
 After any code change: `restart_process(process_id)` →

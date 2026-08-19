@@ -16,7 +16,7 @@ func (Noop) Query(processID string, q logs.Query) ([]logs.Entry, error) { return
 func (Noop) DeleteProcess(processID string) error { return nil }
 
 // RecordInstance does nothing.
-func (Noop) RecordInstance(procID, instanceID, command, workdir, profile string, startedAt int64, exitedAt, exitCode *int64) error {
+func (Noop) RecordInstance(procID, instanceID, command, workdir, profile string, startedAt int64, pid int64, exitedAt, exitCode *int64) error {
 	return nil
 }
 

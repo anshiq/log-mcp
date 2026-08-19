@@ -18,6 +18,9 @@ const (
 	Stopped   Type = "process.stopped"
 	Failed    Type = "process.failed"
 	Restarted Type = "process.restarted"
+	Healthy   Type = "process.healthy"
+	Unhealthy Type = "process.unhealthy"
+	Crashed   Type = "process.crashed"
 )
 
 // Event is a single runtime event.

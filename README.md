@@ -214,10 +214,141 @@ downloading needed.
 | `wait_for_exit`   | Wait for exit; returns the exit code; multiple waiters supported |
 | `remove_process`  | Delete a process from the registry and free its log buffers; refuses running processes unless `force` (stops it first) |
 | `list_apps`       | Apps declared in `agent-runtime.yaml` with detected profiles   |
+| `set_restart_policy` | Set the auto-restart policy (`never`/`on-failure`/`always`) of an existing process, opting an ad-hoc process into supervision |
+| `subscribe_events`  | Open a capped lifecycle-event subscription (filter by process_id/types; backfill via `since`) |
+| `get_events`        | Drain a subscription's buffered events (pull-based; never pushed); `dropped` shows ring overruns |
+| `unsubscribe_events`| Close an event subscription and release its ring buffer |
+| `runtime_stats`     | Runtime health: process counts by status, log pipeline drops (archive/forwarder/subscription), uptime |
+| `get_audit_log`     | Tail of the JSONL audit log (secrets redacted), bounded like `get_logs` |
+
+`process_status` additionally reports live `memory_bytes` / `cpu_usage_nanos`
+from a process's cgroup when resource `limits` are configured.
+
+### HTTP transport (`serve --http`)
+
+Beyond stdio, the same MCP server is served over **streamable HTTP**:
+`agent-runtime serve --http :7341`. A bearer token (`runtime.http.token`,
+env-expanded) is **required** — there is no unauthenticated HTTP mode, even on
+localhost. Tool calls are rate-limited (token bucket, 20 rps / burst 50).
+With `runtime.daemon`, the HTTP server is also a thin client of the shared
+daemon.
+
+```yaml
+runtime:
+  http:
+    token: ${AGENT_RUNTIME_HTTP_TOKEN}
+```
+```
+curl -H "Authorization: Bearer $AGENT_RUNTIME_HTTP_TOKEN" ... http://localhost:7341/
+```
 
 Log queries are capped: `lines` defaults to 100 and never exceeds
 `max_log_lines` (2000); responses are truncated at `max_log_bytes` (512 KiB)
 with `truncated`/`available_lines` flags.
+
+## Supervision (v2)
+
+Beyond request-driven control, apps declared in `agent-runtime.yaml` can opt
+into **continuous, declarative supervision** (all fields optional; v1 files
+load unchanged):
+
+- **`readiness`** — override the profile-detected readiness regexes for an app.
+- **`health_check`** — after the app is ready, agent-runtime probes an HTTP or
+  TCP endpoint on an `interval`; after `failure_threshold` consecutive failures
+  it reports the app unhealthy and, per the restart policy, restarts it.
+- **`restart`** — `policy: never | on-failure | always` with a capped
+  exponential `backoff` and a `max_restarts` budget per rolling 10-minute
+  window. A process that exhausts its budget is marked `crashed`; a manual
+  `stop_process` or shutdown never triggers a restart; a process stable for a
+  full window resets its budget.
+
+`process_status` now also reports `health` (unknown/healthy/unhealthy),
+`consecutive_failures`, `backoff_state`, and `restart_policy`.
+
+```yaml
+apps:
+  api:
+    command: ["go", "run", "./cmd/api"]
+    health_check:
+      http: "http://localhost:8080/healthz"   # or tcp: "localhost:8080"
+      interval: 10s
+      timeout: 3s
+      failure_threshold: 3
+    restart:
+      policy: on-failure
+      backoff: [1s, 2s, 5s, 15s, 60s]
+      max_restarts: 10
+```
+
+## Events, security & observability (v2)
+
+**Events.** Lifecycle events (`process.started/exited/crashed/healthy/...`) are
+never pushed. Subscribe with `subscribe_events` (8 subscriptions per client,
+256 buffered events each, with a drop counter) and drain with `get_events` —
+an alternative to polling `process_status`.
+
+**Security.** Default `runtime.security.mode: trusted` (arbitrary exec, as
+today). Set `restricted` for CI/shared machines: `allowed_commands` (basename
+allowlist), `allowed_workdirs` (`${project}` confinement), `allow_pid_attach`,
+`allow_stdin`, `reveal_secrets`. Denials return structured `policy_denied`
+errors and are recorded to the audit log.
+
+**Audit.** Every tool call is appended to `.agent-runtime/audit.log` (JSONL,
+secrets redacted, 10MB × 5 rotation); `get_audit_log` reads its tail.
+
+**Observability.** `runtime_stats` reports the log pipeline's health (archive/
+forwarder/subscription drop counters). Optional `runtime.metrics: ":9341"`
+serves Prometheus counters; `runtime.log_forward: { stdout: true, otlp: "..." }`
+forwards lines (best-effort, drop-on-backpressure). `get_logs` accepts a
+`level` filter (debug|info|warn|error) for structured logs.
+## Resource limits (v2)
+
+Per-app `limits` bound a process's machine impact (Linux-first via cgroup v2;
+degrades gracefully to unlimited when unsupported):
+
+```yaml
+apps:
+  api:
+    command: ["go", "run", "./cmd/api"]
+    limits:
+      cpu: "1.0"        # cores; also "500m" (milli-cores)
+      memory: "512M"    # size: 512M, 1G, 256MiB, ...
+```
+
+Each managed process is placed in its own cgroup v2 slice under
+`agent-runtime.scope`; `memory.max`/`cpu.max` are set. `process_status` reports
+live `memory_bytes` / `cpu_usage_nanos`. An OOM-kill is surfaced to event
+subscribers as `process.crashed` with `reason: "oom"` and triggers the app's
+restart policy. On systems without a delegated cgroup v2 controller, or
+non-Linux platforms, the process runs unlimited with a warning.
+
+## Daemon mode (v2)
+
+By default the runtime is **session-scoped**: when the MCP server exits, all
+managed processes are stopped. With `runtime.daemon: true`, `serve` (and the
+`daemon` CLI) run a **long-lived daemon** that owns the processes, so they
+survive the session and a later session re-attaches to the same registry and
+log history over a local Unix socket (`.agent-runtime/run.sock`).
+
+```yaml
+runtime:
+  daemon: true
+```
+
+```
+agent-runtime daemon start     # spawn the background daemon (PID file + flock lock)
+agent-runtime daemon status    # is it running?
+agent-runtime daemon stop      # SIGTERM → graceful shutdown of all its processes
+```
+
+- One daemon per project (lock file). Multiple MCP sessions may attach and
+  co-manage the same stack; `serve` auto-starts the daemon if it isn't running.
+- Processes bind to the daemon's root context, so killing an MCP session leaves
+  them running.
+- Without `runtime.daemon`, behavior is exactly the default session-scoped
+  model (no regression).
+- Platform note: daemon mode is Unix-only (flock/setsid/`/proc`); Windows gets
+  a clear "not supported" error. The socket RPC itself is portable.
 
 ## CLI
 

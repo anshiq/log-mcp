@@ -10,6 +10,11 @@ import (
 
 // Input types carry jsonschema descriptions for agent-facing tool schemas.
 
+// mcpClient is the identity used for event-subscription ownership. The stdio
+// MCP server serves a single agent, so one client id caps subscriptions at
+// MaxSubsPerClient across the session.
+const mcpClient = "mcp"
+
 type startIn struct {
 	App     string   `json:"app,omitempty" jsonschema:"Name of an app declared in agent-runtime.yaml. Mutually exclusive with command."`
 	Command string   `json:"command,omitempty" jsonschema:"Executable to launch (npm, go, python, java, ...). Mutually exclusive with app."`
@@ -27,6 +32,7 @@ type getLogsIn struct {
 	Stream    string `json:"stream,omitempty" jsonschema:"Which stream to read: all (default), stdout or stderr."`
 	Lines     int    `json:"lines,omitempty" jsonschema:"Maximum lines to return (default 100, capped at the configured maximum)."`
 	Contains  string `json:"contains,omitempty" jsonschema:"Only return lines containing this substring."`
+	Level     string `json:"level,omitempty" jsonschema:"Only return lines whose level (parsed from level=... / \"level\":... prefixes) is at this level: debug|info|warn|error. Empty disables the filter."`
 }
 
 type clearLogsIn struct {
@@ -73,6 +79,31 @@ type openShellIn struct {
 	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from agent-runtime.yaml. Mutually exclusive with process_id and pid."`
 	PID       int    `json:"pid,omitempty" jsonschema:"OS process id: shell into any process's workdir+env via /proc/<pid> (Linux). Mutually exclusive with process_id and app."`
 	Shell     string `json:"shell,omitempty" jsonschema:"Shell to launch (absolute path or name). Default $SHELL, then /bin/sh."`
+}
+
+type setRestartPolicyIn struct {
+	ProcessID string `json:"process_id" jsonschema:"The process_id returned by start_process."`
+	Policy    string `json:"policy" jsonschema:"Restart policy: never | on-failure | always. on-failure restarts only on non-zero exit; always restarts regardless. Manual stop_process never triggers a restart."`
+}
+
+type subscribeEventsIn struct {
+	ProcessID string   `json:"process_id,omitempty" jsonschema:"Restrict delivery to a single process; empty subscribes to all processes."`
+	Types     []string `json:"types,omitempty" jsonschema:"Restrict to these event types (process.started, process.exited, process.crashed, process.healthy, process.unhealthy, ...); empty subscribes to all."`
+	Since     string   `json:"since,omitempty" jsonschema:"Backfill cursor: an event id to receive events after, \"last\" or empty to start fresh from now."`
+}
+
+type getEventsIn struct {
+	SubscriptionID string `json:"subscription_id" jsonschema:"The subscription_id returned by subscribe_events."`
+	Limit          int    `json:"limit,omitempty" jsonschema:"Maximum events to drain; empty or <=0 drains all buffered."`
+}
+
+type unsubscribeEventsIn struct {
+	SubscriptionID string `json:"subscription_id" jsonschema:"The subscription_id returned by subscribe_events."`
+}
+
+type getAuditLogIn struct {
+	Lines    int    `json:"lines,omitempty" jsonschema:"Maximum audit lines to return (default 100)."`
+	Contains string `json:"contains,omitempty" jsonschema:"Only return lines containing this substring."`
 }
 
 func registerTools(server *mcp.Server, h *handlers) {
@@ -143,7 +174,7 @@ func registerTools(server *mcp.Server, h *handlers) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in getLogsIn) (*mcp.CallToolResult, *api.GetLogsResult, error) {
 			h.log(ctx, "get_logs", in)
 			res, err := h.rt.GetLogs(api.GetLogsRequest{
-				ProcessID: in.ProcessID, Stream: in.Stream, Lines: in.Lines, Contains: in.Contains,
+				ProcessID: in.ProcessID, Stream: in.Stream, Lines: in.Lines, Contains: in.Contains, Level: in.Level,
 			})
 			if err != nil {
 				return nil, nil, err
@@ -249,6 +280,72 @@ func registerTools(server *mcp.Server, h *handlers) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in openShellIn) (*mcp.CallToolResult, *api.StartResult, error) {
 			h.log(ctx, "open_shell", in)
 			res, err := h.rt.OpenShell(ctx, api.OpenShellRequest{ProcessID: in.ProcessID, App: in.App, PID: in.PID, Shell: in.Shell})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "set_restart_policy", Description: "Set the auto-restart policy of an existing process. Use for ad-hoc processes started without an app entry so supervision (auto-restart on crash/health failure) applies. Policies: never (default), on-failure (restart only on non-zero exit), always (restart regardless of exit code). Manual stop_process never triggers a restart."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in setRestartPolicyIn) (*mcp.CallToolResult, *api.SetRestartPolicyResult, error) {
+			h.log(ctx, "set_restart_policy", in)
+			res, err := h.rt.SetRestartPolicy(api.SetRestartPolicyRequest{ProcessID: in.ProcessID, Policy: in.Policy})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "subscribe_events", Description: "Open a capped event subscription. Lifecycle events (process.started, process.exited, process.crashed, process.healthy, process.unhealthy, ...) are never pushed to you; you pull them with get_events. Filter by process_id and/or types; pass since=<event id> to backfill. Hard caps: 8 subscriptions per client, 256 buffered events each (overruns are counted in get_events.dropped)."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in subscribeEventsIn) (*mcp.CallToolResult, *api.SubscribeEventsResult, error) {
+			h.log(ctx, "subscribe_events", in)
+			res, err := h.rt.SubscribeEvents(mcpClient, api.SubscribeEventsRequest{ProcessID: in.ProcessID, Types: in.Types, Since: in.Since})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "get_events", Description: "Drain buffered events from a subscription. Returns the events since the previous get_events plus the dropped count (events lost because the 256-event ring overran while you weren't draining). Returns immediately."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in getEventsIn) (*mcp.CallToolResult, *api.GetEventsResult, error) {
+			h.log(ctx, "get_events", in)
+			res, err := h.rt.GetEvents(api.GetEventsRequest{SubscriptionID: in.SubscriptionID, Limit: in.Limit})
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "unsubscribe_events", Description: "Close an event subscription and release its ring buffer."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in unsubscribeEventsIn) (*mcp.CallToolResult, *api.UnsubscribeEventsResult, error) {
+			h.log(ctx, "unsubscribe_events", in)
+			res, err := h.rt.UnsubscribeEvents(mcpClient, in.SubscriptionID)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "runtime_stats", Description: "Snapshot of the runtime's own health: process counts by status, per-process log line counts, and whether the log pipeline is keeping up (durable archive drops, forwarder drops, event-subscription drops) plus uptime."},
+		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *api.RuntimeStats, error) {
+			h.log(ctx, "runtime_stats", nil)
+			res, err := h.rt.RuntimeStats()
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "get_audit_log", Description: "Return the tail of the audit log (JSONL of tool calls with secrets redacted), bounded and pull-based like get_logs. Empty when no audit log is configured."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in getAuditLogIn) (*mcp.CallToolResult, *api.AuditLogResult, error) {
+			h.log(ctx, "get_audit_log", in)
+			res, err := h.rt.GetAuditLog(in.Lines, in.Contains)
 			if err != nil {
 				return nil, nil, err
 			}

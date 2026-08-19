@@ -1,7 +1,9 @@
 package logstore
 
 import (
+	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +81,7 @@ func TestReopenPersistence(t *testing.T) {
 	appendLine(s, proc, 1, "world")
 	ex := int64(1234)
 	code := int64(0)
-	if err := s.RecordInstance(proc, "run_1", "echo", "/tmp", "generic", 100, &ex, &code); err != nil {
+	if err := s.RecordInstance(proc, "run_1", "echo", "/tmp", "generic", 100, 1234, &ex, &code); err != nil {
 		t.Fatalf("RecordInstance: %v", err)
 	}
 	if err := s.Close(); err != nil {
@@ -98,6 +100,114 @@ func TestReopenPersistence(t *testing.T) {
 	}
 	if len(entries) != 2 || entries[0].Line != "hello" || entries[1].Line != "world" {
 		t.Fatalf("reopened rows wrong: %+v", entries)
+	}
+}
+
+func TestOpenInstancesReturnsUnclosedRecords(t *testing.T) {
+	path := t.TempDir() + "/logs.db"
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	ex := int64(1234)
+	code := int64(0)
+	// run_1: started, then exited.
+	if err := s.RecordInstance("proc_a", "run_1", "echo", "/tmp", "generic", 100, 111, nil, nil); err != nil {
+		t.Fatalf("RecordInstance start: %v", err)
+	}
+	if err := s.RecordInstance("proc_a", "run_1", "echo", "/tmp", "generic", 100, 111, &ex, &code); err != nil {
+		t.Fatalf("RecordInstance exit: %v", err)
+	}
+	// run_2: started, still open (daemon crashed here).
+	if err := s.RecordInstance("proc_a", "run_2", "echo", "/tmp", "generic", 200, 222, nil, nil); err != nil {
+		t.Fatalf("RecordInstance: %v", err)
+	}
+	// proc_b: started, still open.
+	if err := s.RecordInstance("proc_b", "run_1", "sleep", "/var", "generic", 300, 333, nil, nil); err != nil {
+		t.Fatalf("RecordInstance: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen (as a fresh runtime would) and read open instances: only the two
+	// that never recorded an exit, ordered by started_at, with their pids.
+	s2, err := Open(path, nil)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s2.Close()
+	recs, err := s2.OpenInstances()
+	if err != nil {
+		t.Fatalf("OpenInstances: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("open instances = %d, want 2: %+v", len(recs), recs)
+	}
+	if recs[0].ProcessID != "proc_a" || recs[0].InstanceID != "run_2" || recs[0].PID != 222 {
+		t.Fatalf("recs[0] = %+v", recs[0])
+	}
+	if recs[1].ProcessID != "proc_b" || recs[1].InstanceID != "run_1" || recs[1].PID != 333 {
+		t.Fatalf("recs[1] = %+v", recs[1])
+	}
+}
+
+func TestMigrationAddsPidColumn(t *testing.T) {
+	// Create a database with the pre-adoption schema (no pid column), insert an
+	// instance row, then open it with the current build: migrateSchema must add
+	// the column and OpenInstances must still work.
+	path := t.TempDir() + "/logs.db"
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	oldSchema := `CREATE TABLE instances(
+		process_id  TEXT NOT NULL,
+		instance_id TEXT NOT NULL,
+		command     TEXT NOT NULL,
+		workdir     TEXT NOT NULL,
+		profile     TEXT NOT NULL,
+		started_at  INTEGER NOT NULL,
+		exited_at   INTEGER,
+		exit_code   INTEGER,
+		PRIMARY KEY(process_id, instance_id)
+	) WITHOUT ROWID;
+	CREATE TABLE entries(
+		process_id TEXT NOT NULL,
+		id         INTEGER NOT NULL,
+		ts         INTEGER NOT NULL,
+		stream     TEXT NOT NULL,
+		line       TEXT NOT NULL,
+		PRIMARY KEY(process_id, id)
+	) WITHOUT ROWID;`
+	if _, err := db.Exec(oldSchema); err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO instances(process_id,instance_id,command,workdir,profile,started_at) VALUES ('proc_x','run_1','echo','/tmp','generic',100)`); err != nil {
+		t.Fatalf("seed old row: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	cols, err := tableColumns(s.db, "instances")
+	if err != nil {
+		t.Fatalf("tableColumns: %v", err)
+	}
+	if !slices.Contains(cols, "pid") {
+		t.Fatalf("instances table missing pid after migration: %v", cols)
+	}
+	recs, err := s.OpenInstances()
+	if err != nil {
+		t.Fatalf("OpenInstances: %v", err)
+	}
+	if len(recs) != 1 || recs[0].ProcessID != "proc_x" || recs[0].PID != 0 {
+		t.Fatalf("migrated row wrong: %+v", recs)
 	}
 }
 
@@ -399,7 +509,7 @@ func TestNoopSink(t *testing.T) {
 	if err := n.DeleteProcess("p"); err != nil {
 		t.Fatal(err)
 	}
-	if err := n.RecordInstance("p", "i", "c", "w", "prof", 1, nil, nil); err != nil {
+	if err := n.RecordInstance("p", "i", "c", "w", "prof", 1, 0, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.Close(); err != nil {

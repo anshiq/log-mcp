@@ -5,6 +5,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -103,6 +105,46 @@ func main() {
 		fmt.Println("RUNNING")
 		for {
 			time.Sleep(time.Hour)
+		}
+	case "http-server":
+		code := 200
+		port := "0"
+		if len(args) > 0 {
+			code, _ = strconv.Atoi(args[0])
+		}
+		if len(args) > 1 {
+			port = args[1]
+		}
+		ln, err := net.Listen("tcp", "127.0.0.1:"+port)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "listen: %v\n", err)
+			os.Exit(4)
+		}
+		fmt.Printf("LISTENING http://%s\n", ln.Addr())
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		})}
+		_ = srv.Serve(ln)
+	case "oom":
+		// Allocate memory in growing chunks until killed by the cgroup OOM
+		// killer (or the kernel). The child writes to its allocation so pages
+		// are actually touched and memory.current reflects real usage.
+		mb, _ := strconv.Atoi("256")
+		if len(args) > 0 {
+			mb, _ = strconv.Atoi(args[0])
+		}
+		fmt.Println("TOUCHING")
+		var chunks [][]byte
+		for {
+			c := make([]byte, 1024*1024) // 1 MiB
+			for i := range c {
+				c[i] = byte(i)
+			}
+			chunks = append(chunks, c)
+			if len(chunks) >= mb {
+				fmt.Printf("TOUCHED-%dMB\n", len(chunks))
+				time.Sleep(time.Hour)
+			}
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown behaviour %q\n", behaviour)

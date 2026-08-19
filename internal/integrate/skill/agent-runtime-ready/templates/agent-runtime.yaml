@@ -49,5 +49,22 @@ apps:
     #   - "PORT=3000"
     #   - "PYTHONUNBUFFERED=1"  # required for Python: piped stdout is buffered
 
+    # --- Optional v2 supervision (continuous health + auto-restart) -----
+    # # Override the profile's readiness regexes (matched line-by-line).
+    # readiness:
+    #   - 'listening on :8080'
+    # # Continuous health probe; after failure_threshold fails the app is
+    # # reported unhealthy and (per restart.policy) restarted.
+    # health_check:
+    #   http: "http://localhost:8080/healthz"   # or tcp: "localhost:8080"
+    #   interval: 10s
+    #   timeout: 3s
+    #   failure_threshold: 3
+    # # Auto-restart. A manual stop_process never restarts.
+    # restart:
+    #   policy: on-failure        # never | on-failure | always
+    #   backoff: [1s, 2s, 5s, 15s, 60s]
+    #   max_restarts: 10          # per rolling 10-minute window
+
 # Add more services the same way — each app gets its own workdir, env_file,
 # env, buffers, and lifecycle. Same key in different env files stays isolated.

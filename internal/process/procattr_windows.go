@@ -20,6 +20,10 @@ func signalGroup(p *os.Process, sig syscall.Signal) error {
 	return p.Signal(sig)
 }
 
+// pidAlive reports whether an OS pid is live. Windows has no signal-0 probe;
+// adoption is a daemon (Unix-only) feature, so this is always false here.
+func pidAlive(pid int) bool { return false }
+
 // sigTerm signals only the direct child on Windows.
 func sigTerm(p *os.Process) error {
 	return signalGroup(p, syscall.SIGTERM)

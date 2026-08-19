@@ -1,6 +1,8 @@
 // Package integration exercises the full runtime against real application
 // runtimes (Node, Next.js stand-in, Django stand-in, Java single-file app).
-// Tests are skipped when a required toolchain is missing or with -short.
+// The stand-in apps are self-contained fixtures generated into temp dirs, so
+// the suite needs no examples/ checkout. Tests are skipped when a required
+// toolchain is missing or with -short.
 package integration_test
 
 import (
@@ -23,25 +25,73 @@ type appCase struct {
 	args    []string
 	ready   string
 	tool    string
+	files   map[string]string
 }
 
 var cases = []appCase{
 	{
 		name: "node/npm", dir: "node-app", command: "npm", args: []string{"run", "dev"},
 		ready: "listening on", tool: "node",
+		files: map[string]string{
+			"package.json": `{"name":"node-app","private":true,"scripts":{"dev":"node server.js"}}`,
+			"server.js": `console.log("listening on http://localhost:4001");
+setInterval(function () {}, 1000000);
+`,
+		},
 	},
 	{
 		name: "nextjs", dir: "nextjs-app", command: "npm", args: []string{"run", "dev"},
 		ready: "Ready in", tool: "node",
+		// package.json mentions "next" so profile detection picks nextjs;
+		// the dev script is a stand-in that prints Next's readiness line.
+		files: map[string]string{
+			"package.json": `{"name":"nextjs-app","private":true,"dependencies":{"next":"0.0.0"},"scripts":{"dev":"node server.js"}}`,
+			"server.js": `console.log("Ready in 500ms");
+setInterval(function () {}, 1000000);
+`,
+		},
 	},
 	{
 		name: "django", dir: "django-app", command: "python3", args: []string{"manage.py", "runserver"},
 		ready: "Starting development server", tool: "python3",
+		files: map[string]string{
+			"manage.py": `import time
+
+print("Starting development server at http://127.0.0.1:8000/", flush=True)
+while True:
+    time.sleep(3600)
+`,
+		},
 	},
 	{
 		name: "java", dir: "java-app", command: "java", args: []string{"App.java"},
 		ready: "Started DemoApplication", tool: "java",
+		// pom.xml exists only so profile detection picks spring-boot; the
+		// command launches App.java directly (single-file source launch).
+		files: map[string]string{
+			"pom.xml": `<project/>`,
+			"App.java": `public class App {
+    public static void main(String[] args) throws Exception {
+        System.out.println("Started DemoApplication in 0.5s");
+        Thread.sleep(3_600_000);
+    }
+}
+`,
+		},
 	},
+}
+
+// writeAppFixture materializes a stand-in app into dir.
+func writeAppFixture(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func toolAvailable(name string) bool {
@@ -53,7 +103,6 @@ func TestExampleApps(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
 	}
-	examplesDir := filepath.Join("..", "..", "examples")
 	skipped := 0
 	for _, tc := range cases {
 		tc := tc
@@ -61,7 +110,8 @@ func TestExampleApps(t *testing.T) {
 			if !toolAvailable(tc.tool) {
 				t.Skipf("%s not available", tc.tool)
 			}
-			appDir := filepath.Join(examplesDir, tc.dir)
+			appDir := filepath.Join(t.TempDir(), tc.dir)
+			writeAppFixture(t, appDir, tc.files)
 			loaded, err := config.LoadFrom(t.TempDir())
 			if err != nil {
 				t.Fatal(err)

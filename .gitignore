@@ -2,3 +2,4 @@ bin/
 *.test
 dist/
 .codegraph/
+.agent-runtime/

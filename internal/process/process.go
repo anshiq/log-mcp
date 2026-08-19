@@ -26,6 +26,11 @@ const (
 	StatusStopped  Status = "stopped"
 	StatusExited   Status = "exited"
 	StatusFailed   Status = "failed"
+	// StatusCrashed means the process exited and its restart budget was
+	// exhausted (or no restart was permitted), so supervision gave up. It is a
+	// proc-level state reported in Info alongside the instance's terminal
+	// status.
+	StatusCrashed Status = "crashed"
 )
 
 var (
@@ -40,7 +45,26 @@ type StartSpec struct {
 	Args    []string
 	WorkDir string
 	Env     []string
+
+	// Readiness is the armed readiness regex strings for this process (empty
+	// means no readiness gating). Supervision carries the declarative
+	// health/restart policy.
+	Readiness   []string
+	Supervision Supervision
+
+	// Limits are the optional per-app resource caps (Phase 7): cpu quota in
+	// cores and memory in bytes. Zero means unlimited for that resource.
+	Limits ResourceLimits
 }
+
+// ResourceLimits are per-process resource caps (Phase 7, Linux-first via cgroup
+// v2, degrading gracefully to unlimited when unsupported).
+type ResourceLimits struct {
+	CPUQuota    float64 // fraction of a core; 0 = unlimited
+	MemoryBytes int64   // bytes; 0 = unlimited
+}
+
+func (l ResourceLimits) Enabled() bool { return l.CPUQuota > 0 || l.MemoryBytes > 0 }
 
 // Info is a read-only snapshot of a managed process's current instance.
 type Info struct {
@@ -92,6 +116,21 @@ type instance struct {
 	// the Exited/Stopped event) only fires once the readers have flushed their
 	// final lines into the log buffers.
 	readers sync.WaitGroup
+
+	// jobCleanup closes the Windows Job Object handle for this instance's
+	// process tree. With JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE set, closing the
+	// last handle terminates every process still in the job (tree-kill). It is
+	// a no-op on Unix (the process group handles tree termination).
+	jobCleanup func()
+
+	// cgroupPath is the cgroup v2 slice this instance was placed in ("" when
+	// none), used for live usage reporting and OOM detection.
+	cgroupPath string
+	// oomBaseline snapshots the cgroup's oom_kill counter at start so a later
+	// OOM can be detected on exit.
+	oomBaseline uint64
+	// resourceCleanup removes the cgroup slice at teardown (no-op when none).
+	resourceCleanup func()
 }
 
 func (i *instance) finish() {
@@ -123,6 +162,31 @@ type ManagedProcess struct {
 	restarts int
 	wakeup   *broadcaster
 	logger   *slog.Logger
+
+	// supervision is the declarative policy set once at Start and immutable
+	// thereafter (a running process keeps its policy unless set_restart_policy
+	// is used).
+	supervision Supervision
+
+	// ready is true once the current instance reaches readiness.
+	ready atomic.Bool
+	// health is the current health snapshot.
+	health atomic.Pointer[HealthSnapshot]
+	// crashed is set when the restart budget is exhausted or a crash is
+	// declared; it makes Info report StatusCrashed.
+	crashed atomic.Bool
+
+	// backoff is the restart budget/cursor; guarded by mu.
+	backoff backoffState
+	// removed marks the process as deleted so pending auto-restart timers lose
+	// the race; guarded by mu.
+	removed bool
+	// grace is the per-instance stop grace, stored so auto-restart can re-apply
+	// it; guarded by mu.
+	grace time.Duration
+	// startMu serializes instance starts (manual Restart vs auto-restart) so
+	// two goroutines can never start two instances of the same process.
+	startMu sync.Mutex
 }
 
 // Info returns a snapshot of the current instance. The instance pointer and
@@ -132,6 +196,7 @@ func (p *ManagedProcess) Info() Info {
 	p.mu.Lock()
 	inst := p.inst
 	restarts := p.restarts
+	crashed := p.crashed.Load()
 	p.mu.Unlock()
 	if inst == nil {
 		return Info{
@@ -141,8 +206,12 @@ func (p *ManagedProcess) Info() Info {
 		}
 	}
 	snap := inst.snap.Load()
+	status := snap.status
+	if crashed {
+		status = StatusCrashed
+	}
 	return Info{
-		ID: p.ID, InstanceID: inst.id, Status: snap.status,
+		ID: p.ID, InstanceID: inst.id, Status: status,
 		Command: p.Spec.Command, Args: p.Spec.Args, WorkDir: p.Spec.WorkDir,
 		PID: snap.pid, StartedAt: snap.started, ExitedAt: snap.exited,
 		ExitCode: snap.exitCode, Profile: p.Profile, Restarts: restarts,
@@ -157,6 +226,19 @@ func (p *ManagedProcess) InstanceID() string {
 		return ""
 	}
 	return p.inst.id
+}
+
+// LiveUsage returns the current resource usage (memory bytes and CPU
+// nanoseconds) read live from the instance's cgroup v2 slice, or zeros when no
+// slice is configured (resource limits off / unsupported).
+func (p *ManagedProcess) LiveUsage() (memBytes, cpuNanos int64) {
+	p.mu.Lock()
+	inst := p.inst
+	p.mu.Unlock()
+	if inst == nil || inst.cgroupPath == "" {
+		return 0, 0
+	}
+	return readCgroupUsage(inst.cgroupPath)
 }
 
 // Done returns a channel closed when the current instance terminates.
@@ -218,6 +300,10 @@ func (p *ManagedProcess) SendStdin(data string) error {
 		snap.status == StatusExited {
 		return ErrAlreadyDead
 	}
+	if inst.stdin == nil {
+		// Adopted process: stdin died with the owning daemon; nothing to write.
+		return ErrStdinClosed
+	}
 	inst.stdinMu.Lock()
 	defer inst.stdinMu.Unlock()
 	if inst.stdinEOF {
@@ -233,7 +319,7 @@ func (p *ManagedProcess) CloseStdin() {
 	p.mu.Lock()
 	inst := p.inst
 	p.mu.Unlock()
-	if inst == nil {
+	if inst == nil || inst.stdin == nil {
 		return
 	}
 	inst.stdinMu.Lock()
@@ -251,7 +337,7 @@ func (p *ManagedProcess) closeStdinRead() {
 	p.mu.Lock()
 	inst := p.inst
 	p.mu.Unlock()
-	if inst == nil {
+	if inst == nil || inst.stdinR == nil {
 		return
 	}
 	inst.stdinMu.Lock()

@@ -60,10 +60,18 @@ pkg/api/                  shared request/response types
 3. Output is always consumed asynchronously (per-process stdout/stderr reader
    goroutines); no MCP handler reads a process synchronously.
 4. Logs are never pushed to the agent; it asks for them via `get_logs`.
-5. Nothing blocks anything else: per-process buffers, stdin, waiters and
-   cancellation keep one broken process from affecting another.
-6. Per-process isolation: each process owns its buffers, lifecycle, and
-   waiters; the registry keeps them independent.
+   Lifecycle events are buffered only for explicit subscribers (see
+   `subscribe_events`) and drained via `get_events` — pulled, never pushed,
+   never broadcast.
+5. Nothing blocks anything else: per-process buffers, stdin, waiters, health
+   loops, restart timers and cancellation keep one broken process from affecting
+   another.
+6. Per-process isolation: each process owns its buffers, lifecycle, health
+   state and backoff; the registry keeps them independent.
+7. Supervision policy is declarative and per-app (readiness overrides, health
+   checks, auto-restart with backoff). Enforcement is in the runtime facade,
+   and a failure in any new subsystem degrades gracefully (warn + disable),
+   never takes the daemon down.
 
 ## Development rules
 

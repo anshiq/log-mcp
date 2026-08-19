@@ -137,6 +137,120 @@ apps:
 `wait_for_log(process_id, ready=true)` matches the app's profile readiness
 patterns against captured log lines, one line at a time.
 
+## Supervision (v2)
+
+Supervision is **declarative and per-app**: agent-runtime notices crashes and
+health failures on its own, without the agent polling. All fields are optional
+(v1 files load unchanged). An app with none of these behaves exactly as in v1.
+
+```yaml
+apps:
+  api:
+    command: ["go", "run", "./cmd/api"]
+
+    # Override the profile-detected readiness regexes for this app. A process
+    # is "ready" once a captured log line matches. Omit to use the profile's.
+    readiness:
+      - 'listening on :8080'
+
+    # Continuous health probe, run once the process is ready. After
+    # failure_threshold consecutive failed probes the process is reported
+    # unhealthy and, if the restart policy permits, restarted.
+    health_check:
+      http: "http://localhost:8080/healthz"   # or tcp: "localhost:8080" (set one)
+      interval: 10s      # probe interval (default 10s)
+      timeout: 3s        # per-probe timeout (default 3s, must be < interval)
+      failure_threshold: 3  # consecutive failures that mark unhealthy (default 3)
+
+    # Declarative auto-restart with exponential backoff.
+    restart:
+      policy: on-failure      # never (default) | on-failure | always
+      backoff: [1s, 2s, 5s, 15s, 60s]   # capped-exponential steps (default)
+      max_restarts: 10        # per rolling 10-minute window (default 10; 0 = no budget)
+```
+
+Rules:
+- `on-failure` restarts only on non-zero exit; `always` restarts regardless of
+  exit code.
+- **A manual `stop_process` or shutdown never triggers a restart**, regardless
+  of policy.
+- Exhausting the restart budget marks the process `crashed` (process_status
+  shows `status="crashed"`). Manual `restart_process` resets the budget.
+- A process stable for a full 10-minute window has its budget reset.
+- `set_restart_policy(process_id, policy)` opts an ad-hoc process (started
+  without an app entry) into auto-restart.
+- `process_status` reports `health` (unknown/healthy/unhealthy),
+  `consecutive_failures`, `backoff_state`, and `restart_policy`.
+
+## Security (v2)
+
+Default `runtime.security.mode: trusted` — arbitrary exec, as today. Set
+`restricted` for CI/shared machines:
+
+```yaml
+runtime:
+  security:
+    mode: restricted
+    allowed_commands: ["go", "npm", "pnpm", "./mvnw", "python"]  # basename match
+    allowed_workdirs: ["${project}", "${project}/../shared"]     # confinement
+    allow_pid_attach: false   # disables open_shell(pid=)
+    allow_stdin: true
+    reveal_secrets: false     # hard-disables get_process_env(reveal=true)
+```
+
+In restricted mode, `start_process` with a non-allowlisted command or an
+out-of-tree workdir fails with a structured `policy_denied` error and an audit
+entry. Tool calls are recorded to `.agent-runtime/audit.log` (JSONL, secrets
+redacted, 10MB × 5 rotation); `get_audit_log` reads its tail. In restricted
+mode `reveal=true` is a policy error, not a silent ignore.
+
+## Observability (v2)
+
+- `runtime.metrics: ":9341"` — optional Prometheus scrape endpoint.
+- `runtime.log_forward: { stdout: true, otlp: "http://localhost:4318/v1/logs" }`
+  — best-effort, drop-on-backpressure log forwarding.
+- `get_logs(..., level="error")` — filter structured logs by level
+  (`level=...` / `"level":...` prefixes).
+- `runtime_stats` — process counts by status and log-pipeline drop counters.
+
+## Daemon mode (v2)
+
+With `runtime.daemon: true`, `serve` runs a long-lived daemon that owns the
+managed processes, so they survive the MCP session and a later session
+re-attaches over the Unix socket. Manage it with `agent-runtime daemon
+start|status|stop`. One daemon per project (flock). Without it, behavior is the
+default session-scoped model. Unix-only.
+
+## HTTP transport (v2)
+
+`agent-runtime serve --http :7341` serves the same MCP server over streamable
+HTTP. `runtime.http.token` (env-expanded) is **required** — no unauthenticated
+HTTP. Tool calls are rate-limited (20 rps / burst 50).
+
+```yaml
+runtime:
+  http:
+    token: ${AGENT_RUNTIME_HTTP_TOKEN}
+```
+
+## Resource limits (v2)
+
+Per-app `limits` bound machine impact (Linux-first via cgroup v2; degrades to
+unlimited when unsupported):
+
+```yaml
+apps:
+  api:
+    command: ["go", "run", "./cmd/api"]
+    limits:
+      cpu: "1.0"       # cores, or "500m" (milli-cores)
+      memory: "512M"   # 512M, 1G, 256MiB, ...
+```
+
+Each process gets its own cgroup v2 slice; `process_status` reports live
+`memory_bytes`/`cpu_usage_nanos`; an OOM-kill surfaces to subscribers as
+`process.crashed` with `reason: "oom"`.
+
 ## CLI equivalence
 
 `agent-runtime run` mirrors the request-level env layer from the shell:

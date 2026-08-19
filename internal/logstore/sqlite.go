@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS instances(
   workdir     TEXT NOT NULL,
   profile     TEXT NOT NULL,
   started_at  INTEGER NOT NULL,
+  pid         INTEGER,             -- os pid at start; used for daemon adoption
   exited_at   INTEGER,
   exit_code   INTEGER,
   PRIMARY KEY(process_id, instance_id)
@@ -66,12 +68,49 @@ CREATE TABLE IF NOT EXISTS instances(
 
 const insertEntrySQL = `INSERT INTO entries(process_id,id,ts,stream,line) VALUES (?,?,?,?,?)`
 
-const insertInstanceSQL = `INSERT INTO instances(process_id,instance_id,command,workdir,profile,started_at) VALUES (?,?,?,?,?,?)`
+const insertInstanceSQL = `INSERT INTO instances(process_id,instance_id,command,workdir,profile,started_at,pid) VALUES (?,?,?,?,?,?,?)`
 
-const upsertInstanceExitSQL = `INSERT INTO instances(process_id,instance_id,command,workdir,profile,started_at)
-VALUES (?,?,?,?,?,?)
+const upsertInstanceExitSQL = `INSERT INTO instances(process_id,instance_id,command,workdir,profile,started_at,pid,exited_at,exit_code)
+VALUES (?,?,?,?,?,?,?,?,?)
 ON CONFLICT(process_id, instance_id) DO UPDATE SET
   exited_at=excluded.exited_at, exit_code=excluded.exit_code`
+
+// migrateSchema brings a database created by an older build up to the current
+// schema. It is idempotent and only ever adds nullable columns/indices, so it
+// can run on every open. New databases already have the columns via schemaSQL;
+// older ones are patched in place here.
+func migrateSchema(db *sql.DB) error {
+	cols, err := tableColumns(db, "instances")
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(cols, "pid") {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN pid INTEGER`); err != nil {
+			return fmt.Errorf("logstore: add instances.pid: %w", err)
+		}
+	}
+	return nil
+}
+
+// tableColumns returns the column names of a table via PRAGMA table_info.
+func tableColumns(db *sql.DB, table string) ([]string, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+	}
+	return cols, rows.Err()
+}
 
 const querySQL = `
 SELECT id, ts, stream, line FROM entries
@@ -99,6 +138,7 @@ type instanceInfo struct {
 	workdir    string
 	profile    string
 	startedAt  int64
+	pid        int64
 	exitedAt   *int64
 	exitCode   *int64
 }
@@ -201,6 +241,10 @@ func open(path string, logger *slog.Logger, queueSize int, flushInterval time.Du
 		db.Close()
 		return nil, fmt.Errorf("logstore: create schema: %w", err)
 	}
+	if err := migrateSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	s := &SQLite{
 		db:            db,
@@ -224,8 +268,9 @@ func (s *SQLite) Append(processID string, e logs.Entry) {
 }
 
 // RecordInstance enqueues an instance lifecycle record. startedAt is unix
-// nanos; when exitedAt/exitCode are non-nil the record is an exit update.
-func (s *SQLite) RecordInstance(procID, instanceID, command, workdir, profile string, startedAt int64, exitedAt, exitCode *int64) error {
+// nanos; pid is the OS pid at start (0 when unknown); when exitedAt/exitCode
+// are non-nil the record is an exit update.
+func (s *SQLite) RecordInstance(procID, instanceID, command, workdir, profile string, startedAt int64, pid int64, exitedAt, exitCode *int64) error {
 	if s.isClosed() {
 		return ErrClosed
 	}
@@ -238,11 +283,40 @@ func (s *SQLite) RecordInstance(procID, instanceID, command, workdir, profile st
 			workdir:    workdir,
 			profile:    profile,
 			startedAt:  startedAt,
+			pid:        pid,
 			exitedAt:   exitedAt,
 			exitCode:   exitCode,
 		},
 	})
 	return nil
+}
+
+// OpenInstances returns lifecycle records that have a start but no recorded
+// exit — processes that were still running when the runtime that owned them
+// died (daemon crash). This is the source of truth for daemon adoption: each
+// returned record carries the pid needed to re-attach to the orphaned process.
+func (s *SQLite) OpenInstances() ([]logs.InstanceRecord, error) {
+	if s.isClosed() {
+		return nil, ErrClosed
+	}
+	rows, err := s.db.Query(`SELECT process_id, instance_id, command, workdir, profile, started_at, COALESCE(pid, 0)
+		FROM instances WHERE exited_at IS NULL ORDER BY started_at`)
+	if err != nil {
+		return nil, fmt.Errorf("logstore: open instances: %w", err)
+	}
+	defer rows.Close()
+	var out []logs.InstanceRecord
+	for rows.Next() {
+		var rec logs.InstanceRecord
+		if err := rows.Scan(&rec.ProcessID, &rec.InstanceID, &rec.Command, &rec.WorkDir, &rec.Profile, &rec.StartedAt, &rec.PID); err != nil {
+			return nil, fmt.Errorf("logstore: scan instance: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // isClosed reports whether Close has completed (the writer has exited and the
@@ -263,6 +337,11 @@ func (s *SQLite) drop(msg string) {
 		s.logger.Warn(msg, "dropped", n)
 	}
 }
+
+// Dropped reports how many entries were dropped because the write queue was
+// full. It is exposed so runtime_stats can reveal whether the archive is
+// keeping up.
+func (s *SQLite) Dropped() uint64 { return s.dropped.Load() }
 
 func (s *SQLite) enqueue(item queueItem) {
 	// After Close the writer goroutine has exited, so an item enqueued now
@@ -563,11 +642,11 @@ func (s *SQLite) flush(batch []queueItem) {
 			}
 		case itemInstance:
 			if item.inst.exitedAt != nil {
-				if _, err := upsExit.Exec(item.processID, item.inst.instanceID, item.inst.command, item.inst.workdir, item.inst.profile, item.inst.startedAt, *item.inst.exitedAt, *item.inst.exitCode); err != nil {
+				if _, err := upsExit.Exec(item.processID, item.inst.instanceID, item.inst.command, item.inst.workdir, item.inst.profile, item.inst.startedAt, item.inst.pid, *item.inst.exitedAt, *item.inst.exitCode); err != nil {
 					s.logger.Warn("logstore: upsert exit failed", "error", err, "process_id", item.processID, "instance_id", item.inst.instanceID)
 				}
 			} else {
-				if _, err := insInst.Exec(item.processID, item.inst.instanceID, item.inst.command, item.inst.workdir, item.inst.profile, item.inst.startedAt); err != nil {
+				if _, err := insInst.Exec(item.processID, item.inst.instanceID, item.inst.command, item.inst.workdir, item.inst.profile, item.inst.startedAt, item.inst.pid); err != nil {
 					s.logger.Warn("logstore: insert instance failed", "error", err, "process_id", item.processID, "instance_id", item.inst.instanceID)
 				}
 			}
