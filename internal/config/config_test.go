@@ -375,3 +375,168 @@ func TestRedactEnv(t *testing.T) {
 		t.Fatal("reveal=true modified the slice")
 	}
 }
+
+func TestAppSupervisionParsing(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+version: 2
+apps:
+  api:
+    command: ["go", "run", "./cmd/api"]
+    readiness:
+      - 'listening on :8080'
+    health_check:
+      http: "http://localhost:8080/healthz"
+      interval: 2s
+      timeout: 500ms
+      failure_threshold: 5
+    restart:
+      policy: on-failure
+      backoff: [1s, 2s, 5s]
+      max_restarts: 7
+`
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := l.Config.Apps["api"]
+	if l.Config.Version != 2 {
+		t.Fatalf("version = %d, want 2", l.Config.Version)
+	}
+	if len(app.Readiness) != 1 || app.Readiness[0] != "listening on :8080" {
+		t.Fatalf("readiness = %v", app.Readiness)
+	}
+	if app.HealthCheck.HTTP != "http://localhost:8080/healthz" {
+		t.Fatalf("health http = %q", app.HealthCheck.HTTP)
+	}
+	if app.HealthCheck.Interval.Time() != 2*time.Second {
+		t.Fatalf("interval = %v", app.HealthCheck.Interval)
+	}
+	if app.HealthCheck.Timeout.Time() != 500*time.Millisecond {
+		t.Fatalf("timeout = %v", app.HealthCheck.Timeout)
+	}
+	if app.HealthCheck.FailureThreshold != 5 {
+		t.Fatalf("failure_threshold = %d", app.HealthCheck.FailureThreshold)
+	}
+	if app.Restart.Policy != RestartOnFailure {
+		t.Fatalf("policy = %q, want on-failure", app.Restart.Policy)
+	}
+	if len(app.Restart.Backoff) != 3 || app.Restart.Backoff[2].Time() != 5*time.Second {
+		t.Fatalf("backoff = %v", app.Restart.Backoff)
+	}
+	if app.Restart.MaxRestarts != 7 {
+		t.Fatalf("max_restarts = %d, want 7", app.Restart.MaxRestarts)
+	}
+}
+
+func TestAppSupervisionDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte("apps:\n  api:\n    command: [\"true\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := l.Config.Apps["api"]
+	if app.Restart.Policy != RestartNever {
+		t.Fatalf("default policy = %q, want never", app.Restart.Policy)
+	}
+	if app.Restart.MaxRestarts != 10 {
+		t.Fatalf("default max_restarts = %d, want 10", app.Restart.MaxRestarts)
+	}
+	if len(app.Restart.Backoff) != 5 {
+		t.Fatalf("default backoff len = %d, want 5", len(app.Restart.Backoff))
+	}
+	if app.HealthCheck.Interval.Time() != 10*time.Second {
+		t.Fatalf("default health interval = %v", app.HealthCheck.Interval)
+	}
+}
+
+func TestInvalidRestartPolicyFailsLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-runtime.yaml")
+	if err := os.WriteFile(path, []byte("apps:\n  api:\n    command: [\"true\"]\n    restart:\n      policy: sometimes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "restart policy") {
+		t.Fatalf("expected restart-policy error, got %v", err)
+	}
+}
+
+func TestInvalidReadinessPatternFailsLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-runtime.yaml")
+	if err := os.WriteFile(path, []byte("apps:\n  api:\n    command: [\"true\"]\n    readiness: [\"(unclosed\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "readiness") {
+		t.Fatalf("expected readiness error, got %v", err)
+	}
+}
+
+func TestUnsupportedVersionFailsLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-runtime.yaml")
+	if err := os.WriteFile(path, []byte("version: 99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "version") {
+		t.Fatalf("expected version error, got %v", err)
+	}
+}
+
+func TestParseMemorySize(t *testing.T) {
+	cases := map[string]int64{
+		"512M": 512 << 20, "1G": 1 << 30, "256MiB": 256 << 20,
+		"1073741824": 1 << 30, "128k": 128 << 10, "2GiB": 2 << 30,
+	}
+	for in, want := range cases {
+		got, err := ParseMemorySize(in)
+		if err != nil {
+			t.Fatalf("ParseMemorySize(%q) error: %v", in, err)
+		}
+		if got != want {
+			t.Fatalf("ParseMemorySize(%q) = %d, want %d", in, got, want)
+		}
+	}
+	for _, bad := range []string{"", "12x", "abc", "-5"} {
+		if _, err := ParseMemorySize(bad); err == nil {
+			t.Fatalf("ParseMemorySize(%q) expected error", bad)
+		}
+	}
+}
+
+func TestParseCPU(t *testing.T) {
+	if v, err := ParseCPU("1.0"); err != nil || v != 1.0 {
+		t.Fatalf("ParseCPU(1.0) = %v, %v", v, err)
+	}
+	if v, err := ParseCPU("500m"); err != nil || v != 0.5 {
+		t.Fatalf("ParseCPU(500m) = %v, %v", v, err)
+	}
+	if _, err := ParseCPU("nope"); err == nil {
+		t.Fatal("expected error for bad cpu")
+	}
+}
+
+func TestLimitsValidation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-runtime.yaml")
+	// Valid limits parse.
+	if err := os.WriteFile(path, []byte("apps:\n  api:\n    command: [\"true\"]\n    limits:\n      cpu: \"0.5\"\n      memory: \"128M\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(path); err != nil {
+		t.Fatalf("valid limits failed load: %v", err)
+	}
+	// Invalid memory fails load.
+	if err := os.WriteFile(path, []byte("apps:\n  api:\n    command: [\"true\"]\n    limits:\n      memory: \"nope\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(path); err == nil {
+		t.Fatal("expected error for invalid memory limit")
+	}
+}

@@ -73,12 +73,17 @@ func (m *Manager) Start(ctx context.Context, spec StartSpec, profile string, gra
 		return nil, err
 	}
 	id := m.newProcessID()
+	if grace <= 0 {
+		grace = m.opts.DefaultGrace
+	}
 	proc := &ManagedProcess{
-		ID:      id,
-		Spec:    spec,
-		Profile: profile,
-		wakeup:  newBroadcaster(),
-		logger:  m.opts.Logger,
+		ID:          id,
+		Spec:        spec,
+		Profile:     profile,
+		supervision: spec.Supervision.CompileReadiness(),
+		grace:       grace,
+		wakeup:      newBroadcaster(),
+		logger:      m.opts.Logger,
 	}
 	// The wakeup callback is wired in at construction, before the process is
 	// visible to readers, so it can never be mutated concurrently with Appends.
@@ -99,15 +104,26 @@ func (m *Manager) Start(ctx context.Context, spec StartSpec, profile string, gra
 }
 
 // Stop terminates the process gracefully (SIGTERM to its process group), then
-// escalates to SIGKILL after the grace period. It never blocks forever.
+// escalates to SIGKILL after the grace period. It never blocks forever. It
+// serializes on proc.startMu so it can never race an in-flight auto-restart
+// that is mid-start on the same instance.
 func (m *Manager) Stop(ctx context.Context, id string) error {
 	proc, _ := m.Get(id)
 	if proc == nil {
 		return ErrNotFound
 	}
+	proc.startMu.Lock()
+	defer proc.startMu.Unlock()
+	return m.stopInstance(proc, ctx)
+}
+
+// stopInstance terminates the current instance of proc. The caller must hold
+// proc.startMu (which serializes it against manual/auto restarts), so
+// inst.cmd.Process is stable and never read mid-Start.
+func (m *Manager) stopInstance(proc *ManagedProcess, ctx context.Context) error {
 	info := proc.Info()
 	switch info.Status {
-	case StatusStopped, StatusExited, StatusFailed, StatusCreated:
+	case StatusStopped, StatusExited, StatusFailed, StatusCreated, StatusCrashed:
 		return nil
 	}
 	proc.setStatus(StatusStopping)
@@ -123,7 +139,14 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 		grace = m.opts.DefaultGrace
 	}
 
-	sigTerm(inst.cmd.Process)
+	handle := inst.procHandle()
+	if handle == nil {
+		// Adopted process with no live pid handle: nothing to signal. Mark the
+		// instance finished so callers can proceed.
+		inst.finish()
+		return nil
+	}
+	sigTerm(handle)
 	graceTimer := time.NewTimer(grace)
 	defer graceTimer.Stop()
 	select {
@@ -134,7 +157,7 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	case <-graceTimer.C:
 	}
 
-	sigKill(inst.cmd.Process)
+	sigKill(handle)
 	killTimer := time.NewTimer(2 * time.Second)
 	defer killTimer.Stop()
 	select {
@@ -163,10 +186,10 @@ func (m *Manager) Signal(ctx context.Context, id string, sig syscall.Signal) err
 		return fmt.Errorf("process %q is not running", id)
 	}
 	inst := m.currentInstance(proc)
-	if inst == nil || inst.cmd.Process == nil {
+	if inst == nil || inst.procHandle() == nil {
 		return fmt.Errorf("process %q is not running", id)
 	}
-	err := signalGroup(inst.cmd.Process, sig)
+	err := signalGroup(inst.procHandle(), sig)
 	// The process may have exited between the status check and the kill; a
 	// missing group is a benign race, not an error.
 	if errors.Is(err, syscall.ESRCH) {
@@ -176,19 +199,24 @@ func (m *Manager) Signal(ctx context.Context, id string, sig syscall.Signal) err
 }
 
 // Restart stops the current instance and starts a new one with the same
-// StartSpec. The logical process ID and its log history are preserved.
+// StartSpec. The logical process ID and its log history are preserved. Manual
+// restarts reset the restart budget (backoff) and clear any crashed state, so a
+// human can always recover a crashed process.
 func (m *Manager) Restart(ctx context.Context, id string) error {
 	proc, _ := m.Get(id)
 	if proc == nil {
 		return ErrNotFound
 	}
+	proc.startMu.Lock()
+	defer proc.startMu.Unlock()
+
 	grace := m.opts.DefaultGrace
 	if info := proc.Info(); info.Status == StatusRunning || info.Status == StatusStarting {
 		if inst := m.currentInstance(proc); inst != nil && inst.grace > 0 {
 			grace = inst.grace
 		}
 		stopCtx, cancel := context.WithTimeout(context.Background(), grace+3*time.Second)
-		err := m.Stop(stopCtx, id)
+		err := m.stopInstance(proc, stopCtx)
 		cancel()
 		if err != nil {
 			return err
@@ -196,8 +224,29 @@ func (m *Manager) Restart(ctx context.Context, id string) error {
 	}
 	proc.mu.Lock()
 	proc.restarts++
+	proc.backoff = backoffState{} // manual restart resets the budget
+	proc.crashed.Store(false)
 	proc.mu.Unlock()
 	return m.startInstance(proc, grace)
+}
+
+// SetRestartPolicy changes the restart policy of an existing process. It is the
+// hook for set_restart_policy, letting an ad-hoc process (started without an app
+// entry) opt into supervision after the fact. Invalid policies are rejected.
+func (m *Manager) SetRestartPolicy(id string, policy RestartPolicy) error {
+	proc, ok := m.Get(id)
+	if !ok {
+		return ErrNotFound
+	}
+	switch policy {
+	case RestartNever, RestartOnFailure, RestartAlways:
+	default:
+		return fmt.Errorf("invalid restart policy %q (want never|on-failure|always)", policy)
+	}
+	proc.mu.Lock()
+	proc.supervision.Restart.Policy = policy
+	proc.mu.Unlock()
+	return nil
 }
 
 // Remove deletes a process from the registry and frees its log buffers. A
@@ -210,13 +259,19 @@ func (m *Manager) Remove(id string, force bool) error {
 	if !ok {
 		return ErrNotFound
 	}
+	// Serialize with any in-flight auto-restart (doRestart) so a force remove
+	// never races a pending startInstance into an orphaned process that keeps
+	// running after removal.
+	proc.startMu.Lock()
+	defer proc.startMu.Unlock()
+
 	switch info := proc.Info(); info.Status {
 	case StatusStarting, StatusRunning, StatusStopping:
 		if !force {
 			return fmt.Errorf("process %q is %s; use force=true to stop and remove it", id, info.Status)
 		}
 		stopCtx, cancel := context.WithTimeout(context.Background(), m.opts.DefaultGrace+3*time.Second)
-		err := m.Stop(stopCtx, id)
+		err := m.stopInstance(proc, stopCtx)
 		cancel()
 		if err != nil {
 			return err
@@ -225,6 +280,9 @@ func (m *Manager) Remove(id string, force bool) error {
 	m.mu.Lock()
 	delete(m.procs, id)
 	m.mu.Unlock()
+	proc.mu.Lock()
+	proc.removed = true
+	proc.mu.Unlock()
 	m.logs.Delete(id)
 	return nil
 }

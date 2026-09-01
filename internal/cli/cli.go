@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,24 +23,105 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"agent-runtime/internal/config"
+	"agent-runtime/internal/daemon"
+	"agent-runtime/internal/httpserve"
 	"agent-runtime/internal/integrate"
 	rtmcp "agent-runtime/internal/mcp"
 	"agent-runtime/internal/runtime"
 )
 
 // Serve runs the MCP stdio server until the client disconnects or a shutdown
-// signal arrives, then gracefully stops all managed processes.
+// signal arrives. With runtime.daemon: true it serves over a long-lived daemon
+// (processes survive the session); otherwise it is the default session-scoped
+// path and gracefully stops all managed processes on exit.
 func Serve(loaded *config.Loaded, logger *slog.Logger) error {
-	rt := runtime.New(loaded, logger)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if loaded.Config.Runtime.Daemon {
+		// Ensure a daemon is running, then serve as its thin client. On exit we
+		// do NOT shut the daemon down: its processes keep running for the next
+		// session to re-attach.
+		started, err := daemon.Start(loaded, logger)
+		if err != nil {
+			return err
+		}
+		if started {
+			logger.Info("daemon spawned; waiting for it to become ready")
+			if err := daemon.WaitReady(loaded.ProjectDir, 10*time.Second); err != nil {
+				return err
+			}
+		}
+		client := daemon.NewClient(daemon.SocketPath(loaded.ProjectDir))
+		server := rtmcp.NewServer(client, logger)
+		return server.Run(ctx, &mcp.StdioTransport{})
+	}
+
+	rt := runtime.New(loaded, logger)
 	server := rtmcp.NewServer(rt, logger)
 	err := server.Run(ctx, &mcp.StdioTransport{})
 	if serr := rt.Shutdown(); err == nil {
 		err = serr
 	}
 	return err
+}
+
+// ServeHTTP runs the MCP server over the streamable-HTTP transport on addr
+// (Phase 5). A bearer token from runtime.http.token (env-expanded) is required;
+// requests without it get 401 and tool calls are rate-limited. The process
+// registry is shared (daemon semantics when runtime.daemon is set); each HTTP
+// request session is stateless at the transport.
+func ServeHTTP(loaded *config.Loaded, logger *slog.Logger, addr string) error {
+	if addr == "" {
+		addr = loaded.Config.Runtime.HTTP.Addr
+	}
+	if addr == "" {
+		return errors.New("serve --http requires a listen address (or runtime.http.addr)")
+	}
+	token := os.ExpandEnv(loaded.Config.Runtime.HTTP.Token)
+	if token == "" {
+		return errors.New("serve --http requires runtime.http.token; there is no unauthenticated HTTP mode")
+	}
+
+	var facade runtime.Facade
+	var shutdown func() error
+	if loaded.Config.Runtime.Daemon {
+		started, err := daemon.Start(loaded, logger)
+		if err != nil {
+			return err
+		}
+		if started {
+			if err := daemon.WaitReady(loaded.ProjectDir, 10*time.Second); err != nil {
+				return err
+			}
+		}
+		facade = daemon.NewClient(daemon.SocketPath(loaded.ProjectDir))
+		shutdown = func() error { return nil } // daemon owns the processes
+	} else {
+		rt := runtime.New(loaded, logger)
+		facade = rt
+		shutdown = rt.Shutdown
+	}
+
+	server := rtmcp.NewServer(facade, logger)
+	handler := httpserve.Handler(server, token, logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: addr, Handler: handler}
+	go func() {
+		<-ctx.Done()
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}()
+
+	logger.Info("serving streamable-HTTP", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return shutdown()
 }
 
 // Integrate prints (or, with --write, installs; with --remove, uninstalls) the

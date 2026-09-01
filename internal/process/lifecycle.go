@@ -63,6 +63,17 @@ func (m *Manager) startInstance(proc *ManagedProcess, grace time.Duration) error
 		entryFrom: proc.Logs.NextID(),
 	}
 	inst.snap.Store(&instanceSnapshot{status: StatusStarting})
+	proc.resetHealth()
+
+	// Resource limits (Phase 7): place the child in a per-process cgroup v2
+	// slice. Failure degrades gracefully to unlimited.
+	cgroupPath, closeFD, rcleanup, rerr := configureResources(cmd, proc.Spec.Limits, proc.ID)
+	if rerr != nil {
+		m.opts.Logger.Warn("resource limits unavailable; running unlimited", "process_id", proc.ID, "error", rerr)
+	} else {
+		inst.cgroupPath = cgroupPath
+		inst.resourceCleanup = rcleanup
+	}
 
 	proc.mu.Lock()
 	proc.inst = inst
@@ -94,6 +105,23 @@ func (m *Manager) startInstance(proc *ManagedProcess, grace time.Duration) error
 	proc.mu.Lock()
 	inst.snap.Store(&instanceSnapshot{status: StatusRunning, pid: cmd.Process.Pid, started: now})
 	proc.mu.Unlock()
+
+	// Windows: assign the child to a Job Object so the whole process tree is
+	// killed on termination (Unix uses process groups). Failure degrades
+	// gracefully: warn and run without tree-kill.
+	cleanup, jerr := setupJob(cmd)
+	if jerr != nil {
+		m.opts.Logger.Warn("job object setup failed; running without tree-kill", "process_id", proc.ID, "error", jerr)
+	}
+	inst.jobCleanup = cleanup
+
+	// The cgroup fd is only needed to place the child at exec; close it now
+	// that the child is running (the slice dir stays for usage/OOM reading).
+	if closeFD != nil {
+		closeFD()
+	}
+	inst.oomBaseline = snapshotOomBaseline(inst.cgroupPath)
+
 	m.recordInstance(proc, inst, now, nil, nil)
 	m.opts.Logger.Debug("process started",
 		"process_id", proc.ID, "instance_id", instID,
@@ -103,6 +131,7 @@ func (m *Manager) startInstance(proc *ManagedProcess, grace time.Duration) error
 	go m.readLoop(proc, inst, stdoutR, logs.StreamStdout)
 	go m.readLoop(proc, inst, stderrR, logs.StreamStderr)
 	go m.waitLoop(proc, inst)
+	go m.healthLoop(proc, inst)
 
 	m.Events().Publish(events.Event{
 		Type: events.Started, ProcessID: proc.ID, InstanceID: instID,
@@ -158,8 +187,10 @@ func splitLines(logs *logs.ProcessLogs, stream logs.Stream, pending string) stri
 
 // recordInstance writes an instance lifecycle record to the durable sink, if
 // one is configured. exitedAt/exitCode are nil on the start record and set on
-// the exit record. Failures are logged at debug level only: instance metadata
-// is auxiliary and must never affect process management.
+// the exit record. The pid comes from the instance snapshot, so the start
+// record carries the OS pid needed for daemon adoption. Failures are logged at
+// debug level only: instance metadata is auxiliary and must never affect
+// process management.
 func (m *Manager) recordInstance(proc *ManagedProcess, inst *instance, startedAt time.Time, exitedAt *time.Time, exitCode *int) {
 	if m.sink == nil {
 		return
@@ -174,7 +205,11 @@ func (m *Manager) recordInstance(proc *ManagedProcess, inst *instance, startedAt
 		v := int64(*exitCode)
 		code = &v
 	}
-	_ = m.sink.RecordInstance(proc.ID, inst.id, proc.Spec.Command, proc.Spec.WorkDir, proc.Profile, startedAt.UnixNano(), exNanos, code)
+	var pid int64
+	if s := inst.snap.Load(); s != nil {
+		pid = int64(s.pid)
+	}
+	_ = m.sink.RecordInstance(proc.ID, inst.id, proc.Spec.Command, proc.Spec.WorkDir, proc.Profile, startedAt.UnixNano(), pid, exNanos, code)
 }
 
 // waitLoop waits for the child to exit, records the result and notifies
@@ -206,6 +241,16 @@ func (m *Manager) waitLoop(proc *ManagedProcess, inst *instance) {
 	inst.closeWriters()
 	inst.readers.Wait()
 
+	// Windows: close the Job Object handle to terminate any surviving
+	// grandchildren (tree-kill); no-op on Unix.
+	if inst.jobCleanup != nil {
+		inst.jobCleanup()
+	}
+	// Release the cgroup slice now that the process group has exited.
+	if inst.resourceCleanup != nil {
+		inst.resourceCleanup()
+	}
+
 	proc.mu.Lock()
 	old := inst.snap.Load()
 	status := StatusExited
@@ -236,6 +281,22 @@ func (m *Manager) waitLoop(proc *ManagedProcess, inst *instance) {
 	})
 	m.opts.Logger.Debug("process exited",
 		"process_id", proc.ID, "instance_id", inst.id, "exit_code", code)
+
+	// An OOM-kill (cgroup memory.events oom_kill advanced since start) is
+	// surfaced to subscribers as events.Crashed with reason "oom"; the normal
+	// restart policy below still applies (SIGKILL => non-zero exit).
+	if cgroupOomKilled(inst.cgroupPath, inst.oomBaseline) {
+		m.Events().Publish(events.Event{
+			Type: events.Crashed, ProcessID: proc.ID, InstanceID: inst.id,
+			Timestamp: now, Payload: map[string]any{"reason": "oom"},
+		})
+		m.opts.Logger.Warn("process killed by OOM", "process_id", proc.ID, "instance_id", inst.id)
+	}
+
+	// Supervisor decision point: decide (never synchronously restart) whether a
+	// policy-driven auto-restart should follow this exit. Manual stops never
+	// restart.
+	m.maybeScheduleRestart(proc, inst, code)
 }
 
 // broadcaster fans out "new log entry" wakeups to a small set of subscribers.

@@ -86,7 +86,7 @@ literal, case-insensitive substrings; a clever rephrase breaks
 - [ ] Add an `apps:` entry in `agent-runtime.yaml`.
 - [ ] Run the Verification Loop below and only report "done" once it passes.
 
-## The Verification Loop (must pass before "done")
+## Verification Loop (must pass before "done")
 
 1. `start_process(app="<name>")` — returns a `process_id` immediately.
 2. `wait_for_log(process_id, ready=true)` — confirm the readiness line.
@@ -95,6 +95,25 @@ literal, case-insensitive substrings; a clever rephrase breaks
 5. `process_status(process_id)` — exit code 0, clean stop.
 6. `get_process_env(process_id)` — sanity-check `PORT` and friends merged
    from the right layers.
+
+## Supervision (v2) — optional continuous health & restart
+
+Beyond the v1 contract, apps may opt into **continuous supervision** by
+declaring `health_check` and/or `restart` under their `apps:` entry
+(see `reference/agent-runtime-yaml.md`):
+
+- **`health_check`** — agent-runtime probes an HTTP/TCP endpoint on an
+  interval once the app is ready; after `failure_threshold` consecutive
+  failures it reports the app unhealthy and (per the restart policy) restarts it.
+- **`restart.policy`** — `never` (default) | `on-failure` | `always`, with an
+  exponential `backoff` schedule and a `max_restarts` budget per 10-minute
+  window. A manual `stop_process` never restarts.
+
+Best practice: if you add a `health_check`, print its URL or bind a `/healthz`
+endpoint that returns 200 only when the app is actually healthy — the probe
+should fail when the app is wedged, not merely alive.
+
+## Anti-patterns
 
 On failure: `get_logs(process_id, stream="stderr", lines=50)` → fix the
 cause → `restart_process(process_id)` → `wait_for_log(process_id, ready=true)`

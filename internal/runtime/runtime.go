@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +20,7 @@ import (
 	"agent-runtime/internal/config"
 	"agent-runtime/internal/logs"
 	"agent-runtime/internal/logstore"
+	"agent-runtime/internal/policy"
 	"agent-runtime/internal/process"
 	"agent-runtime/internal/profile"
 	"agent-runtime/pkg/api"
@@ -37,6 +39,22 @@ type Runtime struct {
 	profiles *profile.Registry
 	logger   *slog.Logger
 	sink     logs.Sink
+
+	// policy is the security posture enforcer (Phase 4). It is constructed once
+	// from runtime.security; nil when not configured (trusted mode is still a
+	// valid policy that denies nothing).
+	policy *policy.Policy
+	// audit is the JSONL audit log writer (Phase 4). nil when the audit log
+	// could not be opened; the runtime keeps running regardless.
+	audit *policy.Audit
+
+	// subs hands out capped event subscriptions over the event bus (Phase 2).
+	subs *SubscriptionManager
+	// metrics, when non-nil, is the optional Prometheus scrape endpoint (Phase 6).
+	metrics *Metrics
+
+	// startedAt is when the runtime started; runtime_stats uptime derives from it.
+	startedAt time.Time
 
 	// baseEnv is the lowest environment layer every process inherits: the
 	// captured login-shell environment (baseEnvName == "shell") or os.Environ()
@@ -70,18 +88,59 @@ func New(loaded *config.Loaded, logger *slog.Logger) *Runtime {
 		Sink:               sink,
 	})
 	baseEnv, baseEnvName := captureBaseEnv(loaded, logger)
-	return &Runtime{
+
+	// Security posture: construct once, enforce in the facade (never in MCP
+	// handlers). Audit log failure degrades gracefully to nil (no audit).
+	pol := policy.New(loaded.Config.Runtime.Security, loaded.ProjectDir, logger)
+	var audit *policy.Audit
+	if a, err := policy.NewAudit(filepath.Join(loaded.ProjectDir, ".agent-runtime"), logger); err != nil {
+		logger.Warn("audit log unavailable; continuing without it", "error", err)
+	} else {
+		audit = a
+	}
+
+	rt := &Runtime{
 		cfg:         loaded,
 		manager:     manager,
 		profiles:    profile.Default(),
 		logger:      logger,
 		sink:        sink,
+		policy:      pol,
+		audit:       audit,
+		subs:        NewSubscriptionManager(manager.Events()),
+		startedAt:   time.Now(),
 		baseEnv:     baseEnv,
 		baseEnvName: baseEnvName,
 		envSrc:      make(map[string]map[string]string),
 		rootCtx:     rootCtx,
 		cancel:      cancel,
 	}
+
+	if addr := loaded.Config.Runtime.Metrics; addr != "" {
+		m := NewMetrics()
+		rt.metrics = m
+		// Increment crash/restart counters from lifecycle events.
+		ch, _ := manager.Events().Subscribe()
+		go func() {
+			for e := range ch {
+				switch e.Type {
+				case "process.crashed":
+					m.IncCrash()
+				case "process.restarted":
+					m.IncRestart()
+				}
+			}
+		}()
+		go func() {
+			srv := &http.Server{Addr: addr, Handler: m.Handler()}
+			logger.Debug("metrics endpoint", "addr", addr)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Warn("metrics endpoint failed; disabling", "addr", addr, "error", err)
+			}
+		}()
+	}
+
+	return rt
 }
 
 // captureBaseEnv resolves the lowest environment layer for every process. With
@@ -106,31 +165,101 @@ func captureBaseEnv(loaded *config.Loaded, logger *slog.Logger) (env []string, n
 // never fatal: the runtime warns and falls back to memory so the daemon keeps
 // running even when the archive cannot be opened.
 func buildSink(loaded *config.Loaded, logger *slog.Logger, rootCtx context.Context) logs.Sink {
-	if loaded.Config.Runtime.LogStore != "sqlite" {
-		return nil
+	var primary logs.Sink
+	if loaded.Config.Runtime.LogStore == "sqlite" {
+		path := loaded.Config.Runtime.DBPath
+		if path == "" {
+			path = filepath.Join(loaded.ProjectDir, ".agent-runtime", "logs.db")
+		} else if !filepath.IsAbs(path) {
+			path = filepath.Join(loaded.ProjectDir, path)
+		}
+		sink, err := logstore.Open(path, logger)
+		if err != nil {
+			logger.Warn("log_store=sqlite failed to open, falling back to memory", "path", path, "error", err)
+		} else {
+			maxAge := time.Duration(*loaded.Config.Runtime.DBMaxAgeDays) * 24 * time.Hour
+			if err := sink.Retain(maxAge, *loaded.Config.Runtime.DBMaxMB); err != nil {
+				logger.Warn("logstore: initial retain failed", "path", path, "error", err)
+			}
+			go sink.Janitor(rootCtx.Done(), time.Hour)
+			logger.Debug("logstore: sqlite archive enabled", "path", path)
+			primary = sink
+		}
 	}
-	path := loaded.Config.Runtime.DBPath
-	if path == "" {
-		path = filepath.Join(loaded.ProjectDir, ".agent-runtime", "logs.db")
-	} else if !filepath.IsAbs(path) {
-		path = filepath.Join(loaded.ProjectDir, path)
+
+	// Optional log forwarding: a tee sink that delegates to the primary (which
+	// may be nil = memory mode) and fans out to forwarders, drop-on-backpressure.
+	var forwards []logs.Forwarder
+	if lf := loaded.Config.Runtime.LogForward; lf.Stdout || lf.OTLP != "" {
+		if lf.Stdout {
+			forwards = append(forwards, logs.NewStdoutForwarder())
+		}
+		if lf.OTLP != "" {
+			forwards = append(forwards, logs.NewOTLPForwarder(lf.OTLP, logger))
+		}
 	}
-	sink, err := logstore.Open(path, logger)
-	if err != nil {
-		logger.Warn("log_store=sqlite failed to open, falling back to memory", "path", path, "error", err)
-		return nil
+	if len(forwards) > 0 {
+		return logs.NewTee(primary, forwards...)
 	}
-	maxAge := time.Duration(*loaded.Config.Runtime.DBMaxAgeDays) * 24 * time.Hour
-	if err := sink.Retain(maxAge, *loaded.Config.Runtime.DBMaxMB); err != nil {
-		logger.Warn("logstore: initial retain failed", "path", path, "error", err)
+	return primary
+}
+
+// RecordAudit appends a tool-call line to the audit log (no-op when the audit
+// log is unavailable). args are redacted for secrets by the audit writer.
+func (r *Runtime) RecordAudit(tool string, args map[string]any, result string, caller string) {
+	if r.audit != nil {
+		r.audit.Record(tool, args, result, 0, caller)
 	}
-	go sink.Janitor(rootCtx.Done(), time.Hour)
-	logger.Debug("logstore: sqlite archive enabled", "path", path)
-	return sink
+}
+
+// deny evaluates a security check; on a Denial it records the refusal to the
+// audit log and returns the structured error, otherwise nil.
+func (r *Runtime) deny(tool string, args map[string]any, check func() *policy.Denial) error {
+	if d := check(); d != nil {
+		r.RecordAudit(tool, args, "policy_denied: "+d.Rule, "facade")
+		return d
+	}
+	return nil
 }
 
 // Manager exposes the underlying process manager (used by the CLI).
 func (r *Runtime) Manager() *process.Manager { return r.manager }
+
+// AdoptOrphans re-registers processes that were still running when a previous
+// runtime holding this project died (daemon crash). Orphans are found via the
+// durable archive's open instance records; each carries the OS pid needed to
+// re-attach. It is called once at daemon startup. Returns the number adopted.
+func (r *Runtime) AdoptOrphans() int {
+	ar, ok := r.sink.(logs.InstanceArchive)
+	if !ok || r.sink == nil {
+		return 0
+	}
+	recs, err := ar.OpenInstances()
+	if err != nil {
+		r.logger.Warn("adopt: open instances failed", "error", err)
+		return 0
+	}
+	if len(recs) == 0 {
+		return 0
+	}
+	adopt := make([]process.AdoptRecord, 0, len(recs))
+	for _, rec := range recs {
+		adopt = append(adopt, process.AdoptRecord{
+			ProcessID:  rec.ProcessID,
+			InstanceID: rec.InstanceID,
+			Command:    rec.Command,
+			WorkDir:    rec.WorkDir,
+			Profile:    rec.Profile,
+			StartedAt:  time.Unix(0, rec.StartedAt),
+			PID:        int(rec.PID),
+		})
+	}
+	n, skipped := r.manager.Adopt(adopt)
+	if n > 0 {
+		r.logger.Info("adopted orphaned processes from previous runtime", "adopted", n, "skipped", skipped)
+	}
+	return n
+}
 
 // Config returns the loaded project configuration.
 func (r *Runtime) Config() *config.Loaded { return r.cfg }
@@ -140,6 +269,16 @@ func (r *Runtime) Config() *config.Loaded { return r.cfg }
 func (r *Runtime) Start(ctx context.Context, req api.StartRequest) (*api.StartResult, error) {
 	spec, prof, source, err := r.resolveStart(req)
 	if err != nil {
+		return nil, err
+	}
+	// Security posture (restricted mode): the facade denies before anything is
+	// exec'd or registered, and records the refusal to the audit log.
+	if err := r.deny("start_process", map[string]any{"command": spec.Command, "workdir": spec.WorkDir}, func() *policy.Denial {
+		if d := r.policy.DenyCommand(spec.Command); d != nil {
+			return d
+		}
+		return r.policy.DenyWorkdir(spec.WorkDir)
+	}); err != nil {
 		return nil, err
 	}
 	grace := r.cfg.Config.Runtime.StopGrace.Time()
@@ -166,6 +305,7 @@ func (r *Runtime) Start(ctx context.Context, req api.StartRequest) (*api.StartRe
 		Command:    info.Command,
 		Args:       info.Args,
 		WorkDir:    info.WorkDir,
+		Readiness:  spec.Readiness,
 	}, nil
 }
 
@@ -177,6 +317,15 @@ func (r *Runtime) Stop(ctx context.Context, id string) error {
 // Restart stops and re-launches a process with the same specification.
 func (r *Runtime) Restart(ctx context.Context, id string) error {
 	return r.manager.Restart(ctx, id)
+}
+
+// SetRestartPolicy sets the restart policy of an existing process (the hook for
+// set_restart_policy), letting an ad-hoc process opt into supervision.
+func (r *Runtime) SetRestartPolicy(req api.SetRestartPolicyRequest) (*api.SetRestartPolicyResult, error) {
+	if err := r.manager.SetRestartPolicy(req.ProcessID, process.RestartPolicy(req.Policy)); err != nil {
+		return nil, err
+	}
+	return &api.SetRestartPolicyResult{ProcessID: req.ProcessID, RestartPolicy: req.Policy}, nil
 }
 
 // SignalProcess delivers a named signal to the entire process group of a
@@ -197,6 +346,13 @@ func (r *Runtime) SignalProcess(ctx context.Context, req api.SignalProcessReques
 // environment read live from /proc/<pid>/environ. Secret-like values are
 // masked unless Reveal is set.
 func (r *Runtime) ProcessEnv(req api.ProcessEnvRequest) (*api.ProcessEnvResult, error) {
+	// In restricted mode, reveal=true is a hard policy error, not a silent
+	// ignore (the caller must not think secrets were returned).
+	if req.Reveal {
+		if err := r.deny("get_process_env", map[string]any{"process_id": req.ProcessID, "reveal": true}, r.policy.DenyReveal); err != nil {
+			return nil, err
+		}
+	}
 	proc, ok := r.manager.Get(req.ProcessID)
 	if !ok {
 		return nil, fmt.Errorf("unknown process %q", req.ProcessID)
@@ -263,6 +419,9 @@ func (r *Runtime) OpenShell(ctx context.Context, req api.OpenShellRequest) (*api
 		env = spec.Env
 		prof = p
 	case req.PID > 0:
+		if err := r.deny("open_shell", map[string]any{"pid": req.PID}, r.policy.DenyPidAttach); err != nil {
+			return nil, err
+		}
 		cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", req.PID))
 		if err != nil {
 			return nil, fmt.Errorf("open shell for pid %d: %w (process may have exited, or /proc is unavailable)", req.PID, err)
@@ -306,6 +465,14 @@ func (r *Runtime) startShell(ctx context.Context, shell, workDir string, env []s
 	}
 
 	spec := process.StartSpec{Command: shell, WorkDir: workDir, Env: env}
+	if err := r.deny("open_shell", map[string]any{"shell": shell, "workdir": workDir}, func() *policy.Denial {
+		if d := r.policy.DenyCommand(shell); d != nil {
+			return d
+		}
+		return r.policy.DenyWorkdir(workDir)
+	}); err != nil {
+		return nil, err
+	}
 	proc, err := r.manager.Start(ctx, spec, profileName, grace)
 	if err != nil {
 		return nil, err
@@ -330,18 +497,30 @@ func (r *Runtime) Status(id string) (*api.StatusResult, error) {
 	}
 	info := proc.Info()
 	res := &api.StatusResult{
-		ProcessID:   info.ID,
-		InstanceID:  info.InstanceID,
-		Status:      string(info.Status),
-		PID:         info.PID,
-		PGID:        info.PID, // Setpgid on Unix means pgid == pid
-		Command:     info.Command,
-		Args:        info.Args,
-		WorkDir:     info.WorkDir,
-		Profile:     info.Profile,
-		Restarts:    info.Restarts,
-		StdoutLines: proc.Logs.Count(logs.StreamStdout),
-		StderrLines: proc.Logs.Count(logs.StreamStderr),
+		ProcessID:     info.ID,
+		InstanceID:    info.InstanceID,
+		Status:        string(info.Status),
+		PID:           info.PID,
+		PGID:          info.PID, // Setpgid on Unix means pgid == pid
+		Command:       info.Command,
+		Args:          info.Args,
+		WorkDir:       info.WorkDir,
+		Profile:       info.Profile,
+		Restarts:      info.Restarts,
+		StdoutLines:   proc.Logs.Count(logs.StreamStdout),
+		StderrLines:   proc.Logs.Count(logs.StreamStderr),
+		Health:        string(proc.Health().State),
+		RestartPolicy: proc.RestartPolicy(),
+	}
+	if h := proc.Health(); h.ConsecutiveFailures > 0 {
+		res.ConsecutiveFailures = h.ConsecutiveFailures
+	}
+	if bi := proc.BackoffInfo(); bi.Restarts > 0 {
+		res.BackoffState = fmt.Sprintf("restarted=%d within window", bi.Restarts)
+	}
+	if mem, cpu := proc.LiveUsage(); mem > 0 || cpu > 0 {
+		res.MemoryBytes = mem
+		res.CPUUsageNanos = cpu
 	}
 	if !info.StartedAt.IsZero() {
 		res.StartedAt = info.StartedAt.Format(time.RFC3339Nano)
@@ -395,8 +574,13 @@ func (r *Runtime) GetLogs(req api.GetLogsRequest) (*api.GetLogsResult, error) {
 	q := logs.Query{Stream: filter, Lines: lines, Contains: req.Contains}
 	res := proc.Logs.Query(q)
 
+	if req.Level != "" {
+		res.Entries = logs.FilterByLevel(res.Entries, req.Level)
+		res.Available = len(res.Entries)
+	}
+
 	source := "memory"
-	if r.sink != nil && res.Available < lines {
+	if r.sink != nil && res.Available < lines && sinkCanQuery(r.sink) {
 		source, res = r.backfillFromSink(req, filter, lines, res, proc)
 	}
 
@@ -498,6 +682,9 @@ func (r *Runtime) ClearLogs(id, stream string) (*api.ClearLogsResult, error) {
 
 // SendStdin writes data to a running process's stdin.
 func (r *Runtime) SendStdin(id, data string) (*api.SendStdinResult, error) {
+	if err := r.deny("send_stdin", map[string]any{"process_id": id}, r.policy.DenyStdin); err != nil {
+		return nil, err
+	}
 	proc, ok := r.manager.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("unknown process %q", id)
@@ -527,7 +714,7 @@ func (r *Runtime) WaitForLog(ctx context.Context, req api.WaitForLogRequest) (*a
 	if !ok {
 		return nil, fmt.Errorf("unknown process %q", req.ProcessID)
 	}
-	match, err := r.buildMatcher(req, proc.Profile)
+	match, err := r.buildMatcher(req, proc)
 	if err != nil {
 		return nil, err
 	}
@@ -600,6 +787,59 @@ func (r *Runtime) WaitForExit(ctx context.Context, req api.WaitForExitParams) (*
 	}
 }
 
+// SubscribeEvents opens a capped event subscription for a client (Phase 2).
+func (r *Runtime) SubscribeEvents(client string, req api.SubscribeEventsRequest) (*api.SubscribeEventsResult, error) {
+	id, err := r.subs.Subscribe(client, req)
+	if err != nil {
+		return nil, err
+	}
+	return &api.SubscribeEventsResult{SubscriptionID: id}, nil
+}
+
+// GetEvents drains a subscription's buffered events (Phase 2).
+func (r *Runtime) GetEvents(req api.GetEventsRequest) (*api.GetEventsResult, error) {
+	events, dropped, err := r.subs.Get(req.SubscriptionID, req.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return &api.GetEventsResult{SubscriptionID: req.SubscriptionID, Events: events, Dropped: dropped}, nil
+}
+
+// UnsubscribeEvents closes a subscription owned by client (Phase 2).
+func (r *Runtime) UnsubscribeEvents(client, subscriptionID string) (*api.UnsubscribeEventsResult, error) {
+	if err := r.subs.Unsubscribe(client, subscriptionID); err != nil {
+		return nil, err
+	}
+	return &api.UnsubscribeEventsResult{SubscriptionID: subscriptionID, Unsubscribed: true}, nil
+}
+
+// RuntimeStats snapshots the runtime's own health (Phase 6).
+func (r *Runtime) RuntimeStats() (*api.RuntimeStats, error) {
+	st := BuildStats(r.manager.List(), r.sink, StatsOptions{
+		StartedAt:         r.startedAt,
+		SubscriptionDrops: func() uint64 { return uint64(r.subs.Stats().Dropped) },
+	})
+	return &st, nil
+}
+
+// GetAuditLog returns the tail of the audit log (Phase 4). It is pull-based and
+// byte-capped like get_logs.
+func (r *Runtime) GetAuditLog(lines int, contains string) (*api.AuditLogResult, error) {
+	if r.audit == nil {
+		return &api.AuditLogResult{Lines: 0}, nil
+	}
+	entries, err := r.audit.Query(lines, contains)
+	if err != nil {
+		return nil, err
+	}
+	out := &api.AuditLogResult{Entries: make([]api.AuditEntry, 0, len(entries))}
+	for _, e := range entries {
+		out.Entries = append(out.Entries, toAPIAuditEntry(e))
+	}
+	out.Lines = len(out.Entries)
+	return out, nil
+}
+
 // Apps reports configured apps and their detected profiles.
 func (r *Runtime) Apps() (*api.ListAppsResult, error) {
 	out := &api.ListAppsResult{Apps: make([]api.AppInfo, 0, len(r.cfg.Config.Apps))}
@@ -639,12 +879,16 @@ func (r *Runtime) Apps() (*api.ListAppsResult, error) {
 
 // Shutdown cancels the runtime and gracefully stops all managed processes.
 func (r *Runtime) Shutdown() error {
+	r.subs.Close()
 	err := r.manager.Shutdown(r.cfg.Config.Runtime.ShutdownTimeout.Time())
 	// Flush and close the durable archive before cancelling the root context,
 	// so the archive's writer goroutine drains cleanly and the rootCtx-bound
 	// janitor observes cancellation only after the archive is closed.
 	if r.sink != nil {
 		r.sink.Close()
+	}
+	if r.audit != nil {
+		r.audit.Close()
 	}
 	r.cancel()
 	return err
@@ -696,6 +940,15 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 		merged, src := config.MergeEnv(layers...)
 		source = src
 		spec = process.StartSpec{Command: cmd[0], Args: cmd[1:], WorkDir: workDir, Env: merged}
+		// Supervision: app-declared readiness overrides the profile's; the
+		// health/restart policy comes from the app's config.
+		readiness := app.Readiness
+		if len(readiness) == 0 && prof != nil {
+			readiness = prof.Readiness
+		}
+		spec.Readiness = readiness
+		spec.Supervision = appSupervision(app)
+		spec.Limits = appLimits(app)
 
 	case req.Command != "":
 		workDir, err := r.resolveWorkDir(req.WorkDir)
@@ -737,13 +990,61 @@ func (r *Runtime) resolveWorkDir(declaredPath string) (string, error) {
 	return target, nil
 }
 
+// appSupervision converts an app's config supervision fields into the process
+// package's Supervision policy. All fields are optional; an app with no
+// health_check or restart yields an inert (disabled) policy.
+func appSupervision(app config.AppConfig) process.Supervision {
+	sup := process.Supervision{}
+	if hc := app.HealthCheck; hc.HTTP != "" || hc.TCP != "" {
+		sup.Health = process.HealthSpec{
+			HTTP:             hc.HTTP,
+			TCP:              hc.TCP,
+			Interval:         hc.Interval.Time(),
+			Timeout:          hc.Timeout.Time(),
+			FailureThreshold: hc.FailureThreshold,
+		}
+	}
+	sup.Restart = process.RestartSpec{
+		Policy:      process.RestartPolicy(app.Restart.Policy),
+		MaxRestarts: app.Restart.MaxRestarts,
+	}
+	for _, d := range app.Restart.Backoff {
+		sup.Restart.Backoff = append(sup.Restart.Backoff, d.Time())
+	}
+	return sup
+}
+
+// appLimits converts an app's config limits into the process package's
+// ResourceLimits. Parsing was validated at config load, so errors here are
+// unreachable; on any surprise the limit is skipped (unlimited).
+func appLimits(app config.AppConfig) process.ResourceLimits {
+	var l process.ResourceLimits
+	if app.Limits.CPU != "" {
+		if v, err := config.ParseCPU(app.Limits.CPU); err == nil {
+			l.CPUQuota = v
+		}
+	}
+	if app.Limits.Memory != "" {
+		if v, err := config.ParseMemorySize(app.Limits.Memory); err == nil {
+			l.MemoryBytes = v
+		}
+	}
+	return l
+}
+
 // buildMatcher constructs the log-line matcher for wait_for_log.
-func (r *Runtime) buildMatcher(req api.WaitForLogRequest, profileName string) (func(string) bool, error) {
+func (r *Runtime) buildMatcher(req api.WaitForLogRequest, proc *process.ManagedProcess) (func(string) bool, error) {
 	switch {
 	case req.Ready:
-		prof := r.profiles.Lookup(profileName)
+		// Prefer the process's armed readiness (app override or profile
+		// default captured at start); fall back to the profile registry for
+		// ad-hoc processes started without an app entry.
+		if len(proc.Spec.Readiness) > 0 {
+			return proc.Spec.Supervision.CompileReadiness().Ready, nil
+		}
+		prof := r.profiles.Lookup(proc.Profile)
 		if prof == nil || len(prof.Readiness) == 0 {
-			return nil, fmt.Errorf("profile %q has no readiness patterns; use contains or pattern instead", profileName)
+			return nil, fmt.Errorf("process %q has no readiness patterns; use contains or pattern instead", proc.ID)
 		}
 		return prof.Ready, nil
 	case req.Pattern != "":
@@ -767,6 +1068,16 @@ func waitDuration(ms int) (time.Duration, error) {
 		return 0, fmt.Errorf("timeout_ms too large (max %d)", maxWaitMS)
 	}
 	return time.Duration(ms) * time.Millisecond, nil
+}
+
+// sinkCanQuery reports whether a sink can serve archive back-fill queries. A
+// tee sink wrapping a nil primary (memory mode + log forwarding) cannot; the
+// in-memory ring buffer is the only source then.
+func sinkCanQuery(s logs.Sink) bool {
+	if tee, ok := s.(*logs.TeeSink); ok {
+		return tee.Sink != nil
+	}
+	return true
 }
 
 func parseStream(s string) logs.StreamFilter {
@@ -805,4 +1116,15 @@ func toAPIEntryPtr(e *logs.Entry) *api.LogEntry {
 	}
 	cp := toAPIEntry(*e)
 	return &cp
+}
+
+func toAPIAuditEntry(e policy.AuditEntry) api.AuditEntry {
+	return api.AuditEntry{
+		Time:       e.Time.Format(time.RFC3339Nano),
+		Tool:       e.Tool,
+		Args:       e.Args,
+		Result:     e.Result,
+		DurationMS: e.DurationMS,
+		Caller:     e.Caller,
+	}
 }

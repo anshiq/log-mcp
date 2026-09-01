@@ -15,6 +15,7 @@ import (
 	"agent-runtime/internal/config"
 	"agent-runtime/internal/logs"
 	"agent-runtime/internal/logstore"
+	"agent-runtime/internal/process"
 	"agent-runtime/internal/runtime"
 	"agent-runtime/pkg/api"
 )
@@ -881,6 +882,104 @@ func TestRuntimeSQLiteBadPathFallback(t *testing.T) {
 	if len(logs.Entries) != 5 {
 		t.Fatalf("entries = %d, want 5 (ring only, no archive)", len(logs.Entries))
 	}
+}
+
+// TestAdoptOrphansRecoversCrashedDaemonProcess is the daemon crash-survival
+// story: runtime A starts a long-lived process (its start record, including the
+// pid, is flushed to SQLite), then A is abandoned as if it had crashed. A fresh
+// runtime B over the same archive must re-attach to the orphan via
+// AdoptOrphans, serve its archived logs, and be able to stop it.
+func TestAdoptOrphansRecoversCrashedDaemonProcess(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "logs.db")
+	yaml := "runtime:\n  log_store: sqlite\n  db_path: " + dbPath + "\n  shell_env: none\n"
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.LoadFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Runtime A = the crashed daemon. It is created without a registered
+	// Shutdown so we can abandon it (simulating a crash) without stopping the
+	// child it launched.
+	rtA := runtime.New(loaded, nil)
+	res, err := rtA.Start(context.Background(), api.StartRequest{Command: helperPath, Args: []string{"graceful"}, WorkDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	procA, okA := rtA.Manager().Get(res.ProcessID)
+	if !okA {
+		t.Fatalf("rtA lost process %q", res.ProcessID)
+	}
+	info := procA.Info()
+	if info.Status != "running" || info.PID <= 0 {
+		t.Fatalf("rtA info = %+v", info)
+	}
+	orphanPID := info.PID
+
+	// Runtime B = the new daemon, same archive. Poll AdoptOrphans until the
+	// start record (flushed asynchronously every ~200ms) is visible and the
+	// orphan is re-attached. The first poll may see an empty archive.
+	rtB := runtime.New(loaded, nil)
+	t.Cleanup(func() { rtB.Shutdown() })
+	var adopted int
+	waitFor(t, 5*time.Second, "orphan adopted", func() bool {
+		adopted = rtB.AdoptOrphans()
+		return adopted >= 1
+	})
+	if adopted != 1 {
+		t.Fatalf("adopted = %d, want 1", adopted)
+	}
+
+	// The adopted process must be registered, running, and carry the orphan's
+	// real pid so signals reach the right process.
+	proc, ok := rtB.Manager().Get(res.ProcessID)
+	if !ok {
+		t.Fatalf("process %q not registered after adoption", res.ProcessID)
+	}
+	aInfo := proc.Info()
+	if aInfo.Status != "running" || aInfo.PID != orphanPID {
+		t.Fatalf("adopted info = %+v, want running pid %d", aInfo, orphanPID)
+	}
+
+	// Logs come from the archive (in-memory buffers are empty for an adopted
+	// process): the graceful helper's "RUNNING" line must be served.
+	got, err := rtB.GetLogs(api.GetLogsRequest{ProcessID: res.ProcessID, Lines: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != "memory+db" {
+		t.Fatalf("source = %q, want memory+db (archive back-fill)", got.Source)
+	}
+	found := false
+	for _, e := range got.Entries {
+		if e.Line == "RUNNING" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("adopted logs missing RUNNING: %+v", got.Entries)
+	}
+
+	// The adopted process must be stoppable, and its death must be finalized by
+	// the adopted liveness loop.
+	if err := rtB.Stop(context.Background(), res.ProcessID); err != nil {
+		t.Fatalf("stop adopted: %v", err)
+	}
+	waitFor(t, 5*time.Second, "adopted process exited", func() bool {
+		st, _ := rtB.Status(res.ProcessID)
+		return st != nil && (st.Status == "stopped" || st.Status == "exited")
+	})
+	if process.Alive(orphanPID) {
+		t.Fatalf("orphan pid %d still alive after stop", orphanPID)
+	}
+
+	// Clean up runtime A (the "crashed" daemon): its child is already dead, so
+	// Shutdown is a no-op that just releases A's archive connection.
+	_ = rtA.Shutdown()
 }
 
 // TestConfigSQLiteDefaults checks the DB path defaulting done in runtime.New's
