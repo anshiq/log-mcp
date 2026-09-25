@@ -38,7 +38,7 @@ func TestBlocksContainServerCommand(t *testing.T) {
 func TestWriteClaudeMerge(t *testing.T) {
 	dir := t.TempDir()
 	p := selfPath(t)
-	path, err := Write(Claude, p, dir)
+	path, err := Write(Claude, ScopeProject, p, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestWriteClaudeMerge(t *testing.T) {
 	if err := os.WriteFile(path, []byte(other), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Write(Claude, p, dir); err != nil {
+	if _, err := Write(Claude, ScopeProject, p, dir); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
@@ -69,7 +69,7 @@ func TestWriteCodexAppendIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	p := selfPath(t)
-	path, err := Write(Codex, p, t.TempDir())
+	path, err := Write(Codex, ScopeGlobal, p, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestWriteCodexAppendIsIdempotent(t *testing.T) {
 		t.Fatalf("missing section:\n%s", data)
 	}
 	// Second write must not duplicate.
-	if _, err := Write(Codex, p, t.TempDir()); err != nil {
+	if _, err := Write(Codex, ScopeGlobal, p, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
@@ -254,7 +254,7 @@ func TestRemoveClaudeJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotPath, changed, err := Remove(Claude, dir)
+	gotPath, changed, err := Remove(Claude, ScopeProject, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestRemoveClaudeJSON(t *testing.T) {
 		}
 	}
 	// Removing again is a no-op.
-	_, changed, err = Remove(Claude, dir)
+	_, changed, err = Remove(Claude, ScopeProject, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestRemoveJSONEntryRemovesEmptyTop(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mcpServers":{"agent-runtime":{"command":"/x","args":["serve"]}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, changed, err := Remove(Claude, dir); err != nil {
+	if _, changed, err := Remove(Claude, ScopeProject, dir); err != nil {
 		t.Fatal(err)
 	} else if !changed {
 		t.Fatal("expected change")
@@ -310,7 +310,7 @@ func TestRemoveGeminiUsesHome(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mcpServers":{"agent-runtime":{"command":"/x","args":["serve"]}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gotPath, changed, err := Remove(Gemini, t.TempDir())
+	gotPath, changed, err := Remove(Gemini, ScopeGlobal, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ value = 1
 	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gotPath, changed, err := Remove(Codex, t.TempDir())
+	gotPath, changed, err := Remove(Codex, ScopeGlobal, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ value = 1
 		}
 	}
 	// Second remove is a no-op.
-	_, changed, err = Remove(Codex, t.TempDir())
+	_, changed, err = Remove(Codex, ScopeGlobal, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestRemoveCodexTOMLAtEOF(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[mcp_servers.agent-runtime]\ncommand = \"/usr/bin/agent-runtime\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, changed, err := Remove(Codex, t.TempDir()); err != nil {
+	if _, changed, err := Remove(Codex, ScopeGlobal, t.TempDir()); err != nil {
 		t.Fatal(err)
 	} else if !changed {
 		t.Fatal("expected change")

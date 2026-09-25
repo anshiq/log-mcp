@@ -161,16 +161,52 @@ func Integrate(args []string) error {
 	if agent == integrate.Generic {
 		return errors.New("--write is not supported for the generic agent")
 	}
+	scope, err := scopeFor(agent, opts)
+	if err != nil {
+		return err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	path, err := integrate.Write(agent, exe, cwd)
+	path, err := integrate.Write(agent, scope, exe, cwd)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("wrote agent-runtime config to %s\n", path)
+	fmt.Printf("wrote agent-runtime config to %s (%s scope)\n", path, scope)
 	return nil
+}
+
+// scopeFor resolves the --scope flag against what an agent's config format
+// actually supports, falling back to its historical default when --scope is
+// omitted: project for Claude (its shared, checked-in .mcp.json), global for
+// everyone else (Codex has no project scope at all).
+func scopeFor(agent integrate.Agent, opts integrateOptions) (integrate.Scope, error) {
+	if opts.scope == "" {
+		if agent == integrate.Claude {
+			return integrate.ScopeProject, nil
+		}
+		return integrate.ScopeGlobal, nil
+	}
+	if err := validateScope(opts.scope); err != nil {
+		return "", err
+	}
+	scope := integrate.Scope(opts.scope)
+	supported := integrate.ScopesSupported(agent)
+	for _, s := range supported {
+		if s == scope {
+			return scope, nil
+		}
+	}
+	return "", fmt.Errorf("%s only supports %s scope", agent, scopeNames(supported))
+}
+
+func scopeNames(scopes []integrate.Scope) string {
+	names := make([]string, len(scopes))
+	for i, s := range scopes {
+		names[i] = string(s)
+	}
+	return strings.Join(names, "/")
 }
 
 // integrateSkill prints the install plan for, installs (--write), or removes
@@ -397,15 +433,19 @@ func integrateRemove(agent integrate.Agent, opts integrateOptions) error {
 	if agent == integrate.Generic {
 		return errors.New("--remove is not supported for the generic agent")
 	}
+	scope, err := scopeFor(agent, opts)
+	if err != nil {
+		return err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	path := integrate.TargetPath(agent, cwd)
+	path := integrate.TargetPath(agent, scope, cwd)
 	if path == "" {
 		return fmt.Errorf("unknown agent %q", agent)
 	}
-	if isTTY(os.Stdin) {
+	if isTTY(os.Stdin) && !opts.yes {
 		ok, err := confirm(fmt.Sprintf("Remove agent-runtime from %s? [y/N]", path), false)
 		if err != nil {
 			return err
@@ -414,7 +454,7 @@ func integrateRemove(agent integrate.Agent, opts integrateOptions) error {
 			return errors.New("removal cancelled")
 		}
 	}
-	_, changed, err := integrate.Remove(agent, cwd)
+	_, changed, err := integrate.Remove(agent, scope, cwd)
 	if err != nil {
 		return err
 	}
@@ -442,7 +482,7 @@ func removeOpenCode(opts integrateOptions) error {
 		}
 		existing = existingCandidates(filterScope(cands, integrate.Scope(opts.scope)))
 	}
-	interactive := isTTY(os.Stdin)
+	interactive := isTTY(os.Stdin) && !opts.yes
 	var target integrate.Candidate
 	switch {
 	case len(existing) == 0 && !interactive:

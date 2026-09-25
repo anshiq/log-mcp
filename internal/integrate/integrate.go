@@ -104,26 +104,54 @@ func opencodeBlock(cmd []string) (string, error) {
 	return string(b) + "\n", nil
 }
 
-// TargetPath returns where an agent's config lives. projectDir is used for
-// Claude's project-scoped .mcp.json.
-func TargetPath(agent Agent, projectDir string) string {
+// ScopesSupported reports which scopes an agent's config format actually
+// distinguishes. Codex CLI only reads its one global config file, so it has
+// no project scope to offer; Claude and Gemini support both.
+func ScopesSupported(agent Agent) []Scope {
+	switch agent {
+	case Codex:
+		return []Scope{ScopeGlobal}
+	case Claude, Gemini, OpenCode:
+		return []Scope{ScopeProject, ScopeGlobal}
+	}
+	return nil
+}
+
+// TargetPath returns where an agent's config lives for the given scope.
+// projectDir anchors project-scoped paths. Codex ignores scope: it has only
+// one config file.
+//
+//   - Claude: project -> <projectDir>/.mcp.json (shared, checked into the
+//     repo); global -> ~/.claude.json under mcpServers (Claude Code's own
+//     user-scope store, the same file `claude mcp add --scope user` writes).
+//   - Gemini: project -> <projectDir>/.gemini/settings.json; global ->
+//     ~/.gemini/settings.json.
+//   - Codex: always ~/.codex/config.toml.
+func TargetPath(agent Agent, scope Scope, projectDir string) string {
 	home, _ := os.UserHomeDir()
 	switch agent {
 	case Claude:
+		if scope == ScopeGlobal {
+			return filepath.Join(home, ".claude.json")
+		}
 		return filepath.Join(projectDir, ".mcp.json")
 	case Codex:
 		return filepath.Join(home, ".codex", "config.toml")
 	case Gemini:
-		return filepath.Join(home, ".gemini", "settings.json")
+		if scope == ScopeGlobal {
+			return filepath.Join(home, ".gemini", "settings.json")
+		}
+		return filepath.Join(projectDir, ".gemini", "settings.json")
 	}
 	return ""
 }
 
-// Write installs the config block for an agent. Claude and Gemini configs are
-// JSON and are merged into any existing file; Codex's TOML config is appended
-// if the section is not already present. It returns the file path written.
-func Write(agent Agent, serverPath, projectDir string) (string, error) {
-	path := TargetPath(agent, projectDir)
+// Write installs the config block for an agent at the given scope. Claude and
+// Gemini configs are JSON and are merged into any existing file (every other
+// key is preserved untouched); Codex's TOML config is appended if the section
+// is not already present. It returns the file path written.
+func Write(agent Agent, scope Scope, serverPath, projectDir string) (string, error) {
+	path := TargetPath(agent, scope, projectDir)
 	if path == "" {
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
@@ -151,12 +179,12 @@ func Write(agent Agent, serverPath, projectDir string) (string, error) {
 	return path, nil
 }
 
-// Remove removes the agent-runtime MCP server entry from an agent's config. It
-// returns the config path and whether anything was removed. A config that does
-// not exist or never had agent-runtime configured is a no-op (changed=false),
-// not an error.
-func Remove(agent Agent, projectDir string) (string, bool, error) {
-	path := TargetPath(agent, projectDir)
+// Remove removes the agent-runtime MCP server entry from an agent's config at
+// the given scope. It returns the config path and whether anything was
+// removed. A config that does not exist or never had agent-runtime configured
+// is a no-op (changed=false), not an error.
+func Remove(agent Agent, scope Scope, projectDir string) (string, bool, error) {
+	path := TargetPath(agent, scope, projectDir)
 	if path == "" {
 		return "", false, fmt.Errorf("unknown agent %q", agent)
 	}
