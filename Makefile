@@ -1,12 +1,25 @@
 BINARY := agent-runtime
 BIN_DIR := bin
 
-.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps
+.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web build-gui ci-check
 
-build:
+build: ui-build
 	go build -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
 	go build -o $(BIN_DIR)/agentd ./cmd/agentd
 	go build -o $(BIN_DIR)/agent-runtime-shim ./cmd/agent-runtime-shim
+	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+
+# ui builds the shared frontend (GUI + web). The GUI shell embeds a copy.
+ui:
+	cd ui && npm install --no-audit --no-fund && npm run build
+
+ui-web:
+	cd ui && npm run build:web
+
+ui-build:
+	@if [ -d ui/dist ]; then mkdir -p cmd/agent-runtime-gui/dist && cp -r ui/dist/. cmd/agent-runtime-gui/dist/; fi
+
+build-gui: ui ui-build
 	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 test:
@@ -28,6 +41,8 @@ clean:
 	rm -rf $(BIN_DIR)
 	rm -rf gen/
 	rm -rf ui/src/gen/
+	rm -rf ui/dist ui/dist-web
+	rm -rf cmd/agent-runtime-gui/dist
 
 install:
 	go install ./cmd/agent-runtime
@@ -50,5 +65,3 @@ gen-deps:
 
 ci-check: build vet race test proto
 	@echo "All checks passed"
-
-.PHONY: proto gen-deps ci-check

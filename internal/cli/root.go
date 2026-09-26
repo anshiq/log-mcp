@@ -83,6 +83,7 @@ One-shot commands:
 		newDaemonConfigCmd(loaded, logger),
 		newDaemonSessionsCmd(loaded, logger),
 		newMigrateCmd(loaded, logger),
+		newTuiCmd(loaded, logger),
 		newVersionCmd(),
 	)
 	if s != nil {
