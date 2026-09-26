@@ -71,10 +71,16 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 			raw["workspace"] = string(data)
 		}
 	}
+	var latestRevision int64
+	if revs, err := s.engine.Store().ListRevisions(pr.ProjectID(), "project", 1); err == nil && len(revs) > 0 {
+		latestRevision = revs[0].ID
+	}
 	return map[string]any{
+		"projectId": pr.ProjectID(), "workspaceId": wsID,
 		"apps": apps, "provenance": prov, "raw": raw,
 		"configPath": ep.Project, "overlayPath": ep.Overlay,
 		"repoPath": ep.Repo, "warnings": resolvedWarnings(resolved),
+		"revision": latestRevision,
 	}, nil
 }
 

@@ -53,19 +53,19 @@ c(){ curl -s --unix-socket $SP/a.sock -H 'Content-Type: application/json' -d "$2
 
 | # | Where | Bug |
 |---|---|---|
-| F1 | `ui/src/routes/App.svelte:50` | "Open logs" uses `selected`, which is never set. Rows aren't clickable, so the Logs tab is always empty. `select()` is unreachable. |
-| F2 | `ui/src/lib/stores.ts:44` | Upserts require `msg.process` (never sent, see B4). There's no `removed` event from the server. After the snapshot, nothing updates. |
-| F3 | `ui/src/lib/api.ts` `stream()` | The closer sets a flag but never aborts the fetch, so the reader and socket leak until the next chunk. It resends `resume`, which the server ignores. No backoff jitter or online/visibility handling. Gaps are only `console.warn`ed. |
-| F4 | `ui/src/lib/api.ts` | `ApiOptions.token` is never supplied anywhere, and there's no login screen or `#token=` parsing. **Every web-build request gets a 401.** |
-| F5 | `ui/src/lib/api.ts` | Errors are thrown as a plain `Error` with the raw body. `{error, code}` isn't parsed, and no caller catches, so failures are silent unhandled rejections. |
+| F1 | **fixed** | Rows now open a process detail drawer directly (`ProcessTable` `onOpen`); the dead `selected`/`select()` path is gone. |
+| F2 | **fixed** | Server now sends `process` on every upsert (B4) and a `removed` frame on delete; `stores.ts` handles both, plus `gap` (resnapshot via `List`). |
+| F3 | **fixed** | `stream()` closes via `AbortController` instead of a dead flag; the server-side gap frame is now handled by the caller (process store resnapshots via `List`). Online/visibility-aware reconnect pacing is still open. |
+| F4 | **fixed** | Added a token store (`#token=` parsing, session/local storage, an `Authorization` header on every call) and a `Login.svelte` screen gating the web target. |
+| F5 | **fixed** | `ApiError` now carries `status`/`code` parsed from `{error, code}`; a 401 triggers a callback that drops back to the login screen instead of an unhandled rejection. |
 | F6 | `ui/src/lib/api.ts` | Services are untyped (`Record<string, unknown>` in, `unknown` out) even though `ui/src/gen` holds generated types. |
-| F7 | `ui/src/lib/platform.ts:67` | `platform` is chosen at module load, but the Wails shell injects `window.__wailsBinding` in `OnDomReady` (`cmd/agent-runtime-gui/main.go:150`), which runs later. **The desktop app always uses `BrowserPlatform`**: no native save dialog, no native notifications, `alert()` for open-in-editor. |
-| F8 | `ui/src/components/Terminal.svelte:28` | Live Attach frames are `{kind:"line", line:{line,stream}}`. The component reads `msg.line` as a string, so the object is dropped and **no live output ever appears**. It also sends SendStdin with a raw `fetch` (no auth header, no client header), one POST per keystroke. Never mounted anywhere. No resize, no theme, no PTY semantics. |
+| F7 | **fixed** | `getPlatform()` now resolves lazily on every call instead of once at module load; added `whenPlatformReady()` for boot-time waits. |
+| F8 | **fixed** | Handles the real `batch`/`line` frame shapes, sends stdin through the authenticated API client, added a `ResizeObserver` + theme, and it's mounted (lazily) from `ProcessDetail`'s Terminal tab. |
 | F9 | `ui/src/components/ProcessTable.svelte:53` | Sort direction never toggles and there's no sort indicator. Sorting by `command` on a watch snapshot works, but on `process_id`-keyed rows `id` is missing. The filter uses `JSON.stringify` over the whole object. The selection set keeps stale ids after removal and isn't cleared after bulk actions. Shows a Ports column the snapshot never has. No start, remove, signal or details. No empty or loading state. |
-| F10 | `ui/src/components/LogViewer.svelte:24` | Auto-scroll sets `scrollTop` in `$effect` before the spacer's DOM height updates, so it lags one batch. `newCount` counts total growth, not unseen lines. No wrap, search, level filter, timestamps, copy, or ANSI colors. |
-| F11 | `ui/src/components/ConfigEditor.svelte` | `workspaceId` is always `''` from App, so the config never loads. `cfg.raw?.project` is read correctly, but `$state(initial)` only captures the initial value (svelte warning). Validate errors are typed `{line,message}` but the render ignores `column`/`path`. Plan expects `changes` (matches the server, but not the proto). **Apply sends `projectId: ''`**, which the server rejects. No `baseRevision`. Monaco is a dependency but **the editor is a `<textarea>`**. No revisions, rollback or diff. |
+| F10 | **partially fixed** | Auto-scroll now waits on `tick()` before reading `scrollHeight`; `newCount` correctly only counts lines added while scrolled up; timestamps added. Wrap, search, level filter and ANSI colors are still open. |
+| F11 | **mostly fixed** | Real Monaco+monaco-yaml editor (lazy-loaded), wired to a workspace via the topbar's resolver. `GetConfig` now returns `projectId`/`revision` (server-side addition) so Apply sends the real `projectId` and `baseRevision` instead of `''`. Revisions list/rollback/diff view still open. |
 | F12 | `ui/src/routes/App.svelte` | No workspace or project selection. `LogService.get` is a one-shot fetch of 500 lines, not a tail. Tabs have no active state. Actions have no confirmation, progress or error feedback. |
-| F13 | Global | No base styles at all: default white body, Times font, unstyled buttons next to a hard-coded dark `#0d1117` log pane. No theme, no layout shell, no responsive handling, no focus styles, no icons. |
+| F13 | **partially fixed** | Added `styles/tokens.css` + `styles/base.css` (dark-first, with a light-theme override), a real topbar/sidebar shell, and every rewritten component now styles from tokens instead of ad-hoc hex. Responsive layout, icons and the full component library (Phase 3.2) are still open. |
 | F14 | Tooling | `tsc --noEmit` doesn't check `.svelte` files (no `svelte-check`). `stores.test.ts` has one trivial test, and the e2e has 2 API-only tests. |
 | F15 | Missing screens | No UI for Projects/Workspaces, Events, Sessions, Integrations, Audit, Settings, Search, Env, Resources, Start, Signal, Remove, Restart policy, Stack start, Export, Clear logs, Shutdown. All of these exist in the API. |
 
@@ -172,14 +172,14 @@ All in `internal/server` unless noted. Each fix gets a regression test in `inter
 - [ ] Responses stay as they are for MCP compat, and the UI normalises (Phase 2.2). Document the rule in `docs/api.md`: requests accept camelCase, and some responses are snake_case.
 
 ### 1.6 Serve the web UI on TCP (B7)
-- [ ] New package `internal/webui` with `//go:embed all:dist` (the build copies `ui/dist-web` there, gitignored except for a placeholder `index.html` so `go build` works without node).
-- [ ] `ServeTCP` mux: `/api/` → the guarded API; everything else → static files, **without** the bearer check (the token lives in the SPA), with `Cache-Control: no-cache` on `index.html` and immutable on `assets/*`. Keep the Host check on both.
-- [ ] CSP header on static responses: `default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data:` (Monaco needs blob workers).
-- [ ] Makefile `ui-web` copies `ui/dist-web` into `internal/webui/dist`. `build` depends on it when `ui/dist-web` exists.
+- [x] New package `internal/webui` with `//go:embed all:dist` (the build copies `ui/dist-web` there, gitignored except for a placeholder `index.html` so `go build` works without node).
+- [x] `ServeTCP` mux: `/api/` → the guarded API; everything else → static files, **without** the bearer check (the token lives in the SPA), with `Cache-Control: no-cache` on `index.html` and immutable on `assets/*`. Keep the Host check on both.
+- [x] CSP header on static responses: `default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data:` (Monaco needs blob workers).
+- [x] Makefile `ui-web` copies `ui/dist-web` into `internal/webui/dist`. `build` depends on it when `ui/dist-web` exists.
 - [ ] `agent-runtime web open` reads the actual `--tcp` address from a runtime file the daemon writes (`$XDG_RUNTIME_DIR/agent-runtime/tcp.addr`) instead of hard-coding 7350.
 
 ### 1.7 Config service (B8-B11)
-- [ ] Embed the schema: `docs/schema/agent-runtime.v3.json` → `internal/config/schema/agent-runtime.v3.json` with `//go:embed` (keep the docs copy in sync via a `go generate` or a test that diffs them). GetSchema always returns `{"schema": <object>}`.
+- [x] Embed the schema: `docs/schema/agent-runtime.v3.json` → `internal/config/schema/agent-runtime.v3.json` with `//go:embed` (keep the docs copy in sync via a `go generate` or a test that diffs them). GetSchema always returns `{"schema": <object>}`.
 - [ ] Complete the schema so it covers every `V3App`/`AppConfig` field (`readiness`, `health_check`, `restart`, `limits`, `lifetime`, `autostart`, `reload`, `pty`, `depends_on`, `ports`, `env_file`), plus `logging.redact` and `alerts`, with `description` on every property so Monaco hovers are useful.
 - [ ] `Validate`: `KnownFields(true)`. Map yaml.v3 `field X not found in type` errors back to line/col by walking the node tree for the key. Return `path` for every error, and also validate `depends_on` targets and cycles, port templates and duplicate ports.
 - [ ] GetConfig adds `projectId`, `workspaceId`, `revision` (active revision id per layer), `layers: [{name:"project", path, exists, writable:true}, {name:"workspace", …}, {name:"repo", path, trusted, sha256, writable:false}]`, and `raw` keyed by layer.
