@@ -897,9 +897,8 @@ type ProcessRow struct {
 	CreatedAt   int64
 }
 
-// CreateProcess inserts a logical process row with a globally unique id.
-func (d *DB) CreateProcess(ws, app, specJSON, lifetime, restart, startedBy string, configRev int64) (*ProcessRow, error) {
-	id := "proc_" + newULID()
+// CreateProcess inserts a logical process row keyed by the runtime's id.
+func (d *DB) CreateProcess(id, ws, app, specJSON, lifetime, restart, startedBy string, configRev int64) (*ProcessRow, error) {
 	now := time.Now().Unix()
 	if lifetime == "" {
 		lifetime = "persistent"

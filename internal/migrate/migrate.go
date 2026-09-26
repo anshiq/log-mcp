@@ -189,9 +189,8 @@ func importLegacyLogs(eng *core.Engine, dataDir, workspaceID, root string, opts 
 	// Register legacy process rows so adopted pids have identity.
 	if !opts.DryRun {
 		for pid := range procs {
-			_, _ = eng.Store().CreateProcess(workspaceID, "", `{"legacy":true}`,
+			_, _ = eng.Store().CreateProcess(pid, workspaceID, "", `{"legacy":true}`,
 				"persistent", "", "", 0)
-			_ = pid
 		}
 	}
 	return total, nil

@@ -5,6 +5,7 @@ export interface Process {
   id?: string;
   process_id?: string;
   instanceId?: string;
+  app?: string;
   status?: string;
   command?: string;
   args?: string[];

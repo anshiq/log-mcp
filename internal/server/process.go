@@ -284,7 +284,7 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 		lifetime = "persistent"
 	}
 	specJSON, _ := json.Marshal(map[string]any{"app": req.App, "command": req.Command, "workdir": req.Workdir})
-	prow, _ := s.engine.Store().CreateProcess(req.WorkspaceID, req.App, string(specJSON), lifetime, "", req.SessionID, 0)
+	prow, _ := s.engine.Store().CreateProcess(res.ProcessID, req.WorkspaceID, req.App, string(specJSON), lifetime, "", req.SessionID, 0)
 	pid := 0
 	if st, err := rt.Status(res.ProcessID); err == nil {
 		pid = st.PID
@@ -512,8 +512,12 @@ func (s *Server) processInfo(pr *corePR, st *api.StatusResult) map[string]any {
 			ports = p
 		}
 	}
+	app := ""
+	if row, err := s.engine.Store().GetProcess(st.ProcessID); err == nil {
+		app = row.App
+	}
 	return map[string]any{
-		"id": st.ProcessID, "instanceId": st.InstanceID,
+		"id": st.ProcessID, "instanceId": st.InstanceID, "app": app,
 		"workspaceId": pr.WorkspaceID(), "projectId": pr.ProjectID(),
 		"command": st.Command, "args": st.Args, "workdir": st.WorkDir, "profile": st.Profile,
 		"status": st.Status, "pid": st.PID, "restarts": st.Restarts,

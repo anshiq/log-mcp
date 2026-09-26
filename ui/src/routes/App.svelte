@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Login from './Login.svelte';
   import ProcessesPage from './pages/ProcessesPage.svelte';
+  import AppsPage from './pages/AppsPage.svelte';
   import ConfigPage from './pages/ConfigPage.svelte';
   import ProjectsPage from './pages/ProjectsPage.svelte';
   import EventsPage from './pages/EventsPage.svelte';
@@ -40,6 +41,7 @@
 
   const navItems = [
     { path: '/processes', label: 'Processes' },
+    { path: '/apps', label: 'Apps' },
     { path: '/config', label: 'Config' },
     { path: '/events', label: 'Events' },
     { path: '/projects', label: 'Projects' },
@@ -85,6 +87,8 @@
       <div class="content">
         {#if router.match('/processes/:id?')}
           <ProcessesPage />
+        {:else if router.match('/apps')}
+          <AppsPage />
         {:else if router.match('/config/:sub?')}
           <ConfigPage />
         {:else if router.match('/projects')}

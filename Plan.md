@@ -67,7 +67,7 @@ c(){ curl -s --unix-socket $SP/a.sock -H 'Content-Type: application/json' -d "$2
 | F12 | `ui/src/routes/App.svelte` | No workspace or project selection. `LogService.get` is a one-shot fetch of 500 lines, not a tail. Tabs have no active state. Actions have no confirmation, progress or error feedback. |
 | F13 | **partially fixed** | Added `styles/tokens.css` + `styles/base.css` (dark-first, with a light-theme override), a real topbar/sidebar shell, and every rewritten component now styles from tokens instead of ad-hoc hex. Responsive layout, icons and the full component library (Phase 3.2) are still open. |
 | F14 | Tooling | `tsc --noEmit` doesn't check `.svelte` files (no `svelte-check`). `stores.test.ts` has one trivial test, and the e2e has 2 API-only tests. |
-| F15 | **mostly fixed** | Added Projects/Workspaces, Events, Sessions, Integrations, Audit and Settings pages (a hash router now backs navigation instead of local tab state). Still open: Search, Resources tab, Start/Signal dialogs, Stack start, Export, Clear logs. |
+| F15 | **mostly fixed** | Added Projects/Workspaces, Events, Sessions, Integrations, Audit, Settings and Apps (+ Stack start) pages, a Start-process dialog, a Resources tab, and log Clear/Export. Still open: a dedicated Search/history log mode, Signal picker (SIGKILL etc. beyond stop/restart), the full component library / command palette. |
 
 ### 1.3 GUI shell bugs (cmd/agent-runtime-gui)
 
@@ -142,6 +142,30 @@ Implemented in place of the granular file-by-file breakdown above:
 - **Daemon**: `errorCode`/`errorHTTPCode` now classify real codes (stale_revision → 409, not just "internal" always); `ConfigService.Plan` accepts `baseRevision` and reports `stale`/`latestRevision`; `ConfigService.Apply` supports `layer: "workspace"` and actually restarts affected processes when `restartAffected` is set.
 
 Not built this pass: the full component library (3.2), CommandPalette, keyboard map, Table virtualization, Search/history log mode, Resources tab, Start-process dialog, Stack start UI, Export/Clear logs UI, and the Wails shell items in Phase 6. `svelte-check` was not added (no network access to add the dependency in this session); `npx tsc --noEmit` plus real `vite build` (both targets) were used as the verification gate instead, along with end-to-end curl checks against a real isolated daemon for every new page's API calls.
+
+### Second progress note (this session)
+
+Also fixed a real, previously-undetected daemon bug found while wiring
+the Apps page: `store.CreateProcess` generated its own row id instead
+of being keyed by the runtime's actual process id (the one returned as
+`StartResponse.ProcessID` and used by every other call — Stop, Restart,
+GetLogs, `findProcess`'s unloaded-workspace fallback, and this session's
+own `restartAffected` feature). The store row was effectively orphaned:
+`GetProcess(processId)` always missed, `ListProcesses` rows could never
+be correlated back to a live process, and `ConfigService.Apply`'s
+`restartAffected` silently restarted nothing (the wrong id was fed to
+`rt.Restart`, its error swallowed). Fixed by having `CreateProcess`
+accept the id instead of generating one; both call sites (process
+start, and the legacy-migration importer, which had the same bug)
+updated. Regression tests added and confirmed to fail against the
+pre-fix code via a throwaway `git stash` of just the three changed
+files, then re-verified passing after restoring the fix.
+
+Also added: `AppsPage.svelte` (configured apps + running-instance
+status via the newly-added `app` field on process info, per-app Start,
+multi-select Start-stack with the dependency order shown), and the
+`app` field itself on `processInfo`'s JSON (was missing entirely,
+which is what surfaced the id-linkage bug above).
 
 ## 3. Phase 1: Daemon fixes the UI depends on
 
