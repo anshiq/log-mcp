@@ -9,12 +9,6 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-// TestGetSchema_IndependentOfWorkingDirectory is the regression test for
-// B8: GetSchema used to os.ReadFile a path relative to the daemon's cwd
-// (docs/schema/agent-runtime.v3.json), so any installed daemon not run
-// from inside the repo checkout silently got a 2-property stub instead of
-// the real schema. The schema is now embedded at compile time, so it must
-// come back complete even when cwd is somewhere with no such file.
 func TestGetSchema_IndependentOfWorkingDirectory(t *testing.T) {
 	eng, done := testEngine(t)
 	defer done()

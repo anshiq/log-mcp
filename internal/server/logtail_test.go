@@ -8,10 +8,6 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-// TestTailLogs_NoDuplicateBacklogReplay is the regression test for B5: the
-// live-follow cursor used to start at the oldest entry still in the ring
-// (proc.EntryFrom()) instead of just past the backlog actually sent, so the
-// whole ring was replayed a second time as "live" lines on every connect.
 func TestTailLogs_NoDuplicateBacklogReplay(t *testing.T) {
 	eng, done := testEngine(t)
 	defer done()
@@ -33,8 +29,6 @@ func TestTailLogs_NoDuplicateBacklogReplay(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 
-	// Give the process a moment to emit its 3 lines before we tail, so
-	// they land in the backlog rather than racing the subscribe.
 	time.Sleep(300 * time.Millisecond)
 
 	ch, err := cl.LogService().Tail(ctx, map[string]any{

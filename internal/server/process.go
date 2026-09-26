@@ -83,14 +83,6 @@ func decode(r *http.Request, v any) error {
 	if len(data) == 0 {
 		return nil
 	}
-	// Most handlers decode into anonymous camelCase structs, but the six
-	// handlers built on pkg/api types (GetLogsRequest, WaitForLogRequest,
-	// SignalProcessRequest, WaitForExitParams, SetRestartPolicyRequest,
-	// ProcessEnvRequest) only recognize snake_case (process_id, timeout_ms,
-	// ...) — those were MCP-first types reused as-is. A client sending the
-	// "wrong" casing for whichever handler it hit got a confusing required-
-	// field error (B6). Normalize by aliasing every top-level key to both
-	// casings before decoding, so either spelling works everywhere.
 	data = normalizeTopLevelCasing(data)
 	// Strict first (catches typos), lenient fallback for forward-compat.
 	strict := json.NewDecoder(bytes.NewReader(data))
@@ -101,15 +93,6 @@ func decode(r *http.Request, v any) error {
 	return json.Unmarshal(data, v)
 }
 
-// normalizeTopLevelCasing adds a snake_case and a camelCase alias for every
-// top-level key of a JSON object (only the key name; the value is reused
-// unmodified, so nested objects like an `env` map of arbitrary keys are
-// left untouched). It leaves non-object bodies as-is. Strict decoding still
-// rejects a body with a genuine unknown field, because DisallowUnknownFields
-// only tolerates keys that are actually declared on the destination
-// struct — the synthetic alias for a field that struct doesn't have simply
-// falls through to the lenient json.Unmarshal fallback, same as any other
-// forward-compat extra field.
 func normalizeTopLevelCasing(data []byte) []byte {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
@@ -525,14 +508,6 @@ func (s *Server) processInfo(pr *corePR, st *api.StatusResult) map[string]any {
 	}
 }
 
-// handleProcWatch streams process lifecycle: a snapshot (never null, even
-// when nothing is loaded yet), then upserts carrying the full ProcessInfo
-// (not just the event name — the UI store needs the process to update its
-// rows) and removed markers on Remove. It attaches to runtimes that load
-// *after* the stream opens (via Engine.SubscribeRuntimeLoad) so a fresh
-// daemon with nothing loaded yet still sees processes started later in any
-// workspace, instead of only ever seeing the runtimes that existed when the
-// WatchProcesses call was made.
 func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		WorkspaceID   string `json:"workspaceId"`
@@ -608,7 +583,6 @@ func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 		watchRuntime(pr)
 	}
 
-	// Attach to workspaces loaded after this stream opened.
 	loadCh, unloadSub := s.engine.SubscribeRuntimeLoad()
 	defer unloadSub()
 	go func() {
@@ -660,9 +634,6 @@ func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// flushCoalesced sends at most one upsert per process per 100ms tick, so a
-// restart storm (started/health/exited in quick succession) doesn't flood
-// the stream with redundant frames for the same process.
 func (s *Server) flushCoalesced(sw *streamWriter, coalesce map[string]map[string]any) error {
 	for _, msg := range coalesce {
 		if err := sw.send(msg); err != nil {
@@ -790,12 +761,7 @@ func (s *Server) handleProcAttach(w http.ResponseWriter, r *http.Request) {
 	if backlog <= 0 {
 		backlog = 500
 	}
-	// Follow live via log subscription. Subscribe *before* reading the
-	// backlog, and start the live cursor at the last backlog entry sent
-	// (falling back to the subscribe-time NextID when the backlog is
-	// empty), so the live stream never re-sends what the backlog already
-	// covered (B5: the old code started at proc.EntryFrom(), the oldest
-	// entry still in the ring, and replayed the whole ring as "live").
+	// Follow live via log subscription.
 	proc, ok := rt.Manager().Get(req.ProcessID)
 	if !ok {
 		writeError(w, fmt.Errorf("unknown process %q", req.ProcessID))

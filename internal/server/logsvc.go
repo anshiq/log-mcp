@@ -236,12 +236,7 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 	}
 	defer sw.Close()
 	red := s.redactorForWorkspace(req.WorkspaceID)
-	// Live follow across the requested processes. Subscribe *before* reading
-	// the backlog for each process, and start the live-follow cursor from
-	// the last backlog entry actually sent (not from the oldest entry still
-	// in the ring): the old code started live-follow at proc.EntryFrom(),
-	// which is far earlier than the tail just sent, so the entire ring was
-	// re-sent as "live" lines on every connect (B5).
+	// Live follow across the requested processes.
 	done := r.Context().Done()
 	type sub struct {
 		ch  <-chan struct{}
@@ -262,8 +257,6 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 		subID, wake := proc.SubscribeLogs()
 		proc2 := proc
 		subs = append(subs, sub{ch: wake, id: id, off: func() { proc2.UnsubscribeLogs(subID) }})
-		// Default cursor if the backlog turns out empty: nothing has been
-		// missed between subscribing and reading the backlog below.
 		lastIDs[id] = proc.Logs.NextID()
 
 		res, err := rt.GetLogs(api.GetLogsRequest{ProcessID: id, Lines: req.Backlog, Contains: req.Contains})

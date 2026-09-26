@@ -13,15 +13,9 @@ import (
 	"time"
 )
 
-// heartbeatInterval is the streaming keepalive period. It is a var (not a
-// const) so tests can shrink it to exercise reconnect/idle paths quickly.
 var heartbeatInterval = 15 * time.Second
 
 // streamWriter is a newline-delimited JSON stream with flush + heartbeat.
-// send is safe to call concurrently (the heartbeat goroutine and the
-// handler's own goroutine both call it); Close stops the heartbeat and
-// makes every subsequent send a no-op instead of touching a possibly
-// hijacked/closed ResponseWriter.
 type streamWriter struct {
 	mu      sync.Mutex
 	w       http.ResponseWriter
@@ -66,11 +60,6 @@ func newStream(w http.ResponseWriter, r *http.Request, heartbeatMsg func() any) 
 	return sw, true
 }
 
-// send serializes concurrent writers and never touches the ResponseWriter
-// once the stream has been closed, avoiding the write-after-close race that
-// otherwise panics inside net/http (and, before this fix, took the whole
-// daemon down since that panic happens on a bare goroutine outside any
-// per-request recover middleware).
 func (s *streamWriter) send(v any) error {
 	if s.closed.Load() {
 		return fmt.Errorf("stream closed")
@@ -92,9 +81,6 @@ func (s *streamWriter) send(v any) error {
 	return nil
 }
 
-// Close stops the heartbeat goroutine and marks the stream closed so any
-// in-flight or future send() becomes a no-op. Every streaming handler must
-// defer sw.Close() right after a successful newStream call.
 func (s *streamWriter) Close() {
 	if s.closed.CompareAndSwap(false, true) {
 		close(s.stop)

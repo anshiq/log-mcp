@@ -7,3 +7,7 @@ node_modules/
 ui/node_modules/
 ui/dist/
 ui/dist-web/
+
+!/internal/webui/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/index.html

@@ -8,7 +8,7 @@ const target = process.env.VITE_TARGET ?? 'wails';
 
 export default defineConfig({
   plugins: [svelte()],
-  base: './',
+  base: target === 'web' ? '/' : './',
   build: {
     outDir: target === 'web' ? 'dist-web' : 'dist',
     sourcemap: true,

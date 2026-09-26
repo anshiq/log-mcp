@@ -37,11 +37,7 @@ type Engine struct {
 	// forwarded tracks workspaces with an active event forwarder.
 	forwarded map[string]bool
 	// alerted tracks workspaces with an active alert poller.
-	alerted map[string]bool
-	// runtimeLoad notifies subscribers (WatchProcesses/WatchEvents) when a
-	// new workspace runtime is created, so a stream opened before any
-	// workspace loaded still picks up processes started afterwards instead
-	// of only ever seeing the runtimes that existed at connect time.
+	alerted     map[string]bool
 	runtimeLoad *runtimeLoadBus
 
 	mu     sync.RWMutex
@@ -49,8 +45,6 @@ type Engine struct {
 	cancel context.CancelFunc
 }
 
-// runtimeLoadBus is a tiny non-blocking pub/sub of workspace IDs, fired
-// whenever GetOrCreateRuntime loads a workspace for the first time.
 type runtimeLoadBus struct {
 	mu   sync.RWMutex
 	subs map[chan string]struct{}
@@ -84,8 +78,6 @@ func (b *runtimeLoadBus) subscribe() (<-chan string, func()) {
 	}
 }
 
-// SubscribeRuntimeLoad lets a stream handler learn about workspace runtimes
-// created after the stream opened, without polling.
 func (e *Engine) SubscribeRuntimeLoad() (<-chan string, func()) {
 	return e.runtimeLoad.subscribe()
 }

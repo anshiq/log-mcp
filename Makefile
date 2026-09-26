@@ -1,9 +1,10 @@
 BINARY := agent-runtime
 BIN_DIR := bin
 
-.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web build-gui ci-check
+.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web ui-web-embed build-gui ci-check
 
 build:
+	@if [ -d ui/dist-web ]; then $(MAKE) ui-web-embed; fi
 	go build -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
 	go build -o $(BIN_DIR)/agentd ./cmd/agentd
 	go build -o $(BIN_DIR)/agent-runtime-shim ./cmd/agent-runtime-shim
@@ -14,6 +15,13 @@ ui:
 
 ui-web:
 	cd ui && npm run build:web
+	$(MAKE) ui-web-embed
+
+ui-web-embed:
+	@if [ -d ui/dist-web ]; then \
+		rm -rf internal/webui/dist/assets internal/webui/dist/index.html; \
+		cp -r ui/dist-web/. internal/webui/dist/; \
+	fi
 
 ui-build:
 	@if [ -d ui/dist ]; then mkdir -p cmd/agent-runtime-gui/dist && cp -r ui/dist/. cmd/agent-runtime-gui/dist/; fi

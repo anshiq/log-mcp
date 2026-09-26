@@ -108,10 +108,6 @@ func (s *Server) resolveConfigScope(workspaceID, projectID string) (*corePR, str
 }
 
 func (s *Server) cfgSchema(w http.ResponseWriter, r *http.Request) (any, error) {
-	// Embedded at compile time (config.V3JSONSchemaRaw), so this always
-	// serves the real, complete schema regardless of the daemon's working
-	// directory (B8: a relative-path read of docs/schema/... meant every
-	// installed binary silently fell back to a 2-property stub).
 	var schema any
 	if err := json.Unmarshal(config.V3JSONSchemaRaw(), &schema); err != nil {
 		return nil, fmt.Errorf("embedded schema is invalid JSON: %w", err)

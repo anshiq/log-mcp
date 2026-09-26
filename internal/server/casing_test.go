@@ -8,14 +8,6 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-// TestCasingCompat_CamelCaseAcceptedByPkgAPIHandlers is the regression test
-// for B6: GetLogs, GetEnv, WaitForLog, Signal, SetRestartPolicy and
-// WaitForExit decode into pkg/api structs that only recognize snake_case
-// (process_id, timeout_ms, ...), while every other handler in this package
-// only recognizes camelCase (processId). A client that didn't happen to
-// know which of the two casings a given endpoint wanted got a confusing
-// "processId required" / "unknown process \"\"" error. Both casings must
-// now work on every endpoint.
 func TestCasingCompat_CamelCaseAcceptedByPkgAPIHandlers(t *testing.T) {
 	eng, done := testEngine(t)
 	defer done()
@@ -68,12 +60,7 @@ func TestCasingCompat_CamelCaseAcceptedByPkgAPIHandlers(t *testing.T) {
 	}
 }
 
-// TestCasingCompat_StrictModeStillCatchesTypos ensures the alias-both-
-// casings normalization in decode() does not defeat the "unknown apps
-// field" strictness added for B9-adjacent validation: a body with a
-// genuinely unrelated field name is not silently accepted just because
-// normalizeTopLevelCasing ran over it.
-func TestCasingCompat_StrictModeStillCatchesTypos(t *testing.T) {
+func TestCasingConversion_SnakeAndCamel(t *testing.T) {
 	got := toSnakeCase("processId")
 	if got != "process_id" {
 		t.Fatalf("toSnakeCase(processId) = %q, want process_id", got)

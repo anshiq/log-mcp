@@ -24,10 +24,6 @@ func TestValidateLifetime(t *testing.T) {
 	}
 }
 
-// TestValidateUnknownAppField is the regression test for B9: a typo inside
-// an app (e.g. "comand:" for "command:", or any field not in AppConfig/
-// V3App) used to validate as OK because yaml.v3 was decoded in lenient
-// mode, so the editor's "no errors" promise was a lie.
 func TestValidateUnknownAppField(t *testing.T) {
 	errs := Validate([]byte("apps:\n  web:\n    command: [sleep, \"100\"]\n    bogus: 1\n"))
 	if len(errs) == 0 {
@@ -97,10 +93,6 @@ func TestResolveLayering(t *testing.T) {
 	}
 }
 
-// TestV3JSONSchemaRaw_ParsesAsCompleteObject is the regression test for
-// B8's schema half: the embedded schema must always be valid JSON with
-// real content, not the 2-property stub the daemon used to fall back to
-// when docs/schema/agent-runtime.v3.json wasn't reachable from its cwd.
 func TestV3JSONSchemaRaw_ParsesAsCompleteObject(t *testing.T) {
 	var schema map[string]any
 	if err := json.Unmarshal(V3JSONSchemaRaw(), &schema); err != nil {

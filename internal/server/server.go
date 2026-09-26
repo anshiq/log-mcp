@@ -143,10 +143,6 @@ func AuditInterceptor(next http.Handler) http.Handler {
 	})
 }
 
-// streamingRoutes lists the RPC paths that hold a long-lived connection
-// (server-streamed NDJSON, or a client-held heartbeat). These must never
-// get the unary 30s request deadline: WatchProcesses, TailLogs, Attach and
-// friends are meant to stay open for the life of a UI tab or agent session.
 var streamingRoutes = map[string]bool{
 	"/agentruntime.v1.ProcessService/WatchProcesses":     true,
 	"/agentruntime.v1.ProcessService/Attach":             true,
@@ -158,10 +154,7 @@ var streamingRoutes = map[string]bool{
 	"/agentruntime.v1.SessionService/Heartbeat":          true,
 }
 
-// DeadlineInterceptor enforces a per-RPC deadline on unary calls only.
-// Streaming routes (see streamingRoutes) are exempt: they are supposed to
-// stay open indefinitely, closed by the client disconnecting or the
-// process/handler itself, never by a fixed wall-clock timeout.
+// DeadlineInterceptor enforces per-RPC deadlines.
 func DeadlineInterceptor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if streamingRoutes[r.URL.Path] {

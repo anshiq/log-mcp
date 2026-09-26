@@ -11,9 +11,6 @@ import (
 	"time"
 )
 
-// fakeFlusher is a minimal http.ResponseWriter + http.Flusher that lets us
-// hammer streamWriter.send concurrently with Close under -race without a
-// real network round trip.
 type fakeFlusher struct {
 	mu      sync.Mutex
 	header  http.Header
@@ -53,9 +50,6 @@ func TestStreamWriter_ConcurrentSendDuringClose(t *testing.T) {
 			}
 		}()
 	}
-	// Close concurrently with the senders above: this reproduces the B1
-	// crash (a heartbeat goroutine writing to an already-torn-down
-	// response after the request handler returned).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -63,7 +57,6 @@ func TestStreamWriter_ConcurrentSendDuringClose(t *testing.T) {
 	}()
 	wg.Wait()
 
-	// Sends after Close must be inert, not panic.
 	if err := sw.send(map[string]any{"kind": "late"}); err == nil {
 		t.Fatal("send after Close should error, not silently succeed")
 	}
@@ -120,18 +113,7 @@ func TestDeadlineInterceptor_ExemptsStreamingRoutes(t *testing.T) {
 	}
 }
 
-// TestServer_StreamClientDisconnect_DoesNotCrashDaemon is the end-to-end
-// regression test for B1: a real client opening a stream and then closing
-// the connection abruptly (not a clean HTTP close) used to panic inside a
-// bare goroutine — outside any per-request recover middleware — and take
-// the whole daemon process down. This dials the real unix socket, opens
-// WatchProcesses, and slams the connection shut mid-stream; the server
-// must still answer a plain request afterwards.
 func TestServer_StreamClientDisconnect_DoesNotCrashDaemon(t *testing.T) {
-	// Deliberately left at the production heartbeat interval: overriding it
-	// here would race the background heartbeat goroutines of streams whose
-	// client-disconnect the server hasn't yet noticed (a client Close() is
-	// detected asynchronously by net/http, not synchronously by this test).
 	eng, done := testEngine(t)
 	defer done()
 	sock := sockPath(t, eng)
@@ -145,9 +127,6 @@ func TestServer_StreamClientDisconnect_DoesNotCrashDaemon(t *testing.T) {
 		if err := req.Write(conn); err != nil {
 			t.Fatalf("write request: %v", err)
 		}
-		// Read a byte or two of the response (enough to know the stream
-		// opened) then slam the raw connection shut instead of doing a
-		// graceful HTTP close, to reproduce the abrupt-disconnect path.
 		br := bufio.NewReader(conn)
 		buf := make([]byte, 64)
 		_, _ = br.Read(buf)
@@ -155,7 +134,6 @@ func TestServer_StreamClientDisconnect_DoesNotCrashDaemon(t *testing.T) {
 		_ = conn.Close()
 	}
 
-	// The daemon must still be alive and serving.
 	conn, err := net.DialTimeout("unix", sock, 2*time.Second)
 	if err != nil {
 		t.Fatalf("daemon did not survive concurrent stream disconnects: %v", err)

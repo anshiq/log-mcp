@@ -8,10 +8,6 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-// TestWatchProcesses_SnapshotNeverNull is the regression test for B3: a
-// stream opened before any workspace has loaded must send an empty array,
-// not a null snapshot (the UI store does `for (const p of msg.snapshot)`
-// and a null value there is a runtime error client-side).
 func TestWatchProcesses_SnapshotNeverNull(t *testing.T) {
 	eng, done := testEngine(t)
 	defer done()
@@ -39,12 +35,6 @@ func TestWatchProcesses_SnapshotNeverNull(t *testing.T) {
 	}
 }
 
-// TestWatchProcesses_LiveUpdatesCarryFullProcess is the regression test for
-// B4: the daemon used to send {"kind":"upsert","event":"...","processId":"..."}
-// with no "process" payload, so the UI store (which requires msg.process)
-// silently dropped every live update after the initial snapshot. It also
-// covers B3's second half: a process started in a workspace that had not
-// been loaded yet when WatchProcesses opened must still appear live.
 func TestWatchProcesses_LiveUpdatesCarryFullProcess(t *testing.T) {
 	eng, done := testEngine(t)
 	defer done()
@@ -52,9 +42,6 @@ func TestWatchProcesses_LiveUpdatesCarryFullProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Open the watch stream before any workspace has been resolved, so the
-	// only way this test can see the process below is via the
-	// runtime-load subscription added for B3.
 	ch, err := cl.ProcessService().Watch(ctx, "", true)
 	if err != nil {
 		t.Fatalf("watch: %v", err)

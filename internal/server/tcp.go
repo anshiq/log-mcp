@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"agent-runtime/internal/webui"
 )
 
 // EnsureToken reads the bearer token, generating + storing one (0600)
@@ -41,15 +44,13 @@ func EnsureToken(tokenPath string) (string, error) {
 	return tok, nil
 }
 
-// tcpGuard enforces bearer auth, Host/Origin checks and rate limiting.
-func tcpGuard(next http.Handler, token string) http.Handler {
+func hostGuard(next http.Handler) http.Handler {
 	limiter := rate.NewLimiter(rate.Every(time.Second/20), 40) // 20 rps burst 40
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.Allow() {
 			http.Error(w, `{"error":"rate limited"}`, http.StatusTooManyRequests)
 			return
 		}
-		// Host check: must be loopback (DNS-rebinding defence).
 		host, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
 			host = r.Host
@@ -58,7 +59,12 @@ func tcpGuard(next http.Handler, token string) http.Handler {
 			http.Error(w, `{"error":"forbidden host"}`, http.StatusForbidden)
 			return
 		}
-		// Origin check: browsers only send whitelisted origins.
+		next.ServeHTTP(w, r)
+	})
+}
+
+func bearerGuard(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			ok := false
 			for _, prefix := range []string{"http://127.0.0.1:", "http://localhost:", "http://[::1]:"} {
@@ -97,9 +103,46 @@ func stripAPIPrefix(next http.Handler) http.Handler {
 	})
 }
 
+const webUICSP = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"worker-src 'self' blob:; img-src 'self' data:"
+
+func staticWebUI() http.Handler {
+	dist := webui.Dist()
+	fileServer := http.FileServer(http.FS(dist))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", webUICSP)
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+		if _, err := fs.Stat(dist, path); err != nil {
+			w.Header().Set("Cache-Control", "no-cache")
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		} else if strings.HasPrefix(path, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+func tcpMux(apiHandler http.Handler, token string) http.Handler {
+	api := bearerGuard(stripAPIPrefix(apiHandler), token)
+	static := staticWebUI()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			api.ServeHTTP(w, r)
+			return
+		}
+		static.ServeHTTP(w, r)
+	})
+}
+
 // Blocks until ctx done or error; call sites run it alongside Serve.
 func (s *Server) ServeTCP(addr, token string) error {
-	inner := tcpGuard(stripAPIPrefix(s.handler), token)
+	inner := hostGuard(tcpMux(s.handler, token))
 	srv := &http.Server{
 		Addr: addr, Handler: inner,
 		ReadHeaderTimeout: 5 * time.Second,
