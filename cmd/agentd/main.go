@@ -87,15 +87,12 @@ func run(logger *slog.Logger) error {
 	})
 	defer engine.Close()
 
-	// Reconnect shims from the previous generation before serving.
-	if lives, err := db.LiveInstances(); err == nil && len(lives) > 0 {
-		var in []daemon.LiveInstance
-		for _, l := range lives {
-			in = append(in, daemon.LiveInstance{InstanceID: l.ID, ShimDir: l.ShimDir})
-		}
-		rep := d.ReconnectShims(p.Runtime, in)
-		logger.Info("reconnected shims", "reconnected", len(rep.Reconnected), "orphaned", len(rep.Orphaned))
-	}
+	// Reconnect shims from the previous generation before serving:
+	// Hello each shim, record exits that happened while down, resume
+	// ingest from index cursors. No log gaps.
+	rep := engine.ReconnectShims(p.Runtime)
+	logger.Info("reconnected shims",
+		"reconnected", len(rep.Reconnected), "exited", len(rep.Exited), "orphaned", len(rep.Orphaned))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

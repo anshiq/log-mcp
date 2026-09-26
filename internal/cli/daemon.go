@@ -3,12 +3,17 @@ package cli
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"agent-runtime/internal/config"
 	"agent-runtime/internal/daemon"
+	"agent-runtime/internal/platform/paths"
+	"agent-runtime/internal/platform/servicemgr"
 )
 
 // newDaemonCmd adds the `daemon start|stop|status|run` tree. The daemon owns
@@ -76,6 +81,82 @@ func newDaemonCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 				return daemon.Run(loaded, logger)
 			},
 		},
+		&cobra.Command{
+			Use:   "restart",
+			Short: "Restart the per-user daemon (processes keep running)",
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				d := daemon.New(p.SocketPath(), p.Data)
+				if err := d.Restart(); err != nil {
+					return err
+				}
+				fmt.Println("daemon restarted (shims re-attached)")
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "logs",
+			Short: "Tail the per-user daemon log",
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				data, err := os.ReadFile(p.LogPath())
+				if err != nil {
+					return err
+				}
+				fmt.Print(tailLines(string(data), 100))
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "install",
+			Short: "Install autostart (systemd user socket / LaunchAgent / logon task)",
+			RunE: func(c *cobra.Command, args []string) error {
+				exe, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				agentd := siblingBinary(exe, "agentd")
+				p := paths.User()
+				mgr, err := servicemgr.New(agentd, p.SocketPath())
+				if err != nil {
+					return err
+				}
+				return mgr.Install()
+			},
+		},
+		&cobra.Command{
+			Use:   "uninstall",
+			Short: "Remove autostart",
+			RunE: func(c *cobra.Command, args []string) error {
+				exe, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				agentd := siblingBinary(exe, "agentd")
+				p := paths.User()
+				mgr, err := servicemgr.New(agentd, p.SocketPath())
+				if err != nil {
+					return err
+				}
+				return mgr.Uninstall()
+			},
+		},
 	)
 	return cmd
+}
+
+func tailLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func siblingBinary(exe, name string) string {
+	cand := filepath.Join(filepath.Dir(exe), name)
+	if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+		return cand
+	}
+	return exe
 }

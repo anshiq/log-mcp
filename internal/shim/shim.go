@@ -20,6 +20,12 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/creack/pty"
+
+	shimv1 "agent-runtime/gen/agentruntime/shim/v1"
 	"agent-runtime/internal/logpipe"
 )
 
@@ -129,32 +135,27 @@ func dirOf(p string) string {
 	return "."
 }
 
-// Request is a control-socket op (JSON framing v1; protobuf wire format
-// arrives with codegen in Phase 3 — the op names match shim.proto).
-type Request struct {
-	Protocol int    `json:"protocol_version"`
-	Op       string `json:"op"` // hello|subscribe|signal|stdin|resize|stop|release
-	Signal   string `json:"signal,omitempty"`
-	Group    bool   `json:"group,omitempty"`
-	Data     []byte `json:"data,omitempty"`
-	Rows     int    `json:"rows,omitempty"`
-	Cols     int    `json:"cols,omitempty"`
-	GraceMs  int    `json:"grace_ms,omitempty"`
-	FromSeq  uint64 `json:"from_seq,omitempty"`
-}
+// Control protocol: u32 length (LE) + 1-byte op + protobuf message
+// (api/proto/agentruntime/shim/v1/shim.proto). One control connection at
+// a time; a second connection replaces the first (daemon restart).
+//
+// Ops daemon→shim: 1 Hello, 2 Subscribe, 3 Signal, 4 Stdin, 5 Resize,
+// 6 Stop, 7 Release. Ops shim→daemon: 11 HelloResponse, 12 FramedRecord,
+// 13 Exited, 14 Error.
+const (
+	opHello     = 1
+	opSubscribe = 2
+	opSignal    = 3
+	opStdin     = 4
+	opResize    = 5
+	opStop      = 6
+	opRelease   = 7
 
-// Event is a control-socket response/event.
-type Event struct {
-	Type      string          `json:"ev"` // hello|record|exited|error
-	PID       int             `json:"pid,omitempty"`
-	PGID      int             `json:"pgid,omitempty"`
-	Status    string          `json:"status,omitempty"`
-	StartedAt int64           `json:"started_unix_ns,omitempty"`
-	LastSeq   uint64          `json:"last_seq,omitempty"`
-	Exit      *ExitInfo       `json:"exit,omitempty"`
-	Record    *logpipe.Record `json:"record,omitempty"`
-	Error     string          `json:"error,omitempty"`
-}
+	opHelloResp = 11
+	opRecord    = 12
+	opExited    = 13
+	opError     = 14
+)
 
 // Shim holds the state of a running shim.
 type Shim struct {
@@ -165,12 +166,18 @@ type Shim struct {
 	status    string
 	startedAt time.Time
 	writer    *logpipe.SegmentWriter
-	seq       uint64
 	mu        sync.Mutex
 	listener  net.Listener
+	active    net.Conn // current control connection (single-owner)
 	released  chan struct{}
+	exitedCh  chan struct{} // closed by onExit; unblocks Subscribe streams
 	exit      *ExitInfo
 	stdinW    io.WriteCloser
+	ptyMaster *os.File
+	// subs fan live records to Subscribe streams (bounded, drop on
+	// backpressure — segments stay authoritative).
+	subsMu sync.Mutex
+	subs   map[chan logpipe.Record]struct{}
 }
 
 // New creates a shim from a validated bundle.
@@ -184,6 +191,7 @@ func New(bundle *Bundle) (*Shim, error) {
 		status:   "starting",
 		writer:   w,
 		released: make(chan struct{}),
+		exitedCh: make(chan struct{}),
 	}, nil
 }
 
@@ -206,6 +214,10 @@ func (s *Shim) Run(controlSock string, linger time.Duration) error {
 		s.child.Env = s.bundle.Env
 	}
 	setupChild(s.child)
+
+	if s.bundle.Pty {
+		return s.runPTY(controlSock, linger)
+	}
 
 	stdout, err := s.child.StdoutPipe()
 	if err != nil {
@@ -232,10 +244,8 @@ func (s *Shim) Run(controlSock string, linger time.Duration) error {
 	go s.pump(stdout, logpipe.StreamStdout)
 	go s.pump(stderr, logpipe.StreamStderr)
 
-	if err := s.serve(controlSock); err != nil {
-		// Control socket failure must not kill the child.
-		fmt.Fprintf(os.Stderr, "shim: control socket: %v\n", err)
-	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- s.serve(controlSock) }()
 
 	waitErr := s.child.Wait()
 	s.onExit(waitErr)
@@ -248,9 +258,68 @@ func (s *Shim) Run(controlSock string, linger time.Duration) error {
 	select {
 	case <-s.released:
 	case <-time.After(linger):
+	case err := <-serveErr:
+		// Control socket failure must not kill the child, but a dead
+		// listener with no Release means nobody can reach us: exit so
+		// the daemon's orphan scan reaps cleanly.
+		fmt.Fprintf(os.Stderr, "shim: control socket: %v\n", err)
 	}
 	_ = s.writer.Close()
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
 	return nil
+}
+
+// runPTY executes the child under a PTY master (colors, interactive CLIs
+// in the GUI). Stdout+stderr merge into stream=pty; Resize controls the
+// window size. Otherwise identical to the pipe path (segments, linger).
+func (s *Shim) runPTY(controlSock string, linger time.Duration) error {
+	master, err := pty.Start(s.child)
+	if err != nil {
+		return fmt.Errorf("shim: pty start: %w", err)
+	}
+	s.ptyMaster = master
+	s.pid = s.child.Process.Pid
+	s.pgid = s.pid
+	s.startedAt = time.Now()
+	s.status = "running"
+	s.systemf("process started pid %d (pty): %v", s.pid, s.bundle.Args)
+
+	go s.pump(master, logpipe.StreamPTY)
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- s.serve(controlSock) }()
+
+	waitErr := s.child.Wait()
+	s.onExit(waitErr)
+	_ = master.Close()
+
+	if linger <= 0 {
+		linger = LingerDefault
+	}
+	select {
+	case <-s.released:
+	case <-time.After(linger):
+	case err := <-serveErr:
+		fmt.Fprintf(os.Stderr, "shim: control socket: %v\n", err)
+	}
+	_ = s.writer.Close()
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+	return nil
+}
+
+// resizePTY applies a terminal resize to the PTY master.
+func (s *Shim) resizePTY(rows, cols int) error {
+	s.mu.Lock()
+	master := s.ptyMaster
+	s.mu.Unlock()
+	if master == nil {
+		return fmt.Errorf("shim: no pty allocated")
+	}
+	return pty.Setsize(master, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 }
 
 func (s *Shim) onExit(waitErr error) {
@@ -283,6 +352,11 @@ func (s *Shim) onExit(waitErr error) {
 		s.systemf("process exited code %d", code)
 	}
 	_ = s.writeExitFile()
+	select {
+	case <-s.exitedCh:
+	default:
+		close(s.exitedCh)
+	}
 }
 
 func (s *Shim) systemf(format string, args ...any) {
@@ -306,10 +380,21 @@ func (s *Shim) pump(r io.Reader, stream logpipe.Stream) {
 		if !isText(line) {
 			flags |= logpipe.FlagBinary
 		}
-		_ = s.writer.WriteRecord(&logpipe.Record{Stream: uint8(stream), Flags: uint8(flags), Payload: append([]byte(nil), line...)})
-		s.mu.Lock()
-		s.seq++
-		s.mu.Unlock()
+		rec := &logpipe.Record{Stream: uint8(stream), Flags: uint8(flags),
+			Payload: append([]byte(nil), line...), TS: time.Now().UnixNano()}
+		if err := s.writer.WriteRecord(rec); err != nil {
+			return
+		}
+		rec.Seq = uint64(s.writer.LastSeq())
+		// Fan out to live subscribers without blocking the pump.
+		s.subsMu.Lock()
+		for ch := range s.subs {
+			select {
+			case ch <- *rec:
+			default:
+			}
+		}
+		s.subsMu.Unlock()
 	}
 	for {
 		n, err := r.Read(buf)
@@ -388,9 +473,9 @@ func (s *Shim) Signal(sig syscall.Signal, group bool) error {
 		return fmt.Errorf("shim: no child")
 	}
 	if group {
-		return syscall.Kill(-s.pgid, sig)
+		return killGroup(s.pgid, sig)
 	}
-	return syscall.Kill(s.pid, sig)
+	return killPID(s.pid, sig)
 }
 
 // Stop sends SIGTERM to the group, waits grace, then SIGKILL.
@@ -513,6 +598,14 @@ func (s *Shim) serve(sock string) error {
 				return err
 			}
 		}
+		// One control connection at a time (the daemon); a second
+		// connection replaces the first (daemon restart).
+		s.mu.Lock()
+		if s.active != nil {
+			_ = s.active.Close()
+		}
+		s.active = conn
+		s.mu.Unlock()
 		go s.handle(conn)
 	}
 }
@@ -520,105 +613,224 @@ func (s *Shim) serve(sock string) error {
 func (s *Shim) handle(conn net.Conn) {
 	defer conn.Close()
 	for {
-		req, err := readFrame(conn)
+		op, body, err := readFrame(conn)
 		if err != nil {
 			return
 		}
-		switch req.Op {
-		case "hello":
-			s.mu.Lock()
-			ev := Event{Type: "hello", PID: s.pid, PGID: s.pgid, Status: s.status,
-				StartedAt: s.startedAt.UnixNano(), LastSeq: s.writerSeq(), Exit: s.exit}
-			s.mu.Unlock()
-			_ = writeFrame(conn, ev)
-			if req.Protocol < MinProtocolVersion || req.Protocol > ProtocolVersion {
-				_ = writeFrame(conn, Event{Type: "error", Error: "unsupported protocol"})
+		switch op {
+		case opHello:
+			var req shimv1.HelloRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
 				return
 			}
-		case "signal":
-			sig := parseSignal(req.Signal)
-			err := s.Signal(sig, req.Group)
-			if err != nil {
-				_ = writeFrame(conn, Event{Type: "error", Error: err.Error()})
-			} else {
-				_ = writeFrame(conn, Event{Type: "hello", Status: s.Status()})
+			if req.ProtocolVersion < int32(MinProtocolVersion) || req.ProtocolVersion > int32(ProtocolVersion) {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: "unsupported protocol"})
+				return
 			}
-		case "stdin":
-			if s.stdinW == nil {
-				_ = writeFrame(conn, Event{Type: "error", Error: "stdin not a pipe"})
+			s.mu.Lock()
+			resp := &shimv1.HelloResponse{
+				ProtocolVersion: int32(ProtocolVersion),
+				Pid:             int32(s.pid),
+				Pgid:            int32(s.pgid),
+				Status:          s.status,
+				StartedAt:       timestamppb.New(s.startedAt),
+				LastSeq:         int64(s.writer.LastSeq()),
+			}
+			if s.exit != nil {
+				resp.Exit = &shimv1.Exited{
+					Code: int32(s.exit.Code), Signal: s.exit.Signal,
+					OomKilled: s.exit.OOMKilled, ExitedUnixNs: s.exit.ExitedAt.UnixNano(),
+				}
+			}
+			s.mu.Unlock()
+			_ = writeMsg(conn, opHelloResp, resp)
+		case opSignal:
+			var req shimv1.SignalRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
 				continue
 			}
-			_, err := s.stdinW.Write(req.Data)
-			if err != nil {
-				_ = writeFrame(conn, Event{Type: "error", Error: err.Error()})
+			if err := s.Signal(parseSignal(req.Signal), req.Group); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
 			} else {
-				_ = writeFrame(conn, Event{Type: "hello", Status: s.Status()})
+				_ = writeMsg(conn, opHelloResp, s.helloLocked())
 			}
-		case "stop":
+		case opStdin:
+			var req shimv1.StdinRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+				continue
+			}
+			if s.stdinW == nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: "stdin not a pipe"})
+				continue
+			}
+			if _, err := s.stdinW.Write(req.Data); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+			} else {
+				_ = writeMsg(conn, opHelloResp, s.helloLocked())
+			}
+		case opResize:
+			var req shimv1.ResizeRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+				continue
+			}
+			if err := s.resizePTY(int(req.Rows), int(req.Cols)); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+			} else {
+				_ = writeMsg(conn, opHelloResp, s.helloLocked())
+			}
+		case opStop:
+			var req shimv1.StopRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+				continue
+			}
 			grace := time.Duration(req.GraceMs) * time.Millisecond
 			if grace <= 0 {
 				grace = 5 * time.Second
 			}
 			go s.Stop(grace)
-			_ = writeFrame(conn, Event{Type: "hello", Status: s.Status()})
-		case "release":
+			_ = writeMsg(conn, opHelloResp, s.helloLocked())
+		case opRelease:
 			s.Release()
-			_ = writeFrame(conn, Event{Type: "hello", Status: s.Status()})
+			_ = writeMsg(conn, opHelloResp, s.helloLocked())
 			return
-		case "subscribe":
-			// Live tail from seq: replay segments then stream.
-			// Minimal v1: replay then close (streaming follow lands with
-			// the daemon ingest loop; the segments are authoritative).
-			recs, _ := logpipe.ReadFromSeq(s.bundle.SegmentDir, req.FromSeq)
-			for _, r := range recs {
-				if err := writeFrame(conn, Event{Type: "record", Record: r}); err != nil {
-					return
-				}
+		case opSubscribe:
+			var req shimv1.SubscribeRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				_ = writeMsg(conn, opError, &shimv1.Error{Message: err.Error()})
+				return
 			}
+			s.serveSubscribe(conn, uint64(req.FromSeq))
 			return
 		default:
-			_ = writeFrame(conn, Event{Type: "error", Error: "unknown op " + req.Op})
+			_ = writeMsg(conn, opError, &shimv1.Error{Message: "unknown op"})
 		}
 	}
 }
 
-func (s *Shim) writerSeq() uint64 {
-	// logpipe writer tracks seq internally; approximate via segment scan
-	// is unnecessary — the daemon uses index cursors. Return stored seq.
-	return s.seq
+// helloLocked builds the current status response (caller need not hold mu;
+// a copy is taken under lock).
+func (s *Shim) helloLocked() *shimv1.HelloResponse {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	resp := &shimv1.HelloResponse{
+		ProtocolVersion: int32(ProtocolVersion),
+		Pid:             int32(s.pid),
+		Pgid:            int32(s.pgid),
+		Status:          s.status,
+		StartedAt:       timestamppb.New(s.startedAt),
+		LastSeq:         int64(s.writer.LastSeq()),
+	}
+	if s.exit != nil {
+		resp.Exit = &shimv1.Exited{
+			Code: int32(s.exit.Code), Signal: s.exit.Signal,
+			OomKilled: s.exit.OOMKilled, ExitedUnixNs: s.exit.ExitedAt.UnixNano(),
+		}
+	}
+	return resp
 }
 
-func readFrame(conn net.Conn) (*Request, error) {
+// serveSubscribe replays segments from fromSeq, then follows live records
+// until the connection drops or the child exits (Exited sent last).
+func (s *Shim) serveSubscribe(conn net.Conn, fromSeq uint64) {
+	recs, _ := logpipe.ReadFromSeq(s.bundle.SegmentDir, fromSeq)
+	for _, r := range recs {
+		if err := writeMsg(conn, opRecord, toFramed(r)); err != nil {
+			return
+		}
+	}
+	ch := make(chan logpipe.Record, 256)
+	s.subsMu.Lock()
+	if s.subs == nil {
+		s.subs = map[chan logpipe.Record]struct{}{}
+	}
+	s.subs[ch] = struct{}{}
+	s.subsMu.Unlock()
+	defer func() {
+		s.subsMu.Lock()
+		delete(s.subs, ch)
+		s.subsMu.Unlock()
+	}()
+	for {
+		select {
+		case rec := <-ch:
+			if rec.Seq < fromSeq {
+				continue
+			}
+			if err := writeMsg(conn, opRecord, toFramed(&rec)); err != nil {
+				return
+			}
+		case <-s.exitedCh:
+			// Child exited: deliver the recorded exit last so the
+			// daemon observes it even across its own restart.
+			s.mu.Lock()
+			ex := s.exit
+			s.mu.Unlock()
+			if ex != nil {
+				_ = writeMsg(conn, opExited, &shimv1.Exited{
+					Code: int32(ex.Code), Signal: ex.Signal,
+					OomKilled: ex.OOMKilled, ExitedUnixNs: ex.ExitedAt.UnixNano(),
+				})
+			}
+			return
+		case <-time.After(15 * time.Second):
+			// Keep NATs/proxies alive; client ignores unknown op 0.
+			if err := writeHeartbeat(conn); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func toFramed(r *logpipe.Record) *shimv1.FramedRecord {
+	return &shimv1.FramedRecord{
+		Seq: r.Seq, TsUnixNs: r.TS, Stream: uint32(r.Stream),
+		Partial: r.Flags&logpipe.FlagPartial != 0, Payload: r.Payload,
+	}
+}
+
+// readFrame reads u32 LE length + 1-byte op + protobuf body.
+func readFrame(conn net.Conn) (byte, []byte, error) {
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	n := binary.LittleEndian.Uint32(lenBuf[:])
-	if n == 0 || n > 4*1024*1024 {
-		return nil, fmt.Errorf("shim: bad frame length %d", n)
+	if n < 1 || n > 4*1024*1024 {
+		return 0, nil, fmt.Errorf("shim: bad frame length %d", n)
 	}
-	body := make([]byte, n)
-	if _, err := io.ReadFull(conn, body); err != nil {
-		return nil, err
+	frame := make([]byte, n)
+	if _, err := io.ReadFull(conn, frame); err != nil {
+		return 0, nil, err
 	}
-	var req Request
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, err
-	}
-	return &req, nil
+	return frame[0], frame[1:], nil
 }
 
-func writeFrame(conn net.Conn, ev Event) error {
-	body, err := json.Marshal(ev)
+func writeMsg(conn net.Conn, op byte, msg proto.Message) error {
+	body, err := proto.Marshal(msg)
 	if err != nil {
 		return err
 	}
+	frame := make([]byte, 4+1+len(body))
+	binary.LittleEndian.PutUint32(frame[0:4], uint32(1+len(body)))
+	frame[4] = op
+	copy(frame[5:], body)
+	_, err = conn.Write(frame)
+	return err
+}
+
+// writeHeartbeat is a zero-length op-0 keepalive; receivers ignore it.
+func writeHeartbeat(conn net.Conn) error {
 	var lenBuf [4]byte
-	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(body)))
+	binary.LittleEndian.PutUint32(lenBuf[:], 1)
 	if _, err := conn.Write(lenBuf[:]); err != nil {
 		return err
 	}
-	_, err = conn.Write(body)
+	_, err := conn.Write([]byte{0})
 	return err
 }
 

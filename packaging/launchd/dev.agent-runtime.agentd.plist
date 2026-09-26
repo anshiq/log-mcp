@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.agent-runtime.agentd</string>
+  <key>ProgramArguments</key>
+  <array><string>/opt/agent-runtime/bin/agentd</string><string>--foreground</string></array>
+  <key>Sockets</key>
+  <dict>
+    <key>AgentDSocket</key>
+    <dict><key>SockPathName</key><string>/tmp/agent-runtime/agentd.sock</string></dict>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key><false/></dict>
+</dict>
+</plist>

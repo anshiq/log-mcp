@@ -1,10 +1,17 @@
-version: v1
+version: v2
+# One schema produces the Go SDK, the TypeScript client and the docs.
+# Generated code is committed; CI checks `make proto` is clean and runs
+# `buf breaking` against master.
 plugins:
-  - plugin: go
-    out: gen/agentruntime/v1
+  - local: protoc-gen-go
+    out: gen
     opt:
       - paths=source_relative
-  - plugin: connect-go
-    out: gen/agentruntime/v1
+  - local: protoc-gen-connect-go
+    out: gen
     opt:
       - paths=source_relative
+  - local: protoc-gen-es
+    out: ui/src/gen
+    opt:
+      - target=ts

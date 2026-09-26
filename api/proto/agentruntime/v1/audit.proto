@@ -2,7 +2,7 @@
 syntax = "proto3";
 
 package agentruntime.v1;
-option go_package = "gen/agentruntime/v1";
+option go_package = "agent-runtime/gen/agentruntime/v1;agentruntimev1";
 
 import "agentruntime/v1/common.proto";
 

@@ -4,7 +4,7 @@
 syntax = "proto3";
 
 package agentruntime.shim.v1;
-option go_package = "gen/agentruntime/shim/v1";
+option go_package = "agent-runtime/gen/agentruntime/shim/v1;shimv1";
 
 import "google/protobuf/timestamp.proto";
 
@@ -28,10 +28,26 @@ message HelloResponse {
   string status = 4;
   google.protobuf.Timestamp started_at = 5;
   int64 last_seq = 6;
+  // Present when the child already exited (e.g. while the daemon was
+  // down): the shim holds the exit until Release.
+  Exited exit = 7;
 }
 
 message SubscribeRequest {
   int64 from_seq = 1;
+}
+message FramedRecord {
+  uint64 seq = 1;
+  int64 ts_unix_ns = 2;
+  uint32 stream = 3;
+  bool partial = 4;
+  bytes payload = 5;
+}
+message Exited {
+  int32 code = 1;
+  string signal = 2;
+  bool oom_killed = 3;
+  int64 exited_unix_ns = 4;
 }
 
 message SignalRequest {
@@ -58,3 +74,7 @@ message StopResponse {}
 
 message ReleaseRequest {}
 message ReleaseResponse {}
+
+message Error {
+  string message = 1;
+}

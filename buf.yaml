@@ -1,7 +1,20 @@
-version: v1
+version: v2
+# Proto sources live under api/proto; imports resolve from there, so
+# "agentruntime/v1/common.proto" maps to api/proto/agentruntime/v1/common.proto.
+modules:
+  - path: api/proto
 lint:
   use:
-    - DEFAULT
+    - STANDARD
+  # Deliberate deviations, documented in Plan.md Appendix A:
+  # - streaming RPCs use domain response names (ProcessEvent, LogEntry,
+  #   ConfigEvent, ...) instead of <Method>Response.
+  # - the internal shim service is ShimControl, not *Service.
+  # - integration.proto imports common.proto for forward-compat.
+  except:
+    - RPC_RESPONSE_STANDARD_NAME
+    - SERVICE_SUFFIX
+    - IMPORT_USED
 breaking:
   use:
     - FILE

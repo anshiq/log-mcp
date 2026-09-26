@@ -131,6 +131,7 @@ type SegmentWriter struct {
 }
 
 // NewSegmentWriter creates a writer that rotates at maxSize.
+// segmentDir is used as-is (callers pass the per-instance directory);
 // instanceID is embedded in every segment header.
 func NewSegmentWriter(segmentDir string, instanceID string, maxSize int) (*SegmentWriter, error) {
 	if maxSize <= 0 {
@@ -284,6 +285,16 @@ func (w *SegmentWriter) rotateLocked() error {
 	_ = w.seg.File.Close()
 	w.segNum++
 	return w.open(w.segNum)
+}
+
+// LastSeq returns the last assigned sequence number.
+func (w *SegmentWriter) LastSeq() uint64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.seg == nil {
+		return 0
+	}
+	return w.seg.Seq
 }
 
 // Close flushes and closes the writer.

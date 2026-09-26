@@ -955,6 +955,13 @@ func (d *DB) UpdateInstanceExit(id string, code int64, signal string, oom bool, 
 	return err
 }
 
+// UpdateInstanceStatus sets the status of an instance (e.g. orphaned when
+// its shim socket is dead and only pid-poll adoption remains).
+func (d *DB) UpdateInstanceStatus(id, status string) error {
+	_, err := d.db.Exec(`UPDATE instances SET status=? WHERE id=? AND exited_at IS NULL`, status, id)
+	return err
+}
+
 // LiveInstances returns non-exited instances (for reconnect on boot).
 func (d *DB) LiveInstances() ([]*InstanceRow, error) {
 	rows, err := d.db.Query(`SELECT id, process_id, pid, pgid, shim_dir, status, started_at
