@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { ConfigService } from '../lib/api';
   import { ensureMonacoConfigured, monaco } from '../lib/monacoSetup';
+  import { toasts, toastError } from '../lib/toasts.svelte';
 
   let { workspaceId = '' }: { workspaceId?: string } = $props();
 
@@ -106,9 +107,12 @@
         revision = res.revision ?? revision;
         plan = null;
         saved = true;
+        toasts.ok(`Applied · revision ${revision}`);
       } else if (res.errors) {
         errors = res.errors as typeof errors;
       }
+    } catch (err) {
+      toastError(err);
     } finally {
       applying = false;
     }

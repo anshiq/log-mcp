@@ -14,6 +14,9 @@
   import { scope } from '../lib/scope.svelte';
   import { installGlobalKeys } from '../lib/keys';
   import { SystemService, hasAuthToken, setUnauthorizedHandler } from '../lib/api';
+  import ToastRegion from '../lib/ui/ToastRegion.svelte';
+  import CommandPalette from '../lib/ui/CommandPalette.svelte';
+  import { palette } from '../lib/palette.svelte';
 
   let daemonVersion = $state('');
   let daemonOk = $state(false);
@@ -75,6 +78,10 @@
         <span class="scope-error">{scope.error}</span>
       {/if}
       <div class="spacer"></div>
+      <button class="palette-trigger" onclick={() => void palette.show()}>
+        <span>Search…</span>
+        <kbd>⌘K</kbd>
+      </button>
       <span class="status" class:ok={daemonOk}>
         <span class="dot"></span>
         {daemonVersion ? `daemon ${daemonVersion}` : 'connecting…'}
@@ -111,6 +118,8 @@
       </div>
     </div>
   </main>
+  <ToastRegion />
+  <CommandPalette />
 {/if}
 
 <style>
@@ -162,6 +171,24 @@
   }
   .spacer {
     flex: 1;
+  }
+  .palette-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-1) var(--space-3);
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+  .palette-trigger kbd {
+    background: var(--bg-3);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--fs-xs);
+    font-family: var(--font-mono);
   }
   .status {
     display: flex;

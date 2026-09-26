@@ -201,6 +201,36 @@ Not done: a menu bar, and the loopback-HTTP-server fallback for G3
 (only needed if the AssetServer proxy turns out to buffer streams,
 which the screenshot check above did not indicate).
 
+### Fourth progress note (this session): component library + command palette
+
+Built the reusable component set from Phase 3.2 (a practical subset,
+not the full inventory) under `ui/src/lib/ui/`: `Button`, `Input`,
+`Select`, `Checkbox`, `Switch`, `Badge`, `StatusPill`, `Dialog`
+(focus trap, Escape, backdrop click, returns focus on close), `Tooltip`,
+`EmptyState`, `Spinner`, plus a toast system (`lib/toasts.svelte.ts` +
+`ToastRegion.svelte`) and a command palette (`lib/palette.svelte.ts` +
+`CommandPalette.svelte`, Cmd/Ctrl+K, fuzzy-ish substring search over
+routes and processes, arrow-key navigation).
+
+Retrofit `StartProcessDialog` onto `Dialog`/`Button`/`Input`/`Select`/
+`Checkbox` as the first real usage (not just built-and-unused), and
+wired toast feedback into the paths that previously failed silently or
+used a bare `alert()`: ProcessesPage's bulk/signal actions, AppsPage's
+start/start-stack, and ConfigEditor's apply.
+
+Not built: the rest of the Phase 3.2 inventory (SplitButton, Combobox,
+DropdownMenu, ContextMenu, Table/VirtualList, CodeBlock, DiffView,
+KeyValueList, RelativeTime, Bytes/Duration, Sparkline/Meter) — these
+exist inline in the pages that need them today and weren't worth
+extracting without a second real caller to prove the abstraction.
+
+`npx tsc --noEmit`, `npx vitest run` and both `vite build` targets are
+clean (a11y-clean too, after fixing the same "interactive role needs
+tabindex" warning in both `Dialog` and `CommandPalette`). Verified
+`ProcessService.list()`'s snake_case (`process_id`) shape against the
+palette's dual-shape handling (it also consumes the camelCase watch
+snapshot elsewhere) with a real isolated daemon.
+
 ## 3. Phase 1: Daemon fixes the UI depends on
 
 All in `internal/server` unless noted. Each fix gets a regression test in `internal/server/server_test.go` (or a new `streams_test.go`).

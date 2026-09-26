@@ -1,4 +1,5 @@
 import { router } from './router.svelte';
+import { palette } from './palette.svelte';
 
 const GOTO: Record<string, string> = {
   p: '/processes',
@@ -24,6 +25,12 @@ export function installGlobalKeys(): () => void {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handler(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      if (palette.open) palette.hide();
+      else void palette.show();
+      return;
+    }
     if (isTyping(e.target)) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
 

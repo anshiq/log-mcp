@@ -4,6 +4,7 @@
   import { scope } from '../../lib/scope.svelte';
   import { router } from '../../lib/router.svelte';
   import { createProcessStore, type Process } from '../../lib/stores';
+  import { toasts, toastError } from '../../lib/toasts.svelte';
 
   interface AppRow {
     name: string;
@@ -69,7 +70,12 @@
   }
 
   async function startOne(app: AppRow) {
-    await ProcessService.start({ workspaceId: scope.workspaceId, app: app.name });
+    try {
+      await ProcessService.start({ workspaceId: scope.workspaceId, app: app.name });
+      toasts.ok(`Started ${app.name}`);
+    } catch (err) {
+      toastError(err);
+    }
   }
 
   function toggle(name: string) {
@@ -84,6 +90,10 @@
     stackResult = null;
     try {
       stackResult = await ProcessService.startStack(scope.workspaceId, [...selected]);
+      if (stackResult?.failed) toastError(`Stack failed at ${stackResult.failed}`);
+      else toasts.ok('Stack started');
+    } catch (err) {
+      toastError(err);
     } finally {
       starting = false;
     }

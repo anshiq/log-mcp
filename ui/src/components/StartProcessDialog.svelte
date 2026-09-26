@@ -2,6 +2,11 @@
   import { onMount } from 'svelte';
   import { ConfigService, ProcessService } from '../lib/api';
   import { splitCommand } from '../lib/shellquote';
+  import Dialog from '../lib/ui/Dialog.svelte';
+  import Button from '../lib/ui/Button.svelte';
+  import Input from '../lib/ui/Input.svelte';
+  import Select from '../lib/ui/Select.svelte';
+  import Checkbox from '../lib/ui/Checkbox.svelte';
 
   let {
     workspaceId,
@@ -45,8 +50,7 @@
       .filter((l) => l && l.includes('='));
   }
 
-  async function submit(e: Event) {
-    e.preventDefault();
+  async function doStart() {
     starting = true;
     error = '';
     try {
@@ -73,91 +77,70 @@
   }
 </script>
 
-<div
-  class="overlay"
-  onclick={onClose}
-  onkeydown={(e) => e.key === 'Escape' && onClose()}
-  role="button"
-  tabindex="-1"
->
-  <form class="dialog" role="none" onclick={(e) => e.stopPropagation()} onsubmit={submit}>
-    <h2>Start process</h2>
-    <div class="mode">
-      <button type="button" class:active={mode === 'app'} onclick={() => (mode = 'app')} disabled={apps.length === 0}>
-        From config
-      </button>
-      <button type="button" class:active={mode === 'command'} onclick={() => (mode = 'command')}>Command</button>
-    </div>
-    {#if mode === 'app'}
-      <label>
-        App
-        <select bind:value={selectedApp}>
-          {#each apps as a}
-            <option value={a.name}>{a.name} — {a.command.join(' ')}</option>
-          {/each}
-        </select>
+<Dialog title="Start process" width={460} {onClose}>
+  {#snippet children()}
+    <form
+      class="fields"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void doStart();
+      }}
+    >
+      <div class="mode">
+        <button type="button" class:active={mode === 'app'} onclick={() => (mode = 'app')} disabled={apps.length === 0}>
+          From config
+        </button>
+        <button type="button" class:active={mode === 'command'} onclick={() => (mode = 'command')}>Command</button>
+      </div>
+      {#if mode === 'app'}
+        <label class="field-label">
+          App
+          <Select bind:value={selectedApp} options={apps.map((a) => ({ value: a.name, label: `${a.name} — ${a.command.join(' ')}` }))} />
+        </label>
+      {:else}
+        <label class="field-label">
+          Command
+          <Input placeholder="npm run dev" bind:value={commandLine} />
+        </label>
+        <label class="field-label">
+          Working directory (optional)
+          <Input placeholder="defaults to the workspace root" bind:value={workdir} />
+        </label>
+      {/if}
+      <label class="field-label">
+        Environment (one KEY=value per line)
+        <textarea rows="3" bind:value={envText}></textarea>
       </label>
-    {:else}
-      <label>
-        Command
-        <input placeholder="npm run dev" bind:value={commandLine} autocomplete="off" />
-      </label>
-      <label>
-        Working directory (optional)
-        <input placeholder="defaults to the workspace root" bind:value={workdir} autocomplete="off" />
-      </label>
-    {/if}
-    <label>
-      Environment (one KEY=value per line)
-      <textarea rows="3" bind:value={envText}></textarea>
-    </label>
-    <div class="row">
-      <label class="inline">
-        Lifetime
-        <select bind:value={lifetime}>
-          <option value="persistent">persistent</option>
-          <option value="session">session</option>
-        </select>
-      </label>
-      <label class="checkbox">
-        <input type="checkbox" bind:checked={pty} />
-        Allocate a PTY
-      </label>
-    </div>
-    {#if error}
-      <p class="error">{error}</p>
-    {/if}
-    <div class="actions">
-      <button type="button" onclick={onClose}>Cancel</button>
-      <button type="submit" class="primary" disabled={starting}>{starting ? 'Starting…' : 'Start'}</button>
-    </div>
-  </form>
-</div>
+      <div class="row">
+        <label class="field-label inline">
+          Lifetime
+          <Select
+            bind:value={lifetime}
+            options={[
+              { value: 'persistent', label: 'persistent' },
+              { value: 'session', label: 'session' }
+            ]}
+          />
+        </label>
+        <Checkbox bind:checked={pty}>Allocate a PTY</Checkbox>
+      </div>
+      {#if error}
+        <p class="error">{error}</p>
+      {/if}
+      <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true"></button>
+    </form>
+  {/snippet}
+  {#snippet footer()}
+    <Button variant="secondary" onclick={onClose}>Cancel</Button>
+    <Button variant="primary" loading={starting} onclick={doStart}>Start</Button>
+  {/snippet}
+</Dialog>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .dialog {
-    width: 460px;
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-6);
+  .fields {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    box-shadow: var(--shadow-pop);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--fs-lg);
   }
   .mode {
     display: flex;
@@ -177,32 +160,22 @@
     color: var(--text-0);
     border-color: var(--accent);
   }
-  label {
+  .field-label {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     font-size: var(--fs-sm);
     color: var(--text-1);
   }
-  label.inline {
+  .field-label.inline {
     flex: 1;
   }
-  label.checkbox {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  input,
-  select,
   textarea {
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: var(--space-2) var(--space-3);
     color: var(--text-0);
-    font-family: inherit;
-  }
-  textarea {
     font-family: var(--font-mono);
     resize: vertical;
   }
@@ -216,21 +189,13 @@
     font-size: var(--fs-sm);
     margin: 0;
   }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-3);
-  }
-  .actions button {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-5);
-    color: var(--text-0);
-  }
-  .actions .primary {
-    background: var(--accent);
-    color: #fff;
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
     border: none;
+    padding: 0;
   }
 </style>

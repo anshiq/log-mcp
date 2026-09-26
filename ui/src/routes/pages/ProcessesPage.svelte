@@ -7,6 +7,7 @@
   import { ProcessService } from '../../lib/api';
   import { router } from '../../lib/router.svelte';
   import { scope } from '../../lib/scope.svelte';
+  import { toasts, toastError } from '../../lib/toasts.svelte';
 
   const store = createProcessStore();
   let processes = $state<Process[]>([]);
@@ -31,21 +32,37 @@
   });
 
   async function act(action: string, ids: string[]) {
+    let failed = 0;
     for (const id of ids) {
-      if (action === 'stop') await ProcessService.stop(id);
-      if (action === 'restart') await ProcessService.restart(id);
-      if (action === 'remove') await ProcessService.remove(id, true);
+      try {
+        if (action === 'stop') await ProcessService.stop(id);
+        if (action === 'restart') await ProcessService.restart(id);
+        if (action === 'remove') await ProcessService.remove(id, true);
+      } catch (err) {
+        failed++;
+        toastError(err);
+      }
     }
+    if (failed === 0) toasts.ok(`${action} · ${ids.length} process(es)`);
   }
 
   async function signal(sig: string, ids: string[]) {
     if (sig === 'SIGKILL' && !confirm(`Send SIGKILL to ${ids.length} process(es)? This does not allow graceful shutdown.`)) return;
-    for (const id of ids) await ProcessService.signal(id, sig);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await ProcessService.signal(id, sig);
+      } catch (err) {
+        failed++;
+        toastError(err);
+      }
+    }
+    if (failed === 0) toasts.ok(`${sig} sent to ${ids.length} process(es)`);
   }
 
   function requestStart() {
     if (!scope.workspaceId) {
-      alert('Open a workspace from the top bar first.');
+      toasts.info('Open a workspace from the top bar first.');
       return;
     }
     showStart = true;
@@ -53,6 +70,7 @@
 
   function started(processId: string) {
     showStart = false;
+    toasts.ok('Process started');
     router.navigate(`/processes/${processId}`);
   }
 
