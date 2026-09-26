@@ -1,6 +1,6 @@
 [Unit]
 Description=agent-runtime daemon (per-user background platform)
-Documentation=https://github.com/anomalyco/opencode
+Documentation=https://github.com/anshiq/log-mcp
 After=default.target
 
 [Socket]

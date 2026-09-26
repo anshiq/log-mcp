@@ -1,6 +1,6 @@
 [Unit]
 Description=agent-runtime daemon (1 per OS user, hosts all projects)
-Documentation=https://github.com/anomalyco/opencode
+Documentation=https://github.com/anshiq/log-mcp
 Requires=agentd.socket
 After=agentd.socket
 

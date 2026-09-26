@@ -32,7 +32,7 @@ func unitDir() (string, error) {
 func (m *systemdManager) socketUnit() string {
 	return `[Unit]
 Description=agent-runtime daemon socket (per-user)
-Documentation=https://github.com/anomalyco/opencode
+Documentation=https://github.com/anshiq/log-mcp
 
 [Socket]
 ListenStream=` + m.socketPath + `
