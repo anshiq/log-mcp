@@ -4,11 +4,13 @@
   let {
     processes = [] as Process[],
     onAction,
-    onOpen
+    onOpen,
+    onStart
   }: {
     processes?: Process[];
     onAction?: (action: string, ids: string[]) => void;
     onOpen?: (id: string) => void;
+    onStart?: () => void;
   } = $props();
 
   let filter = $state('');
@@ -123,6 +125,7 @@
         Failed {statusCounts.failed}
       </button>
     </div>
+    <div class="toolbar-spacer"></div>
     {#if selected.size > 0}
       <div class="bulk">
         <span>{selected.size} selected</span>
@@ -131,6 +134,7 @@
         <button class="danger" onclick={() => bulk('remove')}>Remove</button>
       </div>
     {/if}
+    <button class="primary" onclick={onStart}>Start process</button>
   </div>
   {#if rows.length === 0}
     <div class="empty">
@@ -223,6 +227,17 @@
     display: flex;
     gap: var(--space-2);
   }
+  .toolbar-spacer {
+    flex: 1;
+  }
+  .primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--fs-sm);
+  }
   .chip {
     background: var(--bg-2);
     border: 1px solid var(--border);
@@ -237,7 +252,6 @@
     background: var(--accent-subtle);
   }
   .bulk {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: var(--space-3);

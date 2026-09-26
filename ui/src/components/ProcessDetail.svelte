@@ -2,15 +2,23 @@
   import { onMount, onDestroy } from 'svelte';
   import LogViewer from './LogViewer.svelte';
   import { LogService, ProcessService, type StreamHandle } from '../lib/api';
+  import { getPlatform } from '../lib/platform';
 
   let { processId, onClose }: { processId: string; onClose: () => void } = $props();
 
-  let tab = $state<'logs' | 'terminal' | 'env'>('logs');
+  let tab = $state<'logs' | 'terminal' | 'env' | 'resources'>('logs');
   let lines = $state<{ line: string; stream?: string; timestamp?: string }[]>([]);
   let env = $state<string[]>([]);
   let envLoading = $state(false);
   let revealed = $state(false);
   let handle: StreamHandle | null = null;
+
+  let cpuPercent = $state(0);
+  let memoryBytes = $state(0);
+  let ports = $state<number[]>([]);
+  let resourcesTimer: ReturnType<typeof setInterval> | null = null;
+  let lastCpuNanos = 0;
+  let lastSampleAt = 0;
 
   function connectLogs() {
     handle?.close();
@@ -34,16 +42,64 @@
     }
   }
 
+  async function sampleResources() {
+    const res = await ProcessService.getResourceUsage(processId);
+    const now = Date.now();
+    if (lastSampleAt > 0) {
+      const deltaNanos = res.cpuNanos - lastCpuNanos;
+      const deltaMs = now - lastSampleAt;
+      if (deltaMs > 0) cpuPercent = Math.max(0, (deltaNanos / 1e6 / deltaMs) * 100);
+    }
+    lastCpuNanos = res.cpuNanos;
+    lastSampleAt = now;
+    memoryBytes = res.memoryBytes;
+    ports = res.ports ?? [];
+  }
+
+  function startResourcePolling() {
+    stopResourcePolling();
+    lastCpuNanos = 0;
+    lastSampleAt = 0;
+    void sampleResources();
+    resourcesTimer = setInterval(sampleResources, 2000);
+  }
+
+  function stopResourcePolling() {
+    if (resourcesTimer) clearInterval(resourcesTimer);
+    resourcesTimer = null;
+  }
+
+  async function clearLogs() {
+    if (!confirm('Clear this process\'s logs?')) return;
+    await LogService.clear(processId);
+    lines = [];
+  }
+
+  async function exportLogs() {
+    const text = lines.map((l) => `${l.timestamp ? l.timestamp + ' ' : ''}${l.stream ? '[' + l.stream + '] ' : ''}${l.line}`).join('\n');
+    await getPlatform().saveFile(`${processId}.log`, text);
+  }
+
+  function formatBytes(b: number): string {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+    return `${(b / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
+
   onMount(() => {
     connectLogs();
   });
 
   onDestroy(() => {
     handle?.close();
+    stopResourcePolling();
   });
 
   $effect(() => {
     if (tab === 'env') void loadEnv();
+    if (tab === 'resources') startResourcePolling();
+    else stopResourcePolling();
   });
 
   $effect(() => {
@@ -61,15 +117,20 @@
     <button class:active={tab === 'logs'} onclick={() => (tab = 'logs')}>Logs</button>
     <button class:active={tab === 'terminal'} onclick={() => (tab = 'terminal')}>Terminal</button>
     <button class:active={tab === 'env'} onclick={() => (tab = 'env')}>Env</button>
+    <button class:active={tab === 'resources'} onclick={() => (tab = 'resources')}>Resources</button>
   </div>
   <div class="body">
     {#if tab === 'logs'}
-      <LogViewer {lines} />
+      <div class="logtoolbar">
+        <button onclick={clearLogs}>Clear</button>
+        <button onclick={exportLogs}>Export</button>
+      </div>
+      <div class="logbody"><LogViewer {lines} /></div>
     {:else if tab === 'terminal'}
       {#await import('./Terminal.svelte') then { default: Terminal }}
         <Terminal {processId} />
       {/await}
-    {:else}
+    {:else if tab === 'env'}
       <div class="env">
         <label class="reveal">
           <input type="checkbox" bind:checked={revealed} onchange={loadEnv} />
@@ -84,6 +145,21 @@
             {/each}
           </ul>
         {/if}
+      </div>
+    {:else}
+      <div class="resources">
+        <div class="stat">
+          <span class="label">CPU</span>
+          <span class="value">{cpuPercent.toFixed(1)}%</span>
+        </div>
+        <div class="stat">
+          <span class="label">Memory</span>
+          <span class="value">{formatBytes(memoryBytes)}</span>
+        </div>
+        <div class="stat">
+          <span class="label">Ports</span>
+          <span class="value mono">{ports.length ? ports.join(', ') : '—'}</span>
+        </div>
       </div>
     {/if}
   </div>
@@ -134,6 +210,47 @@
   .body {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .logtoolbar {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .logtoolbar button {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3);
+    color: var(--text-0);
+    font-size: var(--fs-xs);
+  }
+  .logbody {
+    flex: 1;
+    min-height: 0;
+  }
+  .resources {
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .stat {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-2);
+    border-radius: var(--radius);
+  }
+  .stat .label {
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+  .stat .value {
+    font-size: var(--fs-md);
+    font-weight: 500;
   }
   .env {
     padding: var(--space-5);

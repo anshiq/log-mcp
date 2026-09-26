@@ -1,13 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import ProcessTable from '../../components/ProcessTable.svelte';
   import ProcessDetail from '../../components/ProcessDetail.svelte';
+  import StartProcessDialog from '../../components/StartProcessDialog.svelte';
   import { createProcessStore, type Process } from '../../lib/stores';
   import { ProcessService } from '../../lib/api';
   import { router } from '../../lib/router.svelte';
+  import { scope } from '../../lib/scope.svelte';
 
   const store = createProcessStore();
   let processes = $state<Process[]>([]);
+  let showStart = $state(false);
 
   onMount(() => {
     const off = store.connect('', true);
@@ -28,17 +31,33 @@
     }
   }
 
+  function requestStart() {
+    if (!scope.workspaceId) {
+      alert('Open a workspace from the top bar first.');
+      return;
+    }
+    showStart = true;
+  }
+
+  function started(processId: string) {
+    showStart = false;
+    router.navigate(`/processes/${processId}`);
+  }
+
   const openId = $derived(router.match('/processes/:id')?.params.id ?? '');
 </script>
 
 <div class="page">
   <div class="main">
-    <ProcessTable {processes} onAction={act} onOpen={(id) => router.navigate(`/processes/${id}`)} />
+    <ProcessTable {processes} onAction={act} onOpen={(id) => router.navigate(`/processes/${id}`)} onStart={requestStart} />
   </div>
   {#if openId}
     <div class="drawer">
       <ProcessDetail processId={openId} onClose={() => router.navigate('/processes')} />
     </div>
+  {/if}
+  {#if showStart}
+    <StartProcessDialog workspaceId={scope.workspaceId} onClose={() => (showStart = false)} onStarted={started} />
   {/if}
 </div>
 
