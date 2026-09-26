@@ -524,8 +524,22 @@ func NormalizeRemote(raw string) string {
 		if len(parts) < 2 {
 			return ""
 		}
-		host := strings.ToLower(parts[0])
-		return host + "/" + strings.Join(parts[1:], "/")
+		host := strings.ToLower(strings.TrimSpace(parts[0]))
+		if host == "" || strings.Contains(host, "@") || strings.ContainsAny(host, " \t\n/:") {
+			return ""
+		}
+		var rest []string
+		for _, seg := range parts[1:] {
+			seg = strings.TrimSpace(seg)
+			if seg == "" || strings.Contains(seg, "@") || strings.ContainsAny(seg, " \t\n") {
+				return ""
+			}
+			rest = append(rest, seg)
+		}
+		if host == "" {
+			return ""
+		}
+		return host + "/" + strings.Join(rest, "/")
 	}
 	u, err := url.Parse(s)
 	if err != nil {
@@ -535,6 +549,11 @@ func NormalizeRemote(raw string) string {
 	p := strings.TrimSuffix(strings.Trim(u.Path, "/"), ".git")
 	if host == "" || p == "" {
 		return ""
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "" || strings.Contains(seg, "@") || strings.ContainsAny(seg, " \t\n") {
+			return ""
+		}
 	}
 	return host + "/" + p
 }

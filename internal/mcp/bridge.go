@@ -397,7 +397,7 @@ func (b *Bridge) RuntimeStats() (*api.RuntimeStats, error) {
 		return nil, err
 	}
 	return &api.RuntimeStats{
-		TotalProcesses: int(stats.Processes),
+		TotalProcesses:    int(stats.Processes),
 		ProcessesByStatus: map[string]int{"tracked": int(stats.Processes)},
 	}, nil
 }

@@ -70,12 +70,12 @@ type PortDecl struct {
 // V3Config is the version: 3 document shape. Unknown fields are rejected
 // with line/col errors so typos fail fast.
 type V3Config struct {
-	Version int    `yaml:"version"`
+	Version int `yaml:"version"`
 	Project struct {
 		Name string `yaml:"name"`
 	} `yaml:"project"`
-	Runtime RuntimeConfig `yaml:"runtime"`
-	Apps map[string]V3App `yaml:"apps"`
+	Runtime RuntimeConfig    `yaml:"runtime"`
+	Apps    map[string]V3App `yaml:"apps"`
 }
 
 // ValidationError carries file/line/column for an invalid config.
@@ -177,11 +177,11 @@ const (
 
 // AppChange is one row of the reconcile plan (terraform-plan style).
 type AppChange struct {
-	App              string     `json:"app"`
-	Kind             ChangeKind `json:"kind"`
-	Fields           []string   `json:"fields"`
-	AffectedProcIDs  []string   `json:"affected_process_ids,omitempty"`
-	RestartPolicy    string     `json:"restart_policy,omitempty"`
+	App             string     `json:"app"`
+	Kind            ChangeKind `json:"kind"`
+	Fields          []string   `json:"fields"`
+	AffectedProcIDs []string   `json:"affected_process_ids,omitempty"`
+	RestartPolicy   string     `json:"restart_policy,omitempty"`
 }
 
 // Plan diffs old vs new app maps and classifies each change.

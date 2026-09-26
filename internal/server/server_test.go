@@ -142,7 +142,7 @@ func TestDaemonCore_StartSeeStop(t *testing.T) {
 	_ = os.MkdirAll(wsA, 0o755)
 	applied, err := cl.ConfigService().Apply(ctx, map[string]any{
 		"projectId": resA.ProjectID, "layer": "project",
-		"yaml": "apps:\n  api:\n    command: [npm, run, dev]\n",
+		"yaml":    "apps:\n  api:\n    command: [npm, run, dev]\n",
 		"message": "test",
 	})
 	if err != nil {

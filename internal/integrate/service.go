@@ -24,12 +24,12 @@ type SkillInstallResult struct {
 
 // SkillUpdate flags an outdated install location.
 type SkillUpdate struct {
-	Name      string `json:"name"`
-	Have      string `json:"have"`
-	Want      string `json:"want"`
-	Scope     string `json:"scope"`
-	Harness   string `json:"harness"`
-	Outdated  bool   `json:"outdated"`
+	Name     string `json:"name"`
+	Have     string `json:"have"`
+	Want     string `json:"want"`
+	Scope    string `json:"scope"`
+	Harness  string `json:"harness"`
+	Outdated bool   `json:"outdated"`
 }
 
 // Preview returns a unified-style diff of what InstallMCP would change,

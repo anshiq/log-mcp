@@ -161,14 +161,14 @@ func (s *Server) runtimeForRequest(workspaceID string) (*corePR, *coreRT, error)
 
 func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
-		WorkspaceID string            `json:"workspaceId"`
-		App         string            `json:"app"`
-		Command     []string          `json:"command"`
-		Workdir     string            `json:"workdir"`
-		Env         json.RawMessage   `json:"env"`
-		Lifetime    string            `json:"lifetime"`
-		Pty         bool              `json:"pty"`
-		SessionID   string            `json:"sessionId"`
+		WorkspaceID string          `json:"workspaceId"`
+		App         string          `json:"app"`
+		Command     []string        `json:"command"`
+		Workdir     string          `json:"workdir"`
+		Env         json.RawMessage `json:"env"`
+		Lifetime    string          `json:"lifetime"`
+		Pty         bool            `json:"pty"`
+		SessionID   string          `json:"sessionId"`
 	}
 	if err := decode(r, &req); err != nil {
 		return nil, err

@@ -21,6 +21,36 @@ builds:
       - arm64
     ldflags:
       - -s -w -X agent-runtime/internal/mcp.Version={{ .Version }}
+  - id: agentd
+    main: ./cmd/agentd
+    binary: agentd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+  - id: agent-runtime-shim
+    main: ./cmd/agent-runtime-shim
+    binary: agent-runtime-shim
+    env:
+      # Static, minimal deps: the shim must stay tiny (target RSS <= 4 MB)
+      # and never change under running instances on agentd upgrade.
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
 
 archives:
   - id: agent-runtime
@@ -32,6 +62,34 @@ archives:
           - zip
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE*
+      - README.md
+      - packaging/systemd/agentd.socket
+      - packaging/systemd/agentd.service
+
+nfpms:
+  - id: agent-runtime
+    package_name: agent-runtime
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    builds:
+      - agent-runtime
+      - agentd
+      - agent-runtime-shim
+    maintainer: agent-runtime contributors
+    description: Local async process supervisor for AI coding agents (v3 daemon + CLI + shim)
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: packaging/systemd/agentd.socket
+        dst: /usr/lib/systemd/user/agentd.socket
+      - src: packaging/systemd/agentd.service
+        dst: /usr/lib/systemd/user/agentd.service
+      - src: packaging/desktop/agent-runtime.desktop
+        dst: /usr/share/applications/agent-runtime.desktop
 
 checksum:
   name_template: checksums.txt
