@@ -234,31 +234,14 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	red := s.redactorForWorkspace(req.WorkspaceID)
-	// Backlog first (ring, then index, then segments per §6.4).
-	for _, id := range req.ProcessIDs {
-		_, rt, _, err := s.findProcess(id)
-		if err != nil {
-			continue
-		}
-		res, err := rt.GetLogs(api.GetLogsRequest{ProcessID: id, Lines: req.Backlog, Contains: req.Contains})
-		if err != nil {
-			continue
-		}
-		var lines []any
-		for _, e := range res.Entries {
-			line := e.Line
-			if red != nil {
-				line = red.Redact(line)
-			}
-			lines = append(lines, map[string]any{
-				"processId": id, "stream": e.Stream, "line": line, "timestamp": e.Timestamp,
-			})
-		}
-		_ = sw.send(map[string]any{"kind": "batch", "processId": id,
-			"lines": lines, "cursor": time.Now().UnixNano()})
-	}
-	// Live follow across the requested processes.
+	// Live follow across the requested processes. Subscribe *before* reading
+	// the backlog for each process, and start the live-follow cursor from
+	// the last backlog entry actually sent (not from the oldest entry still
+	// in the ring): the old code started live-follow at proc.EntryFrom(),
+	// which is far earlier than the tail just sent, so the entire ring was
+	// re-sent as "live" lines on every connect (B5).
 	done := r.Context().Done()
 	type sub struct {
 		ch  <-chan struct{}
@@ -277,12 +260,32 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		subID, wake := proc.SubscribeLogs()
-		lastIDs[id] = proc.EntryFrom()
-		// Capture for closure.
-		rt2, proc2 := rt, proc
-		_ = rt2
+		proc2 := proc
 		subs = append(subs, sub{ch: wake, id: id, off: func() { proc2.UnsubscribeLogs(subID) }})
-		_ = rt
+		// Default cursor if the backlog turns out empty: nothing has been
+		// missed between subscribing and reading the backlog below.
+		lastIDs[id] = proc.Logs.NextID()
+
+		res, err := rt.GetLogs(api.GetLogsRequest{ProcessID: id, Lines: req.Backlog, Contains: req.Contains})
+		if err != nil {
+			continue
+		}
+		var lines []any
+		for _, e := range res.Entries {
+			line := e.Line
+			if red != nil {
+				line = red.Redact(line)
+			}
+			lines = append(lines, map[string]any{
+				"processId": id, "stream": e.Stream, "line": line,
+				"timestamp": e.Timestamp, "id": e.ID,
+			})
+			if e.ID+1 > lastIDs[id] {
+				lastIDs[id] = e.ID + 1
+			}
+		}
+		_ = sw.send(map[string]any{"kind": "batch", "processId": id,
+			"lines": lines, "cursor": time.Now().UnixNano()})
 	}
 	defer func() {
 		for _, sb := range subs {
@@ -379,6 +382,7 @@ func (s *Server) logExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	const chunk = 100
 	for i := 0; i < len(res.Entries); i += chunk {
 		end := i + chunk

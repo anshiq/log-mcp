@@ -145,9 +145,18 @@ func Validate(data []byte) []*ValidationError {
 	}
 	var cfg V3Config
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
-	dec.KnownFields(false)
+	// Strict: a typo inside an app (e.g. "comand:" instead of "command:")
+	// used to validate as OK, silently doing nothing, because unknown
+	// fields anywhere below the top level were accepted (B9). yaml.v3
+	// reports every rejected field as its own "line N: ..." entry inside
+	// one aggregate *yaml.TypeError; unpack those into individual
+	// line-numbered ValidationErrors instead of one opaque blob.
+	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
-		errs = append(errs, &ValidationError{Message: err.Error()})
+		errs = append(errs, unknownFieldErrors(err)...)
+		if len(errs) == 0 {
+			errs = append(errs, &ValidationError{Message: err.Error()})
+		}
 		return errs
 	}
 	for name, app := range cfg.Apps {
@@ -172,6 +181,32 @@ func Validate(data []byte) []*ValidationError {
 		}
 	}
 	return errs
+}
+
+// yamlFieldErrRe matches one line of a *yaml.TypeError's Errors slice, e.g.
+// "line 5: field comand not found in type config.V3App".
+var yamlFieldErrRe = regexp.MustCompile(`^line (\d+): (.*)$`)
+
+// unknownFieldErrors unpacks a strict-mode yaml.v3 decode error (an
+// aggregate *yaml.TypeError) into individual line-numbered
+// ValidationErrors, one per rejected field, instead of returning it as one
+// opaque message with no line number.
+func unknownFieldErrors(err error) []*ValidationError {
+	te, ok := err.(*yaml.TypeError)
+	if !ok {
+		return nil
+	}
+	out := make([]*ValidationError, 0, len(te.Errors))
+	for _, msg := range te.Errors {
+		m := yamlFieldErrRe.FindStringSubmatch(msg)
+		if m == nil {
+			out = append(out, &ValidationError{Message: msg})
+			continue
+		}
+		line, _ := strconv.Atoi(m[1])
+		out = append(out, &ValidationError{Line: line, Message: m[2]})
+	}
+	return out
 }
 
 func checkRegexp(pat string) error {

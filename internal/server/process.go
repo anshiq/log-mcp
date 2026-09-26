@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"agent-runtime/internal/config"
@@ -431,15 +432,32 @@ func (s *Server) handleProcList(w http.ResponseWriter, r *http.Request) (any, er
 }
 
 func (s *Server) processInfo(pr *corePR, st *api.StatusResult) map[string]any {
+	ports := []int{}
+	if st.PID > 0 {
+		if p := process.ListeningPortsForPID(st.PID); p != nil {
+			ports = p
+		}
+	}
 	return map[string]any{
-		"id": st.ProcessID, "workspaceId": pr.WorkspaceID(), "projectId": pr.ProjectID(),
-		"command": st.Command, "workdir": st.WorkDir, "profile": st.Profile,
+		"id": st.ProcessID, "instanceId": st.InstanceID,
+		"workspaceId": pr.WorkspaceID(), "projectId": pr.ProjectID(),
+		"command": st.Command, "args": st.Args, "workdir": st.WorkDir, "profile": st.Profile,
 		"status": st.Status, "pid": st.PID, "restarts": st.Restarts,
 		"health": st.Health, "startedAt": st.StartedAt, "exitedAt": st.ExitedAt,
-		"exitCode": st.ExitCode, "stale": pr.IsStale(""),
+		"exitCode": st.ExitCode, "restartPolicy": st.RestartPolicy,
+		"stdoutLines": st.StdoutLines, "stderrLines": st.StderrLines,
+		"ports": ports, "stale": pr.IsStale(""),
 	}
 }
 
+// handleProcWatch streams process lifecycle: a snapshot (never null, even
+// when nothing is loaded yet), then upserts carrying the full ProcessInfo
+// (not just the event name — the UI store needs the process to update its
+// rows) and removed markers on Remove. It attaches to runtimes that load
+// *after* the stream opens (via Engine.SubscribeRuntimeLoad) so a fresh
+// daemon with nothing loaded yet still sees processes started later in any
+// workspace, instead of only ever seeing the runtimes that existed when the
+// WatchProcesses call was made.
 func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		WorkspaceID   string `json:"workspaceId"`
@@ -450,59 +468,133 @@ func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Snapshot first.
-	snap, _ := s.snapshotProcesses(req.WorkspaceID, req.AllWorkspaces)
-	_ = sw.send(map[string]any{"kind": "snapshot", "snapshot": snap, "cursor": time.Now().UnixNano()})
-	// Then subscribe to every relevant manager bus and forward.
-	done := r.Context().Done()
-	type sub struct {
-		ch  <-chan busEvent
-		pr  *corePR
-		off func()
+	defer sw.Close()
+
+	all := req.AllWorkspaces || req.WorkspaceID == ""
+	snap, _ := s.snapshotProcesses(req.WorkspaceID, all)
+	if snap == nil {
+		snap = []any{}
 	}
-	var subs []sub
-	addRuntime := func(pr *corePR) bool {
+	_ = sw.send(map[string]any{"kind": "snapshot", "snapshot": snap, "cursor": fmt.Sprint(time.Now().UnixNano())})
+
+	done := r.Context().Done()
+	queue := make(chan map[string]any, 1024)
+	dropped := 0
+	var subMu sync.Mutex
+	offs := []func(){}
+	stopSubs := func() {
+		subMu.Lock()
+		defer subMu.Unlock()
+		for _, off := range offs {
+			off()
+		}
+		offs = nil
+	}
+	defer stopSubs()
+
+	enqueue := func(msg map[string]any) {
+		select {
+		case queue <- msg:
+		default:
+			dropped++
+		}
+	}
+
+	watchRuntime := func(pr *corePR) {
 		rt, err := pr.Runtime()
 		if err != nil {
-			return true
+			return
 		}
 		ch, off := rt.Manager().Events().Subscribe()
-		subs = append(subs, sub{ch: ch, pr: pr, off: off})
-		return true
+		subMu.Lock()
+		offs = append(offs, off)
+		subMu.Unlock()
+		go func() {
+			for ev := range ch {
+				if ev.Type == events.Removed {
+					enqueue(map[string]any{"kind": "removed", "processId": ev.ProcessID,
+						"cursor": fmt.Sprint(time.Now().UnixNano())})
+					continue
+				}
+				st, err := rt.Status(ev.ProcessID)
+				if err != nil {
+					continue
+				}
+				enqueue(map[string]any{"kind": "upsert", "event": string(ev.Type),
+					"processId": ev.ProcessID, "process": s.processInfo(pr, st),
+					"cursor": fmt.Sprint(time.Now().UnixNano())})
+			}
+		}()
 	}
-	if req.AllWorkspaces || req.WorkspaceID == "" {
-		s.engine.RangeRuntimes(addRuntime)
+
+	if all {
+		s.engine.RangeRuntimes(func(pr *corePR) bool { watchRuntime(pr); return true })
 	} else if pr, err := s.engine.GetOrCreateRuntime(req.WorkspaceID); err == nil {
-		addRuntime(pr)
+		watchRuntime(pr)
 	}
-	defer func() {
-		for _, sb := range subs {
-			sb.off()
+
+	// Attach to workspaces loaded after this stream opened.
+	loadCh, unloadSub := s.engine.SubscribeRuntimeLoad()
+	defer unloadSub()
+	go func() {
+		for wsID := range loadCh {
+			if !all && wsID != req.WorkspaceID {
+				continue
+			}
+			if pr, err := s.engine.GetOrCreateRuntime(wsID); err == nil {
+				watchRuntime(pr)
+			}
 		}
 	}()
-	// Multiplex with a bounded queue; overflow → Gap.
-	queue := make(chan map[string]any, 1024)
-	for _, sb := range subs {
-		go func(sb sub) {
-			for ev := range sb.ch {
-				select {
-				case queue <- map[string]any{"kind": "upsert", "event": string(ev.Type),
-					"processId": ev.ProcessID, "cursor": time.Now().UnixNano()}:
-				default:
-				}
-			}
-		}(sb)
-	}
+
+	coalesce := map[string]map[string]any{}
+	flush := time.NewTicker(100 * time.Millisecond)
+	defer flush.Stop()
 	for {
 		select {
 		case <-done:
 			return
 		case msg := <-queue:
+			key, _ := msg["processId"].(string)
+			if msg["kind"] == "upsert" {
+				coalesce[key] = msg
+				continue
+			}
+			if len(coalesce) > 0 {
+				if err := s.flushCoalesced(sw, coalesce); err != nil {
+					return
+				}
+				coalesce = map[string]map[string]any{}
+			}
 			if err := sw.send(msg); err != nil {
 				return
 			}
+		case <-flush.C:
+			if dropped > 0 {
+				_ = sw.send(gapMessage(dropped, "slow consumer"))
+				dropped = 0
+			}
+			if len(coalesce) == 0 {
+				continue
+			}
+			if err := s.flushCoalesced(sw, coalesce); err != nil {
+				return
+			}
+			coalesce = map[string]map[string]any{}
 		}
 	}
+}
+
+// flushCoalesced sends at most one upsert per process per 100ms tick, so a
+// restart storm (started/health/exited in quick succession) doesn't flood
+// the stream with redundant frames for the same process.
+func (s *Server) flushCoalesced(sw *streamWriter, coalesce map[string]map[string]any) error {
+	for _, msg := range coalesce {
+		if err := sw.send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) snapshotProcesses(workspaceID string, all bool) ([]any, error) {
@@ -623,24 +715,38 @@ func (s *Server) handleProcAttach(w http.ResponseWriter, r *http.Request) {
 	if backlog <= 0 {
 		backlog = 500
 	}
-	logs, err := rt.GetLogs(api.GetLogsRequest{ProcessID: req.ProcessID, Lines: backlog})
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	sw, ok := newStream(w, r, heartbeatMessage)
-	if !ok {
-		return
-	}
-	_ = sw.send(map[string]any{"kind": "batch", "lines": logs.Entries})
-	// Follow live via log subscription.
+	// Follow live via log subscription. Subscribe *before* reading the
+	// backlog, and start the live cursor at the last backlog entry sent
+	// (falling back to the subscribe-time NextID when the backlog is
+	// empty), so the live stream never re-sends what the backlog already
+	// covered (B5: the old code started at proc.EntryFrom(), the oldest
+	// entry still in the ring, and replayed the whole ring as "live").
 	proc, ok := rt.Manager().Get(req.ProcessID)
 	if !ok {
+		writeError(w, fmt.Errorf("unknown process %q", req.ProcessID))
 		return
 	}
 	subID, wake := proc.SubscribeLogs()
+	lastID := proc.Logs.NextID()
+	logs, err := rt.GetLogs(api.GetLogsRequest{ProcessID: req.ProcessID, Lines: backlog})
+	if err != nil {
+		proc.UnsubscribeLogs(subID)
+		writeError(w, err)
+		return
+	}
+	for _, e := range logs.Entries {
+		if e.ID+1 > lastID {
+			lastID = e.ID + 1
+		}
+	}
+	sw, ok := newStream(w, r, heartbeatMessage)
+	if !ok {
+		proc.UnsubscribeLogs(subID)
+		return
+	}
+	defer sw.Close()
 	defer proc.UnsubscribeLogs(subID)
-	lastID := proc.EntryFrom()
+	_ = sw.send(map[string]any{"kind": "batch", "lines": logs.Entries})
 	done := r.Context().Done()
 	for {
 		select {
@@ -702,6 +808,7 @@ func (s *Server) handleProcWatchUsage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	for {

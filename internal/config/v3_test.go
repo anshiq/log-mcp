@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +21,26 @@ func TestValidateLifetime(t *testing.T) {
 	}
 	if errs := Validate([]byte("apps:\n  api:\n    command: [npm, run, dev]\n    lifetime: session\n")); len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+}
+
+// TestValidateUnknownAppField is the regression test for B9: a typo inside
+// an app (e.g. "comand:" for "command:", or any field not in AppConfig/
+// V3App) used to validate as OK because yaml.v3 was decoded in lenient
+// mode, so the editor's "no errors" promise was a lie.
+func TestValidateUnknownAppField(t *testing.T) {
+	errs := Validate([]byte("apps:\n  web:\n    command: [sleep, \"100\"]\n    bogus: 1\n"))
+	if len(errs) == 0 {
+		t.Fatal("expected an error for the unknown apps.web.bogus field")
+	}
+	found := false
+	for _, e := range errs {
+		if e.Line > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected at least one error with a line number, got %+v", errs)
 	}
 }
 
@@ -73,5 +94,25 @@ func TestResolveLayering(t *testing.T) {
 	res2, _ := Resolve(dir, "proj_1", "ws_1", ws, false, nil)
 	if got := res2.Apps["api"].Command[0]; got != "proj-cmd" {
 		t.Fatalf("untrusted command = %q", got)
+	}
+}
+
+// TestV3JSONSchemaRaw_ParsesAsCompleteObject is the regression test for
+// B8's schema half: the embedded schema must always be valid JSON with
+// real content, not the 2-property stub the daemon used to fall back to
+// when docs/schema/agent-runtime.v3.json wasn't reachable from its cwd.
+func TestV3JSONSchemaRaw_ParsesAsCompleteObject(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal(V3JSONSchemaRaw(), &schema); err != nil {
+		t.Fatalf("embedded schema is invalid JSON: %v", err)
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema has no properties object: %v", schema)
+	}
+	for _, key := range []string{"version", "project", "runtime", "apps", "logging", "alerts"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("schema.properties missing %q", key)
+		}
 	}
 }

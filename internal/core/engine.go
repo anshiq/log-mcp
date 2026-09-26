@@ -38,10 +38,56 @@ type Engine struct {
 	forwarded map[string]bool
 	// alerted tracks workspaces with an active alert poller.
 	alerted map[string]bool
+	// runtimeLoad notifies subscribers (WatchProcesses/WatchEvents) when a
+	// new workspace runtime is created, so a stream opened before any
+	// workspace loaded still picks up processes started afterwards instead
+	// of only ever seeing the runtimes that existed at connect time.
+	runtimeLoad *runtimeLoadBus
 
 	mu     sync.RWMutex
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// runtimeLoadBus is a tiny non-blocking pub/sub of workspace IDs, fired
+// whenever GetOrCreateRuntime loads a workspace for the first time.
+type runtimeLoadBus struct {
+	mu   sync.RWMutex
+	subs map[chan string]struct{}
+}
+
+func newRuntimeLoadBus() *runtimeLoadBus {
+	return &runtimeLoadBus{subs: make(map[chan string]struct{})}
+}
+
+func (b *runtimeLoadBus) publish(workspaceID string) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for ch := range b.subs {
+		select {
+		case ch <- workspaceID:
+		default:
+		}
+	}
+}
+
+func (b *runtimeLoadBus) subscribe() (<-chan string, func()) {
+	ch := make(chan string, 16)
+	b.mu.Lock()
+	b.subs[ch] = struct{}{}
+	b.mu.Unlock()
+	return ch, func() {
+		b.mu.Lock()
+		delete(b.subs, ch)
+		close(ch)
+		b.mu.Unlock()
+	}
+}
+
+// SubscribeRuntimeLoad lets a stream handler learn about workspace runtimes
+// created after the stream opened, without polling.
+func (e *Engine) SubscribeRuntimeLoad() (<-chan string, func()) {
+	return e.runtimeLoad.subscribe()
 }
 
 type degradedInfo struct {
@@ -69,14 +115,15 @@ func NewWithOptions(db *store.DB, opt Options) *Engine {
 		opt.Logger = slog.Default()
 	}
 	e := &Engine{
-		store:    db,
-		dataDir:  opt.DataDir,
-		logger:   opt.Logger,
-		version:  opt.Version,
-		projects: project.NewRegistry(storeAdapter{db}),
-		sessions: session.NewRegistry(),
-		ctx:      ctx,
-		cancel:   cancel,
+		store:       db,
+		dataDir:     opt.DataDir,
+		logger:      opt.Logger,
+		version:     opt.Version,
+		projects:    project.NewRegistry(storeAdapter{db}),
+		sessions:    session.NewRegistry(),
+		runtimeLoad: newRuntimeLoadBus(),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 	go e.reapLoop()
 	return e
@@ -169,6 +216,7 @@ func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error)
 	}
 	e.runtimes.Store(workspaceID, rt)
 	_ = e.store.TouchProject(ws.ProjectID)
+	e.runtimeLoad.publish(workspaceID)
 	return rt, nil
 }
 

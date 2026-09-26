@@ -284,6 +284,9 @@ func (m *Manager) Remove(id string, force bool) error {
 	proc.removed = true
 	proc.mu.Unlock()
 	m.logs.Delete(id)
+	if m.opts.Events != nil {
+		m.opts.Events.Publish(events.Event{Type: events.Removed, ProcessID: id, Timestamp: time.Now()})
+	}
 	return nil
 }
 

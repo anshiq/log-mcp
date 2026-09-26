@@ -21,6 +21,7 @@ const (
 	Healthy   Type = "process.healthy"
 	Unhealthy Type = "process.unhealthy"
 	Crashed   Type = "process.crashed"
+	Removed   Type = "process.removed"
 )
 
 // Event is a single runtime event.

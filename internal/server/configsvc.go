@@ -4,6 +4,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -107,19 +108,15 @@ func (s *Server) resolveConfigScope(workspaceID, projectID string) (*corePR, str
 }
 
 func (s *Server) cfgSchema(w http.ResponseWriter, r *http.Request) (any, error) {
-	data, err := os.ReadFile("docs/schema/agent-runtime.v3.json")
-	if err != nil {
-		// Installed binaries run outside the repo; fall back to a minimal
-		// inline schema so editors still validate.
-		return map[string]any{"schema": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"version": map[string]any{"type": "integer"},
-				"apps":    map[string]any{"type": "object"},
-			},
-		}}, nil
+	// Embedded at compile time (config.V3JSONSchemaRaw), so this always
+	// serves the real, complete schema regardless of the daemon's working
+	// directory (B8: a relative-path read of docs/schema/... meant every
+	// installed binary silently fell back to a 2-property stub).
+	var schema any
+	if err := json.Unmarshal(config.V3JSONSchemaRaw(), &schema); err != nil {
+		return nil, fmt.Errorf("embedded schema is invalid JSON: %w", err)
 	}
-	return map[string]any{"schema": string(data)}, nil
+	return map[string]any{"schema": schema}, nil
 }
 
 func (s *Server) cfgValidate(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -332,6 +329,7 @@ func (s *Server) cfgWatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	last := req.Since
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

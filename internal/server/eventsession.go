@@ -61,6 +61,7 @@ func (s *Server) eventWatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	// History first (DB), then live from the manager buses.
 	var since int64
 	if req.Since != "" {
@@ -261,6 +262,7 @@ func (s *Server) sessHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer sw.Close()
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	_ = s.engine.Sessions().Heartbeat(req.SessionID)
