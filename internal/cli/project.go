@@ -133,7 +133,153 @@ func newProjectCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 				return nil
 			},
 		},
+		&cobra.Command{
+			Use:   "show [project-id]",
+			Short: "Show project detail (workspaces, config state)",
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				cl, err := client.EnsureDaemon(p.SocketPath())
+				if err != nil {
+					return err
+				}
+				pid := ""
+				if len(args) > 0 {
+					pid = args[0]
+				} else {
+					cwd, _ := os.Getwd()
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					res, err := cl.ProjectService().Resolve(ctx, cwd)
+					if err != nil {
+						return err
+					}
+					pid = res.ProjectID
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				proj, err := cl.ProjectService().GetProject(ctx, pid)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("project %v\n", proj["project"])
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "rename <project-id> <name>",
+			Short: "Rename a project",
+			Args:  cobra.ExactArgs(2),
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				db, err := store.Open(p.StateDBPath())
+				if err != nil {
+					return err
+				}
+				defer db.Close()
+				pr, err := db.GetProject(args[0])
+				if err != nil {
+					return err
+				}
+				pr.Name = args[1]
+				return db.UpdateProject(pr)
+			},
+		},
+		&cobra.Command{
+			Use:   "link <dir> <project-id>",
+			Short: "Attach a workspace dir to another project (e.g. a fork)",
+			Args:  cobra.ExactArgs(2),
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				db, err := store.Open(p.StateDBPath())
+				if err != nil {
+					return err
+				}
+				defer db.Close()
+				abs, err := toAbs(args[0])
+				if err != nil {
+					return err
+				}
+				ws, err := db.LinkWorkspace(args[1], abs)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("linked %s as %s\n", abs, ws.ID)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "unlink <workspace-id>",
+			Short: "Detach a workspace (flags it missing; use gc to review)",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				db, err := store.Open(p.StateDBPath())
+				if err != nil {
+					return err
+				}
+				defer db.Close()
+				return db.MarkWorkspaceMissing(args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "forget <project-id>",
+			Short: "Forget a project (soft delete, 30-day trash)",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				p := paths.User()
+				cl, err := client.EnsureDaemon(p.SocketPath())
+				if err != nil {
+					return err
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				return cl.ProjectService().Forget(ctx, args[0])
+			},
+		},
+		newProjectExportCmd(),
 	)
+	return cmd
+}
+
+func newProjectExportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Write the effective config back into the repo (--to-repo; explicit only)",
+		RunE: func(c *cobra.Command, args []string) error {
+			toRepo, _ := c.Flags().GetBool("to-repo")
+			if !toRepo {
+				return fmt.Errorf("usage: project export --to-repo")
+			}
+			p := paths.User()
+			cl, err := client.EnsureDaemon(p.SocketPath())
+			if err != nil {
+				return err
+			}
+			cwd, _ := os.Getwd()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			res, err := cl.ProjectService().Resolve(ctx, cwd)
+			if err != nil {
+				return err
+			}
+			cfg, err := cl.ConfigService().Get(ctx, res.WorkspaceID)
+			if err != nil {
+				return err
+			}
+			raw, _ := cfg["raw"].(map[string]any)
+			text, _ := raw["project"].(string)
+			if text == "" {
+				return fmt.Errorf("no project-layer config to export")
+			}
+			dest := cwd + "/agent-runtime.yaml"
+			if err := os.WriteFile(dest, []byte(text), 0o644); err != nil {
+				return err
+			}
+			fmt.Printf("exported to %s (repo layer still needs `project trust`)\n", dest)
+			return nil
+		},
+	}
+	cmd.Flags().Bool("to-repo", false, "write effective config to ./agent-runtime.yaml")
 	return cmd
 }
 

@@ -1,8 +1,16 @@
 # agent-runtime v3 API reference
 
-Versioned contract (`agentruntime.v1`) served with Connect-compatible RPC
-over the Unix socket (`$XDG_RUNTIME_DIR/agent-runtime/agentd.sock`), and
-optionally over authenticated loopback TCP for the web UI.
+Versioned contract (`agentruntime.v1`) defined in `api/proto` and served
+with Connect-compatible RPC over the Unix socket
+(`$XDG_RUNTIME_DIR/agent-runtime/agentd.sock`), and optionally over
+authenticated loopback TCP for the web UI.
+
+One schema produces the SDKs: `buf generate` emits the Go bindings
+(`gen/agentruntime/...`, incl. connect-go clients) and the TypeScript
+bindings (`ui/src/gen`). Generated code is committed; `make proto`
+(checks generate+lint+breaking) is CI-gated. The daemon serves
+Connect-compatible paths with JSON bodies today; the Connect-protocol
+transport (headers/h2) is a swap that keeps these paths.
 
 Every endpoint is `POST /api/agentruntime.v1.<Service>/<Method>` with a
 JSON body. Debug with curl:

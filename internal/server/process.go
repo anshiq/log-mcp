@@ -16,8 +16,10 @@ import (
 	"net/http"
 	"time"
 
+	"agent-runtime/internal/config"
 	"agent-runtime/internal/core"
 	"agent-runtime/internal/events"
+	"agent-runtime/internal/process"
 	iruntime "agent-runtime/internal/runtime"
 	"agent-runtime/pkg/api"
 )
@@ -181,6 +183,13 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 		return nil, err
 	}
 	env := parseEnvField(req.Env)
+	// Request-time ${port:name} templates allocate without a default
+	// (app-layer templates were already expanded at config load).
+	if expanded, err := config.ExpandPortTemplates(env, func(name string) (int, error) {
+		return s.engine.AllocatePort(req.WorkspaceID, name, 0)
+	}); err == nil {
+		env = expanded
+	}
 	startReq := api.StartRequest{App: req.App, WorkDir: req.Workdir, Env: env}
 	if len(req.Command) > 0 {
 		startReq.Command = req.Command[0]
@@ -356,6 +365,9 @@ func enrichStatus(st *api.StatusResult, pr *corePR) map[string]any {
 	m := structToMap(st)
 	m["workspaceId"] = pr.WorkspaceID()
 	m["projectId"] = pr.ProjectID()
+	if st.PID > 0 {
+		m["ports"] = process.ListeningPortsForPID(st.PID)
+	}
 	return m
 }
 
@@ -661,9 +673,13 @@ func (s *Server) handleProcResUsage(w http.ResponseWriter, r *http.Request) (any
 	}
 	mem, cpu := proc.LiveUsage()
 	st, _ := rt.Status(req.ProcessID)
+	ports := []int{}
+	if st.PID > 0 {
+		ports = process.ListeningPortsForPID(st.PID)
+	}
 	return map[string]any{
 		"processId": req.ProcessID, "pid": st.PID,
-		"memoryBytes": mem, "cpuNanos": cpu,
+		"memoryBytes": mem, "cpuNanos": cpu, "ports": ports,
 	}, nil
 }
 

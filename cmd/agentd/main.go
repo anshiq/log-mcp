@@ -38,10 +38,12 @@ func main() {
 
 func run(logger *slog.Logger) error {
 	var foreground bool
-	var socketOverride, dataOverride string
+	var socketOverride, dataOverride, tcpAddr, tokenFile string
 	flag.BoolVar(&foreground, "foreground", false, "run in foreground (no double-fork)")
 	flag.StringVar(&socketOverride, "socket", "", "override daemon socket path")
 	flag.StringVar(&dataOverride, "data", "", "override data dir")
+	flag.StringVar(&tcpAddr, "tcp", "", "also serve authenticated loopback TCP (e.g. 127.0.0.1:7350) for the web UI")
+	flag.StringVar(&tokenFile, "token-file", "", "bearer token file (default $XDG_CONFIG_HOME/agent-runtime/token)")
 	flag.Parse()
 	_ = foreground // foreground is the only mode v3 supports; kept for CLI compat
 
@@ -119,6 +121,25 @@ func run(logger *slog.Logger) error {
 			logger.Error("api server", "error", err.Error())
 		}
 	}()
+
+	// Optional authenticated TCP listener (web UI / remote tooling).
+	// Remote hosts reach it over SSH-forwarded ports; the token URL is
+	// printed by `agent-runtime web open`.
+	if tcpAddr != "" {
+		if tokenFile == "" {
+			tokenFile = p.TokenPath()
+		}
+		token, err := server.EnsureToken(tokenFile)
+		if err != nil {
+			return fmt.Errorf("token: %w", err)
+		}
+		go func() {
+			logger.Info("tcp listener", "addr", tcpAddr)
+			if err := srv.ServeTCP(tcpAddr, token); err != nil {
+				logger.Error("tcp server", "error", err.Error())
+			}
+		}()
+	}
 
 	daemon.NotifyReady()
 	logger.Info("agentd ready", "socket", socketPath, "state", dbPath, "version", version)

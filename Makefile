@@ -53,7 +53,9 @@ snapshot:
 	goreleaser release --snapshot --clean
 
 proto:
-	buf generate
+	PATH="$(PWD)/ui/node_modules/.bin:$$(go env GOPATH)/bin:$$PATH" buf generate
+	buf lint
+	buf breaking --against '.git#branch=master'
 	@echo "Protobuf generated files are in gen/ and ui/src/gen/"
 
 gen-deps:

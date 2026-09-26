@@ -55,6 +55,7 @@
         <th><button onclick={() => (sortKey = 'profile')}>Profile</button></th>
         <th>PID</th>
         <th>Health</th>
+        <th>Ports</th>
       </tr>
     </thead>
     <tbody>
@@ -67,6 +68,7 @@
           <td>{p.profile ?? ''}</td>
           <td class="mono">{p.pid ?? ''}</td>
           <td>{p.health ?? ''}</td>
+          <td class="mono">{Array.isArray(p.ports) ? p.ports.join(', ') : ''}</td>
         </tr>
       {/each}
     </tbody>

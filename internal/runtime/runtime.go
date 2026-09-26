@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"agent-runtime/internal/config"
@@ -34,7 +35,7 @@ const (
 
 // Runtime is the single entry point for all agent operations.
 type Runtime struct {
-	cfg      *config.Loaded
+	cfg      atomic.Pointer[config.Loaded]
 	manager  *process.Manager
 	profiles *profile.Registry
 	logger   *slog.Logger
@@ -100,7 +101,6 @@ func New(loaded *config.Loaded, logger *slog.Logger) *Runtime {
 	}
 
 	rt := &Runtime{
-		cfg:         loaded,
 		manager:     manager,
 		profiles:    profile.Default(),
 		logger:      logger,
@@ -115,6 +115,8 @@ func New(loaded *config.Loaded, logger *slog.Logger) *Runtime {
 		rootCtx:     rootCtx,
 		cancel:      cancel,
 	}
+
+	rt.cfg.Store(loaded)
 
 	if addr := loaded.Config.Runtime.Metrics; addr != "" {
 		m := NewMetrics()
@@ -204,6 +206,14 @@ func buildSink(loaded *config.Loaded, logger *slog.Logger, rootCtx context.Conte
 	return primary
 }
 
+// getCfg loads the active config (hot-swappable).
+func (r *Runtime) getCfg() *config.Loaded { return r.cfg.Load() }
+
+// ReloadConfig hot-swaps the project config without touching running
+// processes. New starts resolve against the new revision; supervision
+// changes apply live; spec changes mark processes stale upstream.
+func (r *Runtime) ReloadConfig(loaded *config.Loaded) { r.cfg.Store(loaded) }
+
 // RecordAudit appends a tool-call line to the audit log (no-op when the audit
 // log is unavailable). args are redacted for secrets by the audit writer.
 func (r *Runtime) RecordAudit(tool string, args map[string]any, result string, caller string) {
@@ -262,7 +272,7 @@ func (r *Runtime) AdoptOrphans() int {
 }
 
 // Config returns the loaded project configuration.
-func (r *Runtime) Config() *config.Loaded { return r.cfg }
+func (r *Runtime) Config() *config.Loaded { return r.cfg.Load() }
 
 // Start launches a process and returns immediately. The process continues
 // running independently of the calling MCP request.
@@ -281,7 +291,7 @@ func (r *Runtime) Start(ctx context.Context, req api.StartRequest) (*api.StartRe
 	}); err != nil {
 		return nil, err
 	}
-	grace := r.cfg.Config.Runtime.StopGrace.Time()
+	grace := r.getCfg().Config.Runtime.StopGrace.Time()
 	if prof != nil && prof.Grace() > grace {
 		grace = prof.Grace()
 	}
@@ -455,7 +465,7 @@ func (r *Runtime) startShell(ctx context.Context, shell, workDir string, env []s
 		shell = "/bin/sh"
 	}
 
-	grace := r.cfg.Config.Runtime.StopGrace.Time()
+	grace := r.getCfg().Config.Runtime.StopGrace.Time()
 	if prof != nil && prof.Grace() > grace {
 		grace = prof.Grace()
 	}
@@ -568,8 +578,8 @@ func (r *Runtime) GetLogs(req api.GetLogsRequest) (*api.GetLogsResult, error) {
 	if lines <= 0 {
 		lines = 100
 	}
-	if lines > r.cfg.Config.Runtime.MaxLogLines {
-		lines = r.cfg.Config.Runtime.MaxLogLines
+	if lines > r.getCfg().Config.Runtime.MaxLogLines {
+		lines = r.getCfg().Config.Runtime.MaxLogLines
 	}
 	q := logs.Query{Stream: filter, Lines: lines, Contains: req.Contains}
 	res := proc.Logs.Query(q)
@@ -595,13 +605,13 @@ func (r *Runtime) GetLogs(req api.GetLogsRequest) (*api.GetLogsResult, error) {
 		// cap, always keeping at least one entry (a single oversized line is
 		// still returned). retainedBytes tracks only what is kept, so long
 		// tails do not degenerate toward a single entry.
-		for retainedBytes > r.cfg.Config.Runtime.MaxLogBytes && len(entries) > 1 {
+		for retainedBytes > r.getCfg().Config.Runtime.MaxLogBytes && len(entries) > 1 {
 			retainedBytes -= len(entries[0].Line) + 64
 			entries = entries[1:]
 			dropped = true
 		}
 	}
-	truncated := res.Truncated || dropped || retainedBytes > r.cfg.Config.Runtime.MaxLogBytes
+	truncated := res.Truncated || dropped || retainedBytes > r.getCfg().Config.Runtime.MaxLogBytes
 	info := proc.Info()
 	return &api.GetLogsResult{
 		ProcessID:      info.ID,
@@ -842,8 +852,8 @@ func (r *Runtime) GetAuditLog(lines int, contains string) (*api.AuditLogResult, 
 
 // Apps reports configured apps and their detected profiles.
 func (r *Runtime) Apps() (*api.ListAppsResult, error) {
-	out := &api.ListAppsResult{Apps: make([]api.AppInfo, 0, len(r.cfg.Config.Apps))}
-	for name, app := range r.cfg.Config.Apps {
+	out := &api.ListAppsResult{Apps: make([]api.AppInfo, 0, len(r.getCfg().Config.Apps))}
+	for name, app := range r.getCfg().Config.Apps {
 		workDir := r.abs(app.WorkDir)
 		// Resolve symlinks for display consistency with start (so uv/poetry
 		// walk-ups are predictable). Apps is a listing: an unresolvable workdir
@@ -880,7 +890,7 @@ func (r *Runtime) Apps() (*api.ListAppsResult, error) {
 // Shutdown cancels the runtime and gracefully stops all managed processes.
 func (r *Runtime) Shutdown() error {
 	r.subs.Close()
-	err := r.manager.Shutdown(r.cfg.Config.Runtime.ShutdownTimeout.Time())
+	err := r.manager.Shutdown(r.getCfg().Config.Runtime.ShutdownTimeout.Time())
 	// Flush and close the durable archive before cancelling the root context,
 	// so the archive's writer goroutine drains cleanly and the rootCtx-bound
 	// janitor observes cancellation only after the archive is closed.
@@ -903,9 +913,9 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 
 	switch {
 	case req.App != "":
-		app, ok := r.cfg.Config.Apps[req.App]
+		app, ok := r.getCfg().Config.Apps[req.App]
 		if !ok {
-			return spec, nil, nil, fmt.Errorf("unknown app %q (configured apps: %s)", req.App, strings.Join(r.cfg.Names(), ", "))
+			return spec, nil, nil, fmt.Errorf("unknown app %q (configured apps: %s)", req.App, strings.Join(r.getCfg().Names(), ", "))
 		}
 		workDir, err := r.resolveWorkDir(app.WorkDir)
 		if err != nil {
@@ -923,8 +933,8 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 			return spec, nil, nil, fmt.Errorf("app %q has no start command; set one in agent-runtime.yaml", req.App)
 		}
 		layers := []config.EnvLayer{{Name: r.baseEnvName, Vars: r.baseEnv}}
-		if len(r.cfg.Config.Runtime.Env) > 0 {
-			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.cfg.Config.Runtime.Env})
+		if len(r.getCfg().Config.Runtime.Env) > 0 {
+			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.getCfg().Config.Runtime.Env})
 		}
 		if app.EnvFile != "" {
 			fileEnv, err := config.ParseEnvFile(r.abs(app.EnvFile))
@@ -957,8 +967,8 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 		}
 		prof = r.profiles.Detect(workDir)
 		layers := []config.EnvLayer{{Name: r.baseEnvName, Vars: r.baseEnv}}
-		if len(r.cfg.Config.Runtime.Env) > 0 {
-			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.cfg.Config.Runtime.Env})
+		if len(r.getCfg().Config.Runtime.Env) > 0 {
+			layers = append(layers, config.EnvLayer{Name: "runtime.env", Vars: r.getCfg().Config.Runtime.Env})
 		}
 		if req.EnvFile != "" {
 			fileEnv, err := config.ParseEnvFile(r.abs(req.EnvFile))
@@ -1093,12 +1103,12 @@ func parseStream(s string) logs.StreamFilter {
 
 func (r *Runtime) abs(dir string) string {
 	if dir == "" {
-		return r.cfg.ProjectDir
+		return r.getCfg().ProjectDir
 	}
 	if filepath.IsAbs(dir) {
 		return dir
 	}
-	return filepath.Join(r.cfg.ProjectDir, dir)
+	return filepath.Join(r.getCfg().ProjectDir, dir)
 }
 
 func toAPIEntry(e logs.Entry) api.LogEntry {

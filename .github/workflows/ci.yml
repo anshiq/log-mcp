@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Race
+        run: go test -race ./internal/store/... ./internal/session/... ./internal/logpipe/... ./internal/project/... ./internal/config/...
+      - name: Tests
+        run: go test ./internal/cli/... ./internal/mcp/... ./internal/server/... ./internal/shim/... ./internal/core/... ./internal/migrate/... ./internal/integrate/... ./pkg/...
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install buf
+        run: go install github.com/bufbuild/buf/cmd/buf@v1.50.0
+      - name: Install plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.18.1
+          npm --prefix ui install --no-audit --no-fund
+      - name: Proto clean
+        run: |
+          make proto
+          git diff --exit-code -- gen/ ui/src/gen/ || (echo "gen/ is stale: run make proto" && exit 1)
+      - name: Breaking
+        run: make proto
+  cross-compile:
+    # §10: Linux is implemented now; darwin/windows stay compiling.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install
+        run: npm --prefix ui install --no-audit --no-fund
+      - name: Typecheck
+        run: npm --prefix ui run typecheck
+      - name: Unit
+        run: npm --prefix ui test
+      - name: Build
+        run: npm --prefix ui run build

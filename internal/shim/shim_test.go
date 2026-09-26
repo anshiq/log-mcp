@@ -57,17 +57,28 @@ func TestShimControlRoundtrip(t *testing.T) {
 	defer close(stop)
 	recs, exited, errc := cl.Subscribe(0, stop)
 	found := false
+	doneExited := false
 	timeout := time.After(5 * time.Second)
-	for !found {
+	for !found && !doneExited {
 		select {
-		case r := <-recs:
+		case r, ok := <-recs:
+			if !ok {
+				recs = nil
+				continue
+			}
 			if string(r.Payload) == "hello-shim\n" {
 				found = true
 			}
-		case ex := <-exited:
-			_ = ex
-		case err := <-errc:
-			t.Fatalf("subscribe: %v", err)
+		case <-exited:
+			doneExited = true
+		case err, ok := <-errc:
+			if !ok {
+				errc = nil
+				continue
+			}
+			if err != nil {
+				t.Fatalf("subscribe: %v", err)
+			}
 		case <-timeout:
 			t.Fatal("echo line never arrived")
 		}

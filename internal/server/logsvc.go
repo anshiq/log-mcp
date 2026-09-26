@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"agent-runtime/internal/config"
 	"agent-runtime/internal/logpipe"
 	"agent-runtime/internal/logs"
 	"agent-runtime/pkg/api"
@@ -27,19 +28,39 @@ func (s *Server) routeLog(mux *http.ServeMux) {
 	mux.HandleFunc(p+"GetLogStats", s.wrap(s.logStats))
 }
 
+// redactorFor builds the workspace log redactor (nil-safe).
+func (s *Server) redactorForWorkspace(workspaceID string) *config.Redactor {
+	if workspaceID == "" {
+		return nil
+	}
+	pr, err := s.engine.GetOrCreateRuntime(workspaceID)
+	if err != nil {
+		return nil
+	}
+	if res := pr.ResolvedConfig(); res != nil && len(res.Redact) > 0 {
+		return config.CompileRedactor(res.Redact)
+	}
+	return nil
+}
+
 func (s *Server) logGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req api.GetLogsRequest
 	_ = decode(r, &req)
 	if req.ProcessID == "" {
 		return nil, fmt.Errorf("processId required")
 	}
-	_, rt, _, err := s.findProcess(req.ProcessID)
+	_, rt, wsID, err := s.findProcess(req.ProcessID)
 	if err != nil {
 		return nil, err
 	}
 	res, err := rt.GetLogs(req)
 	if err != nil {
 		return nil, err
+	}
+	if red := s.redactorForWorkspace(wsID); red != nil && !red.Empty() {
+		for i := range res.Entries {
+			res.Entries[i].Line = red.Redact(res.Entries[i].Line)
+		}
 	}
 	return res, nil
 }
@@ -82,11 +103,16 @@ func (s *Server) logSearch(w http.ResponseWriter, r *http.Request) (any, error) 
 	truncated := false
 	// Workspace FTS index first (history, including migrated v2 logs),
 	// then the live ring buffers. Segments stay authoritative.
+	red := s.redactorForWorkspace(req.WorkspaceID)
 	if req.WorkspaceID != "" && !req.Regex {
 		if hits, trunc, err := s.searchIndex(req.WorkspaceID, ids, req.Query, maxRows-len(matches)); err == nil {
 			for _, h := range hits {
+				line := h.Line
+				if red != nil {
+					line = red.Redact(line)
+				}
 				matches = append(matches, map[string]any{
-					"processId": h.ProcessID, "line": h.Line,
+					"processId": h.ProcessID, "line": line,
 					"stream": streamName(h.Stream), "timestamp": h.TS,
 				})
 			}
@@ -109,8 +135,12 @@ func (s *Server) logSearch(w http.ResponseWriter, r *http.Request) (any, error) 
 				if req.MinLevel != "" && !levelAtLeast(e.Line, req.MinLevel) {
 					continue
 				}
+				line := e.Line
+				if red != nil {
+					line = red.Redact(line)
+				}
 				matches = append(matches, map[string]any{
-					"processId": id, "line": e.Line, "stream": e.Stream,
+					"processId": id, "line": line, "stream": e.Stream,
 					"timestamp": e.Timestamp,
 				})
 				if len(matches) >= maxRows {
@@ -204,6 +234,7 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	red := s.redactorForWorkspace(req.WorkspaceID)
 	// Backlog first (ring, then index, then segments per §6.4).
 	for _, id := range req.ProcessIDs {
 		_, rt, _, err := s.findProcess(id)
@@ -216,8 +247,12 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 		}
 		var lines []any
 		for _, e := range res.Entries {
+			line := e.Line
+			if red != nil {
+				line = red.Redact(line)
+			}
 			lines = append(lines, map[string]any{
-				"processId": id, "stream": e.Stream, "line": e.Line, "timestamp": e.Timestamp,
+				"processId": id, "stream": e.Stream, "line": line, "timestamp": e.Timestamp,
 			})
 		}
 		_ = sw.send(map[string]any{"kind": "batch", "processId": id,
@@ -277,9 +312,13 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 					if req.Contains != "" && !strings.Contains(e.Line, req.Contains) {
 						continue
 					}
+					line := e.Line
+					if red != nil {
+						line = red.Redact(line)
+					}
 					if err := sw.send(map[string]any{"kind": "line",
 						"processId": sb.id, "stream": string(e.Stream),
-						"line": e.Line, "cursor": time.Now().UnixNano()}); err != nil {
+						"line": line, "cursor": time.Now().UnixNano()}); err != nil {
 						return
 					}
 				}

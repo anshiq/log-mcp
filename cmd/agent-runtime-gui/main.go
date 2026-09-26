@@ -19,6 +19,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"agent-runtime/internal/platform/paths"
@@ -73,6 +74,10 @@ func newProxy(socketPath, agent string) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
+			// The webview calls /api/<Service>/<Method>; the daemon
+			// serves /<Service>/<Method>. Strip the prefix here so one
+			// path scheme works for GUI, web UI and curl.
+			r.Out.URL.Path = strings.TrimPrefix(r.Out.URL.Path, "/api")
 			r.Out.Header.Set("X-Agent-Runtime-Client", agent)
 		},
 		Transport: &http.Transport{

@@ -2,7 +2,10 @@
 
 package daemon
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // Windows stub for the v3 per-user daemon. Full support (named pipes,
 // Job Objects, Task Scheduler) is Phase 9 per §10; these stubs keep the
@@ -25,7 +28,7 @@ func New(_, _ string) *Daemon { return &Daemon{} }
 
 type Status struct{}
 
-func (d *Daemon) AcquireLock() (any, error) {
+func (d *Daemon) AcquireLock() (*os.File, error) {
 	return nil, fmt.Errorf("agentd: not supported on Windows yet")
 }
 func (d *Daemon) WritePid() error { return fmt.Errorf("agentd: not supported on Windows yet") }

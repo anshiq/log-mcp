@@ -1,5 +1,5 @@
-//go:build !linux
-// +build !linux
+//go:build windows
+// +build windows
 
 package project
 
@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -558,11 +557,9 @@ func NormalizeRemote(raw string) string {
 	return host + "/" + p
 }
 
-// statDevIno extracts dev and ino from a syscall.Stat_t.
+// statDevIno is unavailable on Windows (no Stat_t dev/ino): the moved
+// step degrades to path-only resolution there.
 func statDevIno(sys interface{}) (uint64, uint64) {
-	if st, ok := sys.(*syscall.Stat_t); ok && st != nil {
-		return uint64(st.Dev), uint64(st.Ino)
-	}
 	return 0, 0
 }
 

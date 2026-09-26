@@ -85,6 +85,7 @@ One-shot commands:
 		newMigrateCmd(loaded, logger),
 		newTuiCmd(loaded, logger),
 		newDoctorCmd(loaded, logger),
+		newWebCmd(loaded, logger),
 		newVersionCmd(),
 	)
 	if s != nil {

@@ -27,6 +27,8 @@ type ProjectRuntime struct {
 	dataDir   string
 	logger    *slog.Logger
 	trusted   func(workspaceID, path, sha string) bool
+	// allocPort allocates stable ${port:name} values (engine settings).
+	allocPort func(workspaceID, name string, def int) (int, error)
 
 	mu       sync.RWMutex
 	loadedAt time.Time
@@ -127,16 +129,9 @@ func (p *ProjectRuntime) loadLocked() error {
 	}
 	loaded := resolved.ToLoaded(p.wsPath)
 	rt := iruntime.New(loaded, p.logger)
-	if p.rt != nil {
-		// Hot reload path: keep processes from the old runtime? Phase 3
-		// keeps it simple — runtimes are long-lived per daemon boot, and
-		// the watcher only marks stale / autostarts. Full live-swap of the
-		// manager arrives with the shim spawner (Phase 2b).
-		_ = rt
-		return nil
-	}
 	p.rt = rt
 	p.resolved = resolved
+	p.expandPortsLocked()
 	p.loadedAt = time.Now()
 	p.lastUsed = time.Now()
 	if p.stale == nil {
@@ -144,7 +139,34 @@ func (p *ProjectRuntime) loadLocked() error {
 	}
 	p.startWatcher()
 	p.autostart()
+	// Re-resolve the hosted config so starts see expanded ports.
+	if p.rt != nil {
+		p.rt.ReloadConfig(p.resolved.ToLoaded(p.wsPath))
+	}
 	return nil
+}
+
+// expandPortsLocked replaces ${port:name} in every app's env with stable
+// allocations (persisted in daemon settings). Callers hold p.mu.
+func (p *ProjectRuntime) expandPortsLocked() {
+	if p.resolved == nil || p.allocPort == nil {
+		return
+	}
+	for name, app := range p.resolved.Apps {
+		defaults := map[string]int{}
+		for pn, decl := range app.Ports {
+			defaults[pn] = decl.Default
+		}
+		expanded, err := config.ExpandPortTemplates(app.Env, func(n string) (int, error) {
+			return p.allocPort(p.wsID, n, defaults[n])
+		})
+		if err != nil {
+			p.logger.Warn("port templating failed; leaving raw", "app", name, "error", err)
+			continue
+		}
+		app.Env = expanded
+		p.resolved.Apps[name] = app
+	}
 }
 
 // repoTrusted checks the trust gate for the repo-layer config.
@@ -245,6 +267,13 @@ func (p *ProjectRuntime) onValidConfig(ch config.Change) {
 	}
 	p.resolved = resolved
 	p.lastUsed = time.Now()
+	p.expandPortsLocked()
+	// Hot-swap the hosted runtime's config: new starts resolve against
+	// the new revision while running processes are untouched (stale
+	// marking above tells the UI/CLI what needs a restart).
+	if p.rt != nil {
+		p.rt.ReloadConfig(resolved.ToLoaded(p.wsPath))
+	}
 }
 
 // onInvalidConfig keeps the last good revision active and records the

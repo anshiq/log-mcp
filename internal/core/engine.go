@@ -36,6 +36,8 @@ type Engine struct {
 	degraded sync.Map // workspaceID -> *degradedInfo
 	// forwarded tracks workspaces with an active event forwarder.
 	forwarded map[string]bool
+	// alerted tracks workspaces with an active alert poller.
+	alerted map[string]bool
 
 	mu     sync.RWMutex
 	ctx    context.Context
@@ -152,6 +154,7 @@ func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error)
 		loadedAt:  time.Now(),
 		lastUsed:  time.Now(),
 		stale:     map[string]bool{},
+		allocPort: e.AllocatePort,
 		trusted: func(workspaceID, path, sha string) bool {
 			ok, err := e.store.IsTrusted(workspaceID, path)
 			if err != nil || !ok {
@@ -292,7 +295,23 @@ func (e *Engine) RuntimeFor(workspaceID string) (*ProjectRuntime, *iruntime.Runt
 		return nil, nil, err
 	}
 	e.forwardEvents(pr)
+	e.ensureAlerts(pr)
 	return pr, rt, nil
+}
+
+// ensureAlerts starts the log-alert poller once per workspace.
+func (e *Engine) ensureAlerts(pr *ProjectRuntime) {
+	e.mu.Lock()
+	if e.alerted == nil {
+		e.alerted = map[string]bool{}
+	}
+	if e.alerted[pr.wsID] {
+		e.mu.Unlock()
+		return
+	}
+	e.alerted[pr.wsID] = true
+	e.mu.Unlock()
+	e.Go(pr.wsID, func() { e.runAlerts(pr) })
 }
 
 // storeAdapter implements project.Store over *store.DB, converting

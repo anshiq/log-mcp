@@ -39,6 +39,38 @@ type Client struct {
 	version    string
 }
 
+// NewTCP creates a client for the authenticated loopback TCP listener
+// (web UI, remote tooling over SSH-forwarded ports).
+func NewTCP(addr, token, agent string) *Client {
+	if agent == "" {
+		agent = "web/unknown"
+	}
+	c := &Client{
+		httpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &tcpTransport{addr: addr, token: token},
+		},
+		agent:   agent,
+		version: DefaultAPIVersion,
+	}
+	c.socket = "tcp://" + addr
+	return c
+}
+
+// tcpTransport rewrites agentd URLs to the TCP listener with a bearer token.
+type tcpTransport struct {
+	addr  string
+	token string
+}
+
+func (t *tcpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.URL.Scheme = "http"
+	req.URL.Host = t.addr
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
 // New creates a client for a running daemon socket.
 func New(socketPath, agent string) *Client {
 	if agent == "" {

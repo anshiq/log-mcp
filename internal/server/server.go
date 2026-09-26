@@ -28,6 +28,7 @@ type Server struct {
 	listener   net.Listener
 	engine     *core.Engine
 	srv        *http.Server
+	handler    http.Handler
 	version    string
 	started    time.Time
 	onShutdown func(keepProcesses bool)
@@ -58,14 +59,17 @@ func NewWithOptions(engine *core.Engine, socketPath, version string, onShutdown 
 	s.routeSystem(mux)
 	s.routeProject(mux)
 	s.routeProcess(mux)
+	s.routeStack(mux)
 	s.routeLog(mux)
 	s.routeEvent(mux)
 	s.routeSession(mux)
 	s.routeConfig(mux)
 	s.routeAudit(mux)
 	s.routeIntegration(mux)
+	chained := chain(mux, PeerCredAuth, SessionAttr, DeadlineInterceptor, RecoverInterceptor)
+	s.handler = chained
 	s.srv = &http.Server{
-		Handler:           chain(mux, PeerCredAuth, SessionAttr, DeadlineInterceptor, RecoverInterceptor),
+		Handler:           chained,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s, nil

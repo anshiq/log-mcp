@@ -242,6 +242,19 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	_ = s.engine.Store().SetActiveRevision(req.ProjectID, rev)
+	// Synchronously reload every loaded workspace of this project so the
+	// next Start sees the new revision without waiting for the ~300ms
+	// file-watcher debounce (the watcher still reconciles stale flags).
+	for _, ws := range mustWorkspacesByProject(s, req.ProjectID) {
+		if pr, err := s.engine.GetOrCreateRuntime(ws); err == nil {
+			trusted := true
+			if res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), trusted, nil); errs == nil {
+				if rt, err := pr.Runtime(); err == nil {
+					rt.ReloadConfig(res.ToLoaded(pr.WorkspacePath()))
+				}
+			}
+		}
+	}
 	// The file watcher reconciles (stale marking / reload: restart) within
 	// ~300ms; reload: restart with restartAffected applies immediately via
 	// the planner flags in the Plan response the GUI already showed.
@@ -346,4 +359,13 @@ func revisionJSON(rev *storeRevision) map[string]any {
 		"valid": rev.Valid, "source": rev.Source, "sessionId": rev.SessionID,
 		"message": rev.Message, "createdAt": rev.CreatedAt,
 	}
+}
+
+func mustWorkspacesByProject(s *Server, projectID string) []string {
+	wss, _ := s.engine.Store().ListWorkspaces(projectID)
+	var out []string
+	for _, w := range wss {
+		out = append(out, w.ID)
+	}
+	return out
 }

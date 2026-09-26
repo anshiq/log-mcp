@@ -36,8 +36,7 @@ func TestMigrateLegacyArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := legacy.Exec(`CREATE TABLE entries(process_id TEXT, id INTEGER, ts INTEGER, stream TEXT, line TEXT)`);
-		err != nil {
+	if _, err := legacy.Exec(`CREATE TABLE entries(process_id TEXT, id INTEGER, ts INTEGER, stream TEXT, line TEXT)`); err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 5; i++ {

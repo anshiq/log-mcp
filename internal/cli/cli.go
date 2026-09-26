@@ -111,7 +111,9 @@ func ServeHTTP(loaded *config.Loaded, logger *slog.Logger, addr string) error {
 
 	var facade runtime.Facade
 	var shutdown func() error
+	var bridge *rtmcp.Bridge
 	if loaded.Config.Runtime.Daemon {
+		// Legacy per-project daemon path (v2 compat).
 		started, err := daemon.Start(loaded, logger)
 		if err != nil {
 			return err
@@ -123,11 +125,18 @@ func ServeHTTP(loaded *config.Loaded, logger *slog.Logger, addr string) error {
 		}
 		facade = daemon.NewClient(daemon.SocketPath(loaded.ProjectDir))
 		shutdown = func() error { return nil } // daemon owns the processes
+	} else if b, err := dialBridge(loaded, logger, serveOptions{}); err == nil {
+		// v3 bridge: remote MCP clients share the per-user daemon.
+		bridge = b
+		facade = b
+		shutdown = func() error { return b.Close() }
 	} else {
+		logger.Warn("daemon unreachable for --http; serving embedded", "error", err)
 		rt := runtime.New(loaded, logger)
 		facade = rt
 		shutdown = rt.Shutdown
 	}
+	_ = bridge
 
 	server := rtmcp.NewServer(facade, logger)
 	handler := httpserve.Handler(server, token, logger)

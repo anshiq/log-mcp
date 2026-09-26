@@ -20,11 +20,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// portTemplate matches ${port:name} in env values.
+var portTemplate = regexp.MustCompile(`\$\{port:([A-Za-z0-9_.-]+)\}`)
 
 // Layer identifies one level of the config stack.
 type Layer string
@@ -76,6 +81,24 @@ type V3Config struct {
 	} `yaml:"project"`
 	Runtime RuntimeConfig    `yaml:"runtime"`
 	Apps    map[string]V3App `yaml:"apps"`
+	// Logging holds workspace log policy (redaction rules are regexes;
+	// matches are replaced with *** in GetLogs/Search/Tail output).
+	Logging LoggingConfig `yaml:"logging"`
+	// Alerts notifies (event + GUI toast) when a pattern appears in any
+	// process's logs: {pattern, regex?, message?}.
+	Alerts []AlertRule `yaml:"alerts"`
+}
+
+// LoggingConfig is workspace log policy.
+type LoggingConfig struct {
+	Redact []string `yaml:"redact"`
+}
+
+// AlertRule fires a logs.alert event on first match per process run.
+type AlertRule struct {
+	Pattern string `yaml:"pattern"`
+	Regex   bool   `yaml:"regex"`
+	Message string `yaml:"message"`
 }
 
 // ValidationError carries file/line/column for an invalid config.
@@ -109,7 +132,7 @@ func Validate(data []byte) []*ValidationError {
 			Line: root.Line, Column: root.Column, Message: "config must be a mapping",
 		}}
 	}
-	allowed := map[string]bool{"version": true, "project": true, "runtime": true, "apps": true}
+	allowed := map[string]bool{"version": true, "project": true, "runtime": true, "apps": true, "logging": true, "alerts": true}
 	var errs []*ValidationError
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		k := root.Content[i]
@@ -162,6 +185,29 @@ func checkRegexp(pat string) error {
 func SHA256(data []byte) string {
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum)
+}
+
+// ExpandPortTemplates replaces ${port:name} in env entries using alloc.
+// alloc returns the stable port for a name (allocation persists wherever
+// the caller keeps it, e.g. daemon settings).
+func ExpandPortTemplates(env []string, alloc func(name string) (int, error)) ([]string, error) {
+	out := make([]string, len(env))
+	for i, kv := range env {
+		var err error
+		out[i] = portTemplate.ReplaceAllStringFunc(kv, func(m string) string {
+			name := portTemplate.FindStringSubmatch(m)[1]
+			p, aerr := alloc(name)
+			if aerr != nil {
+				err = aerr
+				return m
+			}
+			return strconv.Itoa(p)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // ChangeKind classifies what a config edit means for a running app.
@@ -342,6 +388,9 @@ type Resolved struct {
 	Provenance Provenance       `json:"provenance"`
 	Paths      EffectivePaths   `json:"paths"`
 	Warnings   []string         `json:"warnings"`
+	// Redact unions logging.redact across layers; Alerts likewise.
+	Redact []string    `json:"redact"`
+	Alerts []AlertRule `json:"alerts"`
 }
 
 // Resolve loads and merges all layers. repoTrusted reports whether the
@@ -352,6 +401,9 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted 
 	merged := map[string]V3App{}
 	prov := Provenance{}
 	var warnings []string
+	var redact []string
+	var alerts []AlertRule
+	seenRedact := map[string]bool{}
 
 	apply := func(data []byte, layer Layer, base string) []*ValidationError {
 		cfg, errs := ParseV3(data)
@@ -365,6 +417,13 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted 
 			merged[name] = cur
 			prov["apps."+name] = layer
 		}
+		for _, pat := range cfg.Logging.Redact {
+			if !seenRedact[pat] {
+				seenRedact[pat] = true
+				redact = append(redact, pat)
+			}
+		}
+		alerts = append(alerts, cfg.Alerts...)
 		return nil
 	}
 
@@ -396,7 +455,7 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted 
 		}
 	}
 	_ = daemonDefaults
-	return &Resolved{Apps: merged, Provenance: prov, Paths: ep, Warnings: warnings}, nil
+	return &Resolved{Apps: merged, Provenance: prov, Paths: ep, Warnings: warnings, Redact: redact, Alerts: alerts}, nil
 }
 
 // mergeApp merges src into dst field-wise; lists replace unless the key
