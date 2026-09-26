@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,6 +83,15 @@ func decode(r *http.Request, v any) error {
 	if len(data) == 0 {
 		return nil
 	}
+	// Most handlers decode into anonymous camelCase structs, but the six
+	// handlers built on pkg/api types (GetLogsRequest, WaitForLogRequest,
+	// SignalProcessRequest, WaitForExitParams, SetRestartPolicyRequest,
+	// ProcessEnvRequest) only recognize snake_case (process_id, timeout_ms,
+	// ...) — those were MCP-first types reused as-is. A client sending the
+	// "wrong" casing for whichever handler it hit got a confusing required-
+	// field error (B6). Normalize by aliasing every top-level key to both
+	// casings before decoding, so either spelling works everywhere.
+	data = normalizeTopLevelCasing(data)
 	// Strict first (catches typos), lenient fallback for forward-compat.
 	strict := json.NewDecoder(bytes.NewReader(data))
 	strict.DisallowUnknownFields()
@@ -89,6 +99,71 @@ func decode(r *http.Request, v any) error {
 		return nil
 	}
 	return json.Unmarshal(data, v)
+}
+
+// normalizeTopLevelCasing adds a snake_case and a camelCase alias for every
+// top-level key of a JSON object (only the key name; the value is reused
+// unmodified, so nested objects like an `env` map of arbitrary keys are
+// left untouched). It leaves non-object bodies as-is. Strict decoding still
+// rejects a body with a genuine unknown field, because DisallowUnknownFields
+// only tolerates keys that are actually declared on the destination
+// struct — the synthetic alias for a field that struct doesn't have simply
+// falls through to the lenient json.Unmarshal fallback, same as any other
+// forward-compat extra field.
+func normalizeTopLevelCasing(data []byte) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return data
+	}
+	for k, v := range m {
+		if snake := toSnakeCase(k); snake != k {
+			if _, ok := m[snake]; !ok {
+				m[snake] = v
+			}
+		}
+		if camel := toCamelCase(k); camel != k {
+			if _, ok := m[camel]; !ok {
+				m[camel] = v
+			}
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return data
+	}
+	return out
+}
+
+func toSnakeCase(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r - 'A' + 'a')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func toCamelCase(s string) string {
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+		if i == 0 {
+			b.WriteString(p)
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		b.WriteString(p[1:])
+	}
+	return b.String()
 }
 
 func writeError(w http.ResponseWriter, err error) {

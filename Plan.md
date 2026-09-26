@@ -138,28 +138,28 @@ A global **scope** (project + workspace, or "All workspaces") lives in the top b
 All in `internal/server` unless noted. Each fix gets a regression test in `internal/server/server_test.go` (or a new `streams_test.go`).
 
 ### 1.1 Stream safety (B1)
-- [ ] `streamWriter` gets `mu sync.Mutex`, `closed atomic.Bool`, and a `stop chan struct{}`. `send` locks, checks `closed` and `done`, encodes and flushes.
-- [ ] `newStream` returns a writer with `Close()`. Every streaming handler does `defer sw.Close()`. The heartbeat goroutine selects on `stop` as well as `done`.
-- [ ] Test: open 200 streams concurrently, cancel the clients at random points while heartbeats run (set the interval to 5ms through an unexported package var for tests), run under `-race`, and confirm no panic.
+- [x] `streamWriter` gets `mu sync.Mutex`, `closed atomic.Bool`, and a `stop chan struct{}`. `send` locks, checks `closed` and `done`, encodes and flushes.
+- [x] `newStream` returns a writer with `Close()`. Every streaming handler does `defer sw.Close()`. The heartbeat goroutine selects on `stop` as well as `done`.
+- [x] Test: open 200 streams concurrently, cancel the clients at random points while heartbeats run (set the interval to 5ms through an unexported package var for tests), run under `-race`, and confirm no panic.
 
 ### 1.2 No deadline on streams (B2)
-- [ ] `DeadlineInterceptor` skips the stream routes: a `streamingRoutes` set (`WatchProcesses`, `Attach`, `WatchResourceUsage`, `TailLogs`, `ExportLogs`, `WatchEvents`, `WatchConfig`, `SessionService/Heartbeat`), or a check on `Accept: application/x-ndjson` plus the route set.
+- [x] `DeadlineInterceptor` skips the stream routes: a `streamingRoutes` set (`WatchProcesses`, `Attach`, `WatchResourceUsage`, `TailLogs`, `ExportLogs`, `WatchEvents`, `WatchConfig`, `SessionService/Heartbeat`), or a check on `Accept: application/x-ndjson` plus the route set.
 - [ ] Unary handlers that legitimately wait (`WaitForLog`, `WaitForExit`, `StartStack`) use `timeoutMs + 5s` instead of 30s.
-- [ ] Test: WatchProcesses stays open for over 31s (test clock via an injectable deadline duration).
+- [x] Test: WatchProcesses stays open for over 31s (test clock via an injectable deadline duration).
 
 ### 1.3 WatchProcesses rewrite (B3, B4, B15)
-- [ ] Add an engine-level `RuntimeLoaded` notification in `internal/core/engine.go` (a `Subscribe` on a small bus fired from `RuntimeFor`/`GetOrCreateRuntime` when a runtime is first created). WatchProcesses subscribes to that bus and attaches to new runtimes as they load.
-- [ ] The snapshot always returns `[]`, never `null`. It includes store rows for unloaded workspaces with `status` from the last instance row and `loaded:false`.
-- [ ] Every delta is `{"kind":"upsert","event":"process.started","process":<ProcessInfo>,"cursor":"<seq>"}`, built with `processInfo(pr, st)` at emit time.
-- [ ] Removal emits `{"kind":"removed","processId":…}`. Add a `process.removed` event type to `internal/events/bus.go`, published by `RemoveProcess`.
+- [x] Add an engine-level `RuntimeLoaded` notification in `internal/core/engine.go` (a `Subscribe` on a small bus fired from `RuntimeFor`/`GetOrCreateRuntime` when a runtime is first created). WatchProcesses subscribes to that bus and attaches to new runtimes as they load.
+- [x] The snapshot always returns `[]`, never `null`. It includes store rows for unloaded workspaces with `status` from the last instance row and `loaded:false`.
+- [x] Every delta is `{"kind":"upsert","event":"process.started","process":<ProcessInfo>,"cursor":"<seq>"}`, built with `processInfo(pr, st)` at emit time.
+- [x] Removal emits `{"kind":"removed","processId":…}`. Add a `process.removed` event type to `internal/events/bus.go`, published by `RemoveProcess`.
 - [ ] Filter out `process.stdout`/`process.stderr` events in this stream.
-- [ ] Coalesce: at most one upsert per process per 100ms (map + ticker), so restart storms don't flood the stream.
+- [x] Coalesce: at most one upsert per process per 100ms (map + ticker), so restart storms don't flood the stream.
 - [ ] The queue overflow path sends `gapMessage` (it currently drops silently), and the client resnapshots on a gap.
 - [ ] `ProcessInfo` JSON gains `app`, `instanceId`, `lifetime`, `restartPolicy`, `ports` (always an array), `args`, `exitSignal`, `stdoutLines`, `stderrLines`, `stale`, `loaded`.
 - [ ] `List` with `allWorkspaces` merges store rows the same way.
 
 ### 1.4 Tail and Attach cursors (B5)
-- [ ] Record `lastID` as the last backlog entry ID + 1 (or `proc.Logs.NextID()` when the backlog is empty) **before** sending the backlog, and subscribe before reading the backlog so nothing is lost in between.
+- [x] Record `lastID` as the last backlog entry ID + 1 (or `proc.Logs.NextID()` when the backlog is empty) **before** sending the backlog, and subscribe before reading the backlog so nothing is lost in between.
 - [ ] Every line frame includes `id`, `timestamp`, `stream`, `level` (`logs.ParseLevel`), `instanceId`, and `cursor = "<processId>:<id>"`.
 - [ ] `resume` is honoured: `{"resume":{"proc_x":1234}}` skips the backlog and continues from each id. If the id has already fallen out of the ring, send `gap`.
 - [ ] A restart emits a `{"kind":"instance","processId","instanceId"}` frame so the viewer can draw a separator.
@@ -168,7 +168,7 @@ All in `internal/server` unless noted. Each fix gets a regression test in `inter
 - [ ] Attach frames use the same shape: `{"kind":"output","data":"<utf8>","stream":…}` for live lines, and `{"kind":"batch","lines":[…]}` for the backlog.
 
 ### 1.5 Consistent casing (B6)
-- [ ] The daemon accepts both casings. Add `decodeCompat` in `process.go` that decodes into a `map[string]json.RawMessage`, rewrites snake_case keys to camelCase and vice versa for known aliases (`process_id`↔`processId`, `timeout_ms`↔`timeoutMs`, `backlog_lines`↔`backlog`), and unmarshals into the target. Use it for the six `pkg/api`-typed handlers.
+- [x] The daemon accepts both casings. Add `decodeCompat` in `process.go` that decodes into a `map[string]json.RawMessage`, rewrites snake_case keys to camelCase and vice versa for known aliases (`process_id`↔`processId`, `timeout_ms`↔`timeoutMs`, `backlog_lines`↔`backlog`), and unmarshals into the target. Use it for the six `pkg/api`-typed handlers.
 - [ ] Responses stay as they are for MCP compat, and the UI normalises (Phase 2.2). Document the rule in `docs/api.md`: requests accept camelCase, and some responses are snake_case.
 
 ### 1.6 Serve the web UI on TCP (B7)
