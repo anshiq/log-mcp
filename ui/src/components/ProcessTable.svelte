@@ -5,13 +5,24 @@
     processes = [] as Process[],
     onAction,
     onOpen,
-    onStart
+    onStart,
+    onSignal
   }: {
     processes?: Process[];
     onAction?: (action: string, ids: string[]) => void;
     onOpen?: (id: string) => void;
     onStart?: () => void;
+    onSignal?: (signal: string, ids: string[]) => void;
   } = $props();
+
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT', 'SIGUSR1', 'SIGUSR2', 'SIGKILL'];
+
+  function sendSignal(id: string, e: Event) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const signal = select.value;
+    select.value = '';
+    if (signal) onSignal?.(signal, [id]);
+  }
 
   let filter = $state('');
   let statusFilter = $state<'all' | 'running' | 'exited' | 'failed'>('all');
@@ -131,6 +142,20 @@
         <span>{selected.size} selected</span>
         <button onclick={() => bulk('restart')}>Restart</button>
         <button onclick={() => bulk('stop')}>Stop</button>
+        <select
+          class="signal"
+          aria-label="Send signal to selection"
+          onchange={(e) => {
+            const el = e.currentTarget as HTMLSelectElement;
+            if (el.value) onSignal?.(el.value, [...selected]);
+            el.value = '';
+          }}
+        >
+          <option value="" selected disabled>Signal…</option>
+          {#each signals as sig}
+            <option value={sig}>{sig}</option>
+          {/each}
+        </select>
         <button class="danger" onclick={() => bulk('remove')}>Remove</button>
       </div>
     {/if}
@@ -188,6 +213,12 @@
             <td class="actions">
               <button class="ghost" onclick={() => onAction?.('restart', [id])} title="Restart">↻</button>
               <button class="ghost" onclick={() => onAction?.('stop', [id])} title="Stop">■</button>
+              <select class="signal" aria-label="Send signal" onchange={(e) => sendSignal(id, e)}>
+                <option value="" selected disabled>Signal…</option>
+                {#each signals as sig}
+                  <option value={sig}>{sig}</option>
+                {/each}
+              </select>
             </td>
           </tr>
         {/each}
@@ -261,7 +292,8 @@
     padding: var(--space-2) var(--space-4);
   }
   .bulk button,
-  .actions button {
+  .actions button,
+  select.signal {
     background: var(--bg-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);

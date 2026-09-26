@@ -8,6 +8,12 @@
 
   let tab = $state<'logs' | 'terminal' | 'env' | 'resources'>('logs');
   let lines = $state<{ line: string; stream?: string; timestamp?: string }[]>([]);
+  let logMode = $state<'live' | 'search'>('live');
+  let searchQuery = $state('');
+  let searchRegex = $state(false);
+  let searching = $state(false);
+  let searchResults = $state<{ line: string; stream?: string; timestamp?: string }[]>([]);
+  let searchTruncated = $state(false);
   let env = $state<string[]>([]);
   let envLoading = $state(false);
   let revealed = $state(false);
@@ -69,6 +75,24 @@
     resourcesTimer = null;
   }
 
+  async function runSearch() {
+    if (!searchQuery.trim()) return;
+    searching = true;
+    try {
+      const res = await LogService.search({
+        processIds: [processId],
+        query: searchQuery.trim(),
+        regex: searchRegex,
+        maxRows: 500
+      });
+      const matches = (res.matches as { line: string; stream?: string; timestamp?: string | number }[]) ?? [];
+      searchResults = matches.map((m) => ({ line: m.line, stream: m.stream, timestamp: m.timestamp?.toString() }));
+      searchTruncated = !!res.truncatedScan;
+    } finally {
+      searching = false;
+    }
+  }
+
   async function clearLogs() {
     if (!confirm('Clear this process\'s logs?')) return;
     await LogService.clear(processId);
@@ -122,10 +146,40 @@
   <div class="body">
     {#if tab === 'logs'}
       <div class="logtoolbar">
-        <button onclick={clearLogs}>Clear</button>
-        <button onclick={exportLogs}>Export</button>
+        <div class="modeswitch">
+          <button class:active={logMode === 'live'} onclick={() => (logMode = 'live')}>Live</button>
+          <button class:active={logMode === 'search'} onclick={() => (logMode = 'search')}>Search</button>
+        </div>
+        {#if logMode === 'search'}
+          <form
+            class="searchform"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void runSearch();
+            }}
+          >
+            <input placeholder="Search history…" bind:value={searchQuery} aria-label="Search logs" />
+            <label class="regex">
+              <input type="checkbox" bind:checked={searchRegex} />
+              regex
+            </label>
+            <button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button>
+          </form>
+        {:else}
+          <button onclick={clearLogs}>Clear</button>
+          <button onclick={exportLogs}>Export</button>
+        {/if}
       </div>
-      <div class="logbody"><LogViewer {lines} /></div>
+      {#if logMode === 'live'}
+        <div class="logbody"><LogViewer {lines} /></div>
+      {:else}
+        <div class="logbody">
+          {#if searchTruncated}
+            <p class="hint">Results were truncated; narrow the query for a complete scan.</p>
+          {/if}
+          <LogViewer lines={searchResults} />
+        </div>
+      {/if}
     {:else if tab === 'terminal'}
       {#await import('./Terminal.svelte') then { default: Terminal }}
         <Terminal {processId} />
@@ -215,7 +269,8 @@
   }
   .logtoolbar {
     display: flex;
-    gap: var(--space-2);
+    align-items: center;
+    gap: var(--space-3);
     padding: var(--space-2) var(--space-5);
     border-bottom: 1px solid var(--border);
   }
@@ -227,7 +282,51 @@
     color: var(--text-0);
     font-size: var(--fs-xs);
   }
+  .modeswitch {
+    display: flex;
+    gap: var(--space-1);
+  }
+  .modeswitch button.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--text-0);
+  }
+  .searchform {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1;
+  }
+  .searchform input:not([type]) {
+    flex: 1;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3);
+    color: var(--text-0);
+    font-size: var(--fs-xs);
+  }
+  .regex {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--text-1);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+  }
+  .hint {
+    color: var(--warn);
+    font-size: var(--fs-xs);
+    padding: var(--space-2) var(--space-5) 0;
+    margin: 0;
+  }
   .logbody {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .logbody > :global(.logwrap) {
     flex: 1;
     min-height: 0;
   }

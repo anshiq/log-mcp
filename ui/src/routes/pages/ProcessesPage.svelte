@@ -17,9 +17,16 @@
     const unsub = store.processes.subscribe((m) => {
       processes = [...m.values()];
     });
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && router.match('/processes/:id')) {
+        router.navigate('/processes');
+      }
+    }
+    window.addEventListener('keydown', onKey);
     return () => {
       off();
       unsub();
+      window.removeEventListener('keydown', onKey);
     };
   });
 
@@ -29,6 +36,11 @@
       if (action === 'restart') await ProcessService.restart(id);
       if (action === 'remove') await ProcessService.remove(id, true);
     }
+  }
+
+  async function signal(sig: string, ids: string[]) {
+    if (sig === 'SIGKILL' && !confirm(`Send SIGKILL to ${ids.length} process(es)? This does not allow graceful shutdown.`)) return;
+    for (const id of ids) await ProcessService.signal(id, sig);
   }
 
   function requestStart() {
@@ -49,7 +61,13 @@
 
 <div class="page">
   <div class="main">
-    <ProcessTable {processes} onAction={act} onOpen={(id) => router.navigate(`/processes/${id}`)} onStart={requestStart} />
+    <ProcessTable
+      {processes}
+      onAction={act}
+      onSignal={signal}
+      onOpen={(id) => router.navigate(`/processes/${id}`)}
+      onStart={requestStart}
+    />
   </div>
   {#if openId}
     <div class="drawer">

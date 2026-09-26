@@ -12,6 +12,7 @@
   import SettingsPage from './pages/SettingsPage.svelte';
   import { router } from '../lib/router.svelte';
   import { scope } from '../lib/scope.svelte';
+  import { installGlobalKeys } from '../lib/keys';
   import { SystemService, hasAuthToken, setUnauthorizedHandler } from '../lib/api';
 
   let daemonVersion = $state('');
@@ -30,6 +31,7 @@
       daemonOk = true;
     });
     scope.restoreLast();
+    return installGlobalKeys();
   });
 
   async function openWorkspace(e: Event) {
