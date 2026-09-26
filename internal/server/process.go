@@ -124,6 +124,26 @@ func contains(s, sub string) bool {
 	}())
 }
 
+// parseEnvField accepts env as ["K=V", ...] or {"K": "V"}.
+func parseEnvField(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err == nil {
+		out := make([]string, 0, len(m))
+		for k, v := range m {
+			out = append(out, k+"="+v)
+		}
+		return out
+	}
+	return nil
+}
+
 // sessionOf extracts session attribution headers for audit rows.
 func (s *Server) sessionOf(r *http.Request) (id, harness string) {
 	return r.Header.Get("X-Agent-Runtime-Session"), r.Header.Get("X-Agent-Runtime-Harness")
@@ -145,8 +165,7 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 		App         string            `json:"app"`
 		Command     []string          `json:"command"`
 		Workdir     string            `json:"workdir"`
-		Env         []string          `json:"env"`
-		EnvMap      map[string]string `json:"envMap"`
+		Env         json.RawMessage   `json:"env"`
 		Lifetime    string            `json:"lifetime"`
 		Pty         bool              `json:"pty"`
 		SessionID   string            `json:"sessionId"`
@@ -161,10 +180,7 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 	if err != nil {
 		return nil, err
 	}
-	env := req.Env
-	for k, v := range req.EnvMap {
-		env = append(env, k+"="+v)
-	}
+	env := parseEnvField(req.Env)
 	startReq := api.StartRequest{App: req.App, WorkDir: req.Workdir, Env: env}
 	if len(req.Command) > 0 {
 		startReq.Command = req.Command[0]
@@ -329,7 +345,28 @@ func (s *Server) handleProcGet(w http.ResponseWriter, r *http.Request) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return s.processInfo(pr, st), nil
+	// api.StatusResult shape (snake_case) + daemon extras (ignored by Go
+	// decoders, read by the TS GUI). The MCP bridge decodes this straight
+	// into api.StatusResult so tool shapes never change.
+	return enrichStatus(st, pr), nil
+}
+
+// enrichStatus merges an api.StatusResult with daemon extras.
+func enrichStatus(st *api.StatusResult, pr *corePR) map[string]any {
+	m := structToMap(st)
+	m["workspaceId"] = pr.WorkspaceID()
+	m["projectId"] = pr.ProjectID()
+	return m
+}
+
+func structToMap(v any) map[string]any {
+	data, _ := json.Marshal(v)
+	var m map[string]any
+	_ = json.Unmarshal(data, &m)
+	if m == nil {
+		m = map[string]any{}
+	}
+	return m
 }
 
 func (s *Server) handleProcList(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -357,7 +394,11 @@ func (s *Server) handleProcList(w http.ResponseWriter, r *http.Request) (any, er
 			if req.Filter != "" && !contains(st.Command, req.Filter) && !contains(p.ProcessID, req.Filter) {
 				continue
 			}
-			out = append(out, s.processInfo(pr, st))
+			// api.ProcessSummary shape + daemon extras (decode-safe).
+			m := structToMap(p)
+			m["workspaceId"] = pr.WorkspaceID()
+			m["projectId"] = pr.ProjectID()
+			out = append(out, m)
 		}
 		return true
 	}

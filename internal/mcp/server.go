@@ -34,6 +34,12 @@ RULES (mandatory):
 5. On failure, get the tail from get_logs, fix the cause, then restart_process(process_id) and wait_for_log(process_id, ready=true) again. Never rebuild the process by hand.
 6. If you ever lose a process_id, recover it with list_processes instead of restarting the app yourself.
 
+PERSISTENCE (v3 daemon):
+- Processes OUTLIVE your session. When you connect, list_processes shows what earlier sessions started — re-attach (get_logs, process_status) instead of re-starting. Starting a duplicate dev server on the same port helps nobody.
+- list_processes defaults to your workspace; scope=all spans the machine.
+- list_sessions shows which other agents/UIs are attached here.
+- get_project_info tells you where the project YAML lives now (central store, not the repo) and who else is watching. Config edits hot-reload; validate_config/plan_config/apply_config edit it safely, or edit the file at the returned configPath directly.
+
 SUPERVISION (continuous, not request-driven):
 - Apps declared in agent-runtime.yaml can configure readiness overrides, a health_check (HTTP/TCP probe), and a restart policy (never|on-failure|always) with exponential backoff. agent-runtime notices crashes and health failures on its own — you do not need to poll.
 - A process that fails its health check repeatedly, or crashes per its restart policy, is auto-restarted with visible backoff. Exhausting the restart budget marks it crashed (process_status shows status="crashed"). Manual stop_process never triggers a restart.
@@ -50,9 +56,12 @@ SECURITY & AUDIT:
 Logs are never pushed to you. get_logs is bounded: lines default to 100 and are capped, and responses are truncated at a byte cap. Lifecycle events are pulled via get_events, never broadcast. send_stdin writes to a process's stdin; clear_logs empties a buffer; stop_process sends SIGTERM to the whole process group (then SIGKILL after the grace period).`
 
 // NewServer builds the MCP server wired to a runtime facade. The facade is
-// either a local *runtime.Runtime (session-scoped, the default) or a daemon
-// Client (thin client of a long-lived daemon); the handlers are identical for
-// both because all process-management logic lives behind the Facade interface.
+// either a local *runtime.Runtime (session-scoped, the default) or a *Bridge
+// (thin client of the per-user daemon); the handlers are identical for both
+// because all process-management logic lives behind the Facade interface.
+// v3 tools (get_project_info, validate/plan/apply_config, search_logs,
+// list_sessions) are registered alongside; they require the daemon and
+// return a descriptive error in embedded mode.
 func NewServer(rt runtime.Facade, logger *slog.Logger) *mcp.Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -61,7 +70,9 @@ func NewServer(rt runtime.Facade, logger *slog.Logger) *mcp.Server {
 		&mcp.Implementation{Name: "agent-runtime", Version: Version},
 		&mcp.ServerOptions{Instructions: Instructions},
 	)
-	registerTools(server, &handlers{rt: rt, logger: logger})
+	h := &handlers{rt: rt, logger: logger}
+	registerTools(server, h)
+	registerV3Tools(server, h)
 	return server
 }
 

@@ -92,8 +92,8 @@ func TestDaemonCore_StartSeeStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if fmt.Sprint(got["id"]) != started.ProcessID {
-		t.Fatalf("get id = %v", got["id"])
+	if fmt.Sprint(got["process_id"]) != started.ProcessID {
+		t.Fatalf("get process_id = %v", got["process_id"])
 	}
 	list, err := cl.ProcessService().List(ctx, resA.WorkspaceID, false)
 	if err != nil || len(list) != 1 {

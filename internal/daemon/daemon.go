@@ -30,6 +30,16 @@ func PidPath(projectDir string) string    { return filepath.Join(Dir(projectDir)
 func LogPath(projectDir string) string    { return filepath.Join(Dir(projectDir), "daemon.log") }
 func LockPath(projectDir string) string   { return filepath.Join(Dir(projectDir), "daemon.lock") }
 
+// HandoverPath is the marker migrate writes before SIGTERM so a patched
+// v2.x daemon leaves its processes for v3 adoption.
+func HandoverPath(projectDir string) string { return filepath.Join(Dir(projectDir), "handover") }
+
+// handoverRequested reports whether migrate asked this daemon to hand over.
+func handoverRequested(projectDir string) bool {
+	_, err := os.Stat(HandoverPath(projectDir))
+	return err == nil
+}
+
 // ErrAlreadyRunning is returned by Start when a live daemon already owns the
 // project.
 var ErrAlreadyRunning = errors.New("daemon is already running")

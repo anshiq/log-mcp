@@ -194,6 +194,11 @@ func (c *SessionServiceClient) Close(ctx context.Context, sessionID string) erro
 	return c.client.call(ctx, "SessionService", "Close", map[string]any{"sessionId": sessionID}, nil)
 }
 
+// Ping is the unary heartbeat for long-lived bridges.
+func (c *SessionServiceClient) Ping(ctx context.Context, sessionID string) error {
+	return c.client.call(ctx, "SessionService", "Ping", map[string]any{"sessionId": sessionID}, nil)
+}
+
 // --- Config ---
 
 func (c *ConfigServiceClient) Get(ctx context.Context, workspaceID string) (map[string]any, error) {

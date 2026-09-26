@@ -129,6 +129,13 @@ func (c *Client) call(ctx context.Context, service, method string, req, resp any
 	return json.NewDecoder(httpResp.Body).Decode(resp)
 }
 
+// Call invokes a daemon RPC by service/method with a JSON body. It is
+// the escape hatch for callers (like the MCP bridge) that need endpoints
+// without a dedicated typed method yet.
+func (c *Client) Call(ctx context.Context, service, method string, req, resp any) error {
+	return c.call(ctx, service, method, req, resp)
+}
+
 // SocketPath returns the daemon socket this client dials.
 func (c *Client) SocketPath() string { return c.socket }
 

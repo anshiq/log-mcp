@@ -1,4 +1,5 @@
 ---
+version: 3
 name: agent-runtime-ready
 description: Use when scaffolding, creating, or modifying any runnable application (web server, worker, CLI, backend service) or its logging/startup/shutdown/config code so it integrates with the agent-runtime MCP process supervisor (start_process, wait_for_log, get_logs, signal_process, get_process_env, open_shell, agent-runtime.yaml). Ensures a detectable readiness line, clean stdout/stderr, graceful SIGTERM/SIGINT shutdown, env-only config, and a declared app entry.
 ---
@@ -146,3 +147,13 @@ This skill is for runnable, long-lived processes supervised by agent-runtime.
 Pure library code, and one-shot scripts that start and exit immediately,
 don't need the readiness/shutdown contract — though they still benefit from
 the env-only configuration convention and a `.env.example`.
+
+## v3 daemon notes
+
+- Processes **survive your session**. On connect, `list_processes` shows what
+  earlier sessions started — re-attach (`process_status`, `get_logs`) instead
+  of re-starting. `list_sessions` shows who else is attached.
+- `get_project_info` tells you where the project YAML lives now (central
+  store path, editable directly or via `validate_config` / `plan_config` /
+  `apply_config`). The repo checkout is no longer the source of truth.
+- `search_logs` searches the whole workspace history, not just one tail.

@@ -1,3 +1,9 @@
+---
+name: agent-runtime-logging
+version: 3
+description: Structured logging that makes an app's stdout/stderr filterable and correlatable by the agent-runtime MCP (get_logs, wait_for_log, search_logs).
+---
+
 # skill: agent-runtime-logging
 
 Structured logging that makes an app's stdout/stderr **filterable and
@@ -141,3 +147,9 @@ One-shot scripts that start and exit immediately don't need the full
 dimension set — but they still benefit from the `key=value`, one-line-per-event
 rule and `PYTHONUNBUFFERED=1`, because `get_logs`/`wait_for_log` work the same
 way for them. Pure library code that emits no logs is out of scope.
+
+## v3 daemon notes
+
+- Lines are indexed per workspace (FTS5) and searchable via `search_logs`
+  across restarts — keep the `level`/`msg` shape stable so history stays
+  queryable. Processes outlive sessions; log history does too.

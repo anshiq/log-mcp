@@ -131,6 +131,15 @@ func Run(loaded *config.Loaded, logger *slog.Logger) error {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
 	<-sigc
+	// v3 handover: migrate writes <project>/.agent-runtime/handover before
+	// SIGTERM so a patched v2.x skips stopping processes (or honours
+	// AGENT_RUNTIME_HANDOVER=1 when set); the v3 daemon re-attaches via
+	// the legacy adopt path instead of supervising fresh.
+	if os.Getenv("AGENT_RUNTIME_HANDOVER") == "1" || handoverRequested(loaded.ProjectDir) {
+		logger.Info("daemon handing over processes to v3; leaving children running")
+		srv.Close()
+		return nil
+	}
 	logger.Info("daemon shutting down")
 	srv.Close()
 	return rt.Shutdown()

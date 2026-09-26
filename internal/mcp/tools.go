@@ -159,10 +159,10 @@ func registerTools(server *mcp.Server, h *handlers) {
 		})
 
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "list_processes", Description: "List every process THIS runtime manages, including exited and stopped ones. Use it to recover a lost process_id or to find what is running before starting anything new."},
-		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *api.ListResult, error) {
-			h.log(ctx, "list_processes", nil)
-			res, err := h.rt.List()
+		&mcp.Tool{Name: "list_processes", Description: "List processes including exited and stopped ones. Use it to recover a lost process_id or to find what is running before starting anything new. Scoped to this session's workspace by default; pass scope=all to see every workspace on this machine."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in listProcessesIn) (*mcp.CallToolResult, *api.ListResult, error) {
+			h.log(ctx, "list_processes", in)
+			res, err := listScoped(h, in.Scope)
 			if err != nil {
 				return nil, nil, err
 			}

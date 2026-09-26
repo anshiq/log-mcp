@@ -27,34 +27,36 @@ import (
 	"agent-runtime/internal/httpserve"
 	"agent-runtime/internal/integrate"
 	rtmcp "agent-runtime/internal/mcp"
+	"agent-runtime/internal/platform/paths"
 	"agent-runtime/internal/runtime"
 )
 
 // Serve runs the MCP stdio server until the client disconnects or a shutdown
-// signal arrives. With runtime.daemon: true it serves over a long-lived daemon
-// (processes survive the session); otherwise it is the default session-scoped
-// path and gracefully stops all managed processes on exit.
+// signal arrives. In v3 the bridge dials the per-user daemon (started on
+// demand) and all sessions share its processes; --embedded keeps the legacy
+// session-scoped mode for one minor release to de-risk the rollout.
 func Serve(loaded *config.Loaded, logger *slog.Logger) error {
+	return serveStdio(loaded, logger, serveOptions{})
+}
+
+type serveOptions struct {
+	embedded bool
+	project  string
+}
+
+// serveStdio runs the MCP bridge (default) or the embedded runtime.
+func serveStdio(loaded *config.Loaded, logger *slog.Logger, opts serveOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if loaded.Config.Runtime.Daemon {
-		// Ensure a daemon is running, then serve as its thin client. On exit we
-		// do NOT shut the daemon down: its processes keep running for the next
-		// session to re-attach.
-		started, err := daemon.Start(loaded, logger)
-		if err != nil {
-			return err
+	if !opts.embedded {
+		if bridge, err := dialBridge(loaded, logger, opts); err == nil {
+			defer bridge.Close()
+			server := rtmcp.NewServer(bridge, logger)
+			return server.Run(ctx, &mcp.StdioTransport{})
+		} else {
+			logger.Warn("daemon unreachable; falling back to embedded runtime", "error", err)
 		}
-		if started {
-			logger.Info("daemon spawned; waiting for it to become ready")
-			if err := daemon.WaitReady(loaded.ProjectDir, 10*time.Second); err != nil {
-				return err
-			}
-		}
-		client := daemon.NewClient(daemon.SocketPath(loaded.ProjectDir))
-		server := rtmcp.NewServer(client, logger)
-		return server.Run(ctx, &mcp.StdioTransport{})
 	}
 
 	rt := runtime.New(loaded, logger)
@@ -64,6 +66,30 @@ func Serve(loaded *config.Loaded, logger *slog.Logger) error {
 		err = serr
 	}
 	return err
+}
+
+// dialBridge connects serve to the per-user daemon: socket discovery,
+// version handshake, workspace resolution and session registration.
+func dialBridge(loaded *config.Loaded, logger *slog.Logger, opts serveOptions) (*rtmcp.Bridge, error) {
+	p := paths.User()
+	if err := p.EnsureDirs(); err != nil {
+		return nil, err
+	}
+	// On-demand spawn: the first agent starts agentd via the flock race.
+	d := daemon.New(p.SocketPath(), p.Data)
+	if !d.IsRunning() {
+		if err := d.Start(); err != nil {
+			return nil, fmt.Errorf("start daemon: %w", err)
+		}
+		if err := d.WaitReady(5 * time.Second); err != nil {
+			return nil, err
+		}
+	}
+	workspace := opts.project
+	if workspace == "" {
+		workspace = loaded.ProjectDir
+	}
+	return rtmcp.DialBridge(p.SocketPath(), workspace, "", logger)
 }
 
 // ServeHTTP runs the MCP server over the streamable-HTTP transport on addr
@@ -132,7 +158,10 @@ func Integrate(args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic|skill> [--write] [--remove] [--scope global|project] [--yes] [--create] [--no-verify]")
+		return errors.New("usage: agent-runtime integrate <claude|codex|gemini|opencode|generic|skill|status> [--write] [--remove] [--scope global|project] [--yes] [--create] [--no-verify]")
+	}
+	if pos[0] == "status" {
+		return integrateStatus()
 	}
 	if pos[0] == "skill" {
 		return integrateSkill(opts)
@@ -277,6 +306,35 @@ func integrateSkill(opts integrateOptions) error {
 			return fmt.Errorf("%s: %w", d, err)
 		}
 		fmt.Printf("installed %s (created=%d updated=%d unchanged=%d)\n", d, created, updated, unchanged)
+	}
+	return nil
+}
+
+// integrateStatus prints the harness matrix: detected binaries, MCP and
+// skills state per harness (global scope). GUI-independent exit for Phase 6.
+func integrateStatus() error {
+	fmt.Printf("%-15s %-9s %-8s %-7s %s\n", "HARNESS", "DETECTED", "MCP", "SKILLS", "VERSION")
+	for _, d := range integrate.Descriptors() {
+		det := integrate.DetectGlobal(d)
+		mcp := "-"
+		if det.MCPConfigured {
+			mcp = "yes"
+		}
+		skills := "-"
+		if len(det.SkillsInstalled) > 0 {
+			skills = strings.Join(det.SkillsInstalled, ",")
+		}
+		detected := "-"
+		if det.Detected {
+			detected = "yes"
+		}
+		fmt.Printf("%-15s %-9s %-8s %-7s %s\n", d.ID, detected, mcp, skills, det.Version)
+	}
+	if updates := integrate.CheckSkillUpdates(); len(updates) > 0 {
+		fmt.Println("\noutdated skills:")
+		for _, u := range updates {
+			fmt.Printf("  %s/%s: have %q want %q\n", u.Harness, u.Name, u.Have, u.Want)
+		}
 	}
 	return nil
 }

@@ -205,9 +205,25 @@ func (s *Server) routeSession(mux *http.ServeMux) {
 	p := "/agentruntime.v1.SessionService/"
 	mux.HandleFunc(p+"Register", s.wrap(s.sessRegister))
 	mux.HandleFunc(p+"Heartbeat", s.sessHeartbeat)
+	mux.HandleFunc(p+"Ping", s.wrap(s.sessPing))
 	mux.HandleFunc(p+"ListSessions", s.wrap(s.sessList))
 	mux.HandleFunc(p+"GetSession", s.wrap(s.sessGet))
 	mux.HandleFunc(p+"Close", s.wrap(s.sessClose))
+}
+
+// sessPing is the unary heartbeat used by the MCP bridge (cheap,
+// no stream). Missing/closed sessions get a clear error so the bridge
+// re-registers.
+func (s *Server) sessPing(w http.ResponseWriter, r *http.Request) (any, error) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+	}
+	_ = decode(r, &req)
+	if err := s.engine.Sessions().Heartbeat(req.SessionID); err != nil {
+		return nil, err
+	}
+	_ = s.engine.Store().HeartbeatSession(req.SessionID)
+	return map[string]any{"ok": true}, nil
 }
 
 func (s *Server) sessRegister(w http.ResponseWriter, r *http.Request) (any, error) {

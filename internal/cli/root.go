@@ -75,6 +75,14 @@ One-shot commands:
 		newIntegrateCmd(loaded, logger),
 		newDaemonCmd(loaded, logger),
 		newProjectCmd(loaded, logger),
+		newDaemonPsCmd(loaded, logger),
+		newDaemonLogsCmd(loaded, logger),
+		newDaemonStartCmd(loaded, logger),
+		newDaemonStopCmd(loaded, logger),
+		newDaemonRestartCmd(loaded, logger),
+		newDaemonConfigCmd(loaded, logger),
+		newDaemonSessionsCmd(loaded, logger),
+		newMigrateCmd(loaded, logger),
 		newVersionCmd(),
 	)
 	if s != nil {
@@ -99,18 +107,25 @@ func newReplCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 
 func newServeCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 	var httpAddr string
+	var embedded bool
+	var project string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the MCP server over stdio (or --http)",
-		Long:  "Run the MCP stdio server until the client disconnects or a shutdown signal arrives, then gracefully stop all managed processes. With --http ADDR, serve over the streamable-HTTP transport instead (requires runtime.http.token).",
+		Long:  "Run the MCP server as a thin client of the per-user daemon (started on demand). With --embedded, run the legacy session-scoped runtime instead. With --http ADDR, serve over the streamable-HTTP transport instead (requires runtime.http.token).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if httpAddr != "" {
 				return ServeHTTP(loaded, logger, httpAddr)
+			}
+			if embedded || project != "" {
+				return serveStdio(loaded, logger, serveOptions{embedded: embedded, project: project})
 			}
 			return Serve(loaded, logger)
 		},
 	}
 	cmd.Flags().StringVar(&httpAddr, "http", "", "serve over streamable-HTTP on this address (e.g. :7341) instead of stdio; requires runtime.http.token")
+	cmd.Flags().BoolVar(&embedded, "embedded", false, "legacy session-scoped runtime instead of the daemon bridge (removed in v3.2)")
+	cmd.Flags().StringVar(&project, "project", "", "workspace path or id to serve (default: current project)")
 	return cmd
 }
 

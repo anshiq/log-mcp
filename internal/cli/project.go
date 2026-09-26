@@ -27,6 +27,7 @@ func newProjectCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 		Long:  "Resolve working directories to stable project identities (locator chain: path → dev/ino → git → fingerprints). State lives in ~/.local/share/agent-runtime/state.db, never in the repo.",
 	}
 	cmd.AddCommand(
+		newProjectTrustCmd(),
 		&cobra.Command{
 			Use:   "resolve [dir]",
 			Short: "Resolve a directory to project + workspace IDs",

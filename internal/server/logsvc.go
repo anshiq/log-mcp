@@ -6,10 +6,12 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"agent-runtime/internal/logpipe"
 	"agent-runtime/internal/logs"
 	"agent-runtime/pkg/api"
 )
@@ -78,6 +80,19 @@ func (s *Server) logSearch(w http.ResponseWriter, r *http.Request) (any, error) 
 	}
 	var matches []any
 	truncated := false
+	// Workspace FTS index first (history, including migrated v2 logs),
+	// then the live ring buffers. Segments stay authoritative.
+	if req.WorkspaceID != "" && !req.Regex {
+		if hits, trunc, err := s.searchIndex(req.WorkspaceID, ids, req.Query, maxRows-len(matches)); err == nil {
+			for _, h := range hits {
+				matches = append(matches, map[string]any{
+					"processId": h.ProcessID, "line": h.Line,
+					"stream": streamName(h.Stream), "timestamp": h.TS,
+				})
+			}
+			truncated = truncated || trunc
+		}
+	}
 	for _, id := range ids {
 		_, rt, _, err := s.findProcess(id)
 		if err != nil {
@@ -120,6 +135,34 @@ func (s *Server) logSearch(w http.ResponseWriter, r *http.Request) (any, error) 
 		"matches": matches, "truncatedScan": truncated,
 		"totalEstimate": len(matches),
 	}, nil
+}
+
+// searchIndex queries the per-workspace FTS index (history + migrated logs).
+func (s *Server) searchIndex(workspaceID string, processes []string, query string, maxRows int) ([]logpipe.SearchHit, bool, error) {
+	if maxRows <= 0 {
+		return nil, false, nil
+	}
+	idxPath := filepath.Join(s.engine.DataDir(), "logs", workspaceID, "index.db")
+	idx, err := logpipe.OpenWorkspaceIndex(idxPath)
+	if err != nil {
+		return nil, false, err
+	}
+	defer idx.Close()
+	return idx.Search(query, processes, nil, 0, 0, maxRows)
+}
+
+func streamName(st uint8) string {
+	switch st {
+	case 1:
+		return "stdout"
+	case 2:
+		return "stderr"
+	case 3:
+		return "pty"
+	case 4:
+		return "system"
+	}
+	return "stdout"
 }
 
 func matchLogLine(line, query string, regex, caseSensitive bool) bool {
@@ -236,7 +279,7 @@ func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 					}
 					if err := sw.send(map[string]any{"kind": "line",
 						"processId": sb.id, "stream": string(e.Stream),
-						"line":      e.Line, "cursor": time.Now().UnixNano()}); err != nil {
+						"line": e.Line, "cursor": time.Now().UnixNano()}); err != nil {
 						return
 					}
 				}
