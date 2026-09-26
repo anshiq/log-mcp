@@ -11,19 +11,29 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
-      let pkgs = nixpkgs.legacyPackages.${system}; in {
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        version = "3.0.0";
+      in {
         packages = {
           agent-runtime = pkgs.buildGoModule {
             pname = "agent-runtime";
-            version = "3.0.0";
-            src = ./.;
-            vendorHash = null;
+            inherit version;
+            # This flake lives in packaging/nix; the Go module is the repo root.
+            src = ../..;
+            # Real hash (no vendor/ dir): refresh after go.mod/go.sum changes with
+            #   nix build ./packaging/nix#agent-runtime  # read expected hash from error
+            vendorHash = "sha256-zOGrs8/D4bgU9yvv7HVBE21OZ1du2QCTFViQ02E2StE=";
             subPackages = [
               "cmd/agent-runtime"
               "cmd/agentd"
               "cmd/agent-runtime-shim"
             ];
-            ldflags = [ "-s" "-w" ];
+            ldflags = [
+              "-s"
+              "-w"
+              "-X agent-runtime/internal/mcp.Version=${version}"
+            ];
           };
           default = self.packages.${system}.agent-runtime;
         };
