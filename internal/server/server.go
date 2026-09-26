@@ -19,22 +19,28 @@ import (
 	"time"
 
 	"agent-runtime/internal/core"
-	"agent-runtime/internal/project"
 )
 
 // Server is the Connect-RPC server that serves the API over
 // a Unix domain socket (h2c) or optionally over authenticated
 // loopback TCP.
 type Server struct {
-	listener net.Listener
-	engine   *core.Engine
-	srv      *http.Server
-	version  string
-	started  time.Time
+	listener   net.Listener
+	engine     *core.Engine
+	srv        *http.Server
+	version    string
+	started    time.Time
+	onShutdown func(keepProcesses bool)
 }
 
 // New creates a new API server over the daemon engine.
 func New(engine *core.Engine, socketPath, version string) (*Server, error) {
+	return NewWithOptions(engine, socketPath, version, nil)
+}
+
+// NewWithOptions creates a server with a shutdown hook (wired by agentd
+// main so Shutdown{keep_processes} drains correctly).
+func NewWithOptions(engine *core.Engine, socketPath, version string, onShutdown func(bool)) (*Server, error) {
 	if err := os.MkdirAll(dirOf(socketPath), 0o700); err != nil {
 		return nil, err
 	}
@@ -47,15 +53,19 @@ func New(engine *core.Engine, socketPath, version string) (*Server, error) {
 		l.Close()
 		return nil, err
 	}
-	s := &Server{listener: l, engine: engine, version: version, started: time.Now()}
+	s := &Server{listener: l, engine: engine, version: version, started: time.Now(), onShutdown: onShutdown}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/agentruntime.v1.SystemService/GetVersion", s.handleGetVersion)
-	mux.HandleFunc("/agentruntime.v1.SystemService/Health", s.handleHealth)
-	mux.HandleFunc("/agentruntime.v1.SystemService/GetStats", s.handleStats)
-	mux.HandleFunc("/agentruntime.v1.ProjectService/Resolve", s.handleResolve)
-	mux.HandleFunc("/agentruntime.v1.ProjectService/ListProjects", s.handleListProjects)
+	s.routeSystem(mux)
+	s.routeProject(mux)
+	s.routeProcess(mux)
+	s.routeLog(mux)
+	s.routeEvent(mux)
+	s.routeSession(mux)
+	s.routeConfig(mux)
+	s.routeAudit(mux)
+	s.routeIntegration(mux)
 	s.srv = &http.Server{
-		Handler:           chain(mux, PeerCredAuth, DeadlineInterceptor, RecoverInterceptor),
+		Handler:           chain(mux, PeerCredAuth, SessionAttr, DeadlineInterceptor, RecoverInterceptor),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s, nil
@@ -95,73 +105,6 @@ func (s *Server) Addr() string { return s.listener.Addr().String() }
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{
-		"daemonVersion": s.version, "apiVersion": "v1",
-		"minClientVersion": "v1", "shimProtocol": 1,
-	})
-}
-
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{
-		"healthy": true, "status": "ready",
-		"uptimeMs": time.Since(s.started).Milliseconds(),
-	})
-}
-
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	projects := 0
-	if store := s.engine.Store(); store != nil {
-		if ps, err := store.ListProjects(); err == nil {
-			projects = len(ps)
-		}
-	}
-	writeJSON(w, map[string]any{
-		"projects":  projects,
-		"processes": 0, "sessions": s.engine.Sessions().Count(),
-	})
-}
-
-func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Path string `json:"path"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	if req.Path == "" {
-		http.Error(w, `{"error":"path required"}`, http.StatusBadRequest)
-		return
-	}
-	// Canonicalize via workspace-root detection so subdirectories map
-	// to the same project (§4.3.1).
-	root := project.WorkspaceRoot(req.Path)
-	pid, wid, err := s.engine.ResolveWorkspace(root)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]any{
-		"projectId": string(pid), "workspaceId": string(wid),
-		"newlyCreated": false,
-	})
-}
-
-func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	ps, err := s.engine.Store().ListProjects()
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
-		return
-	}
-	out := make([]any, 0, len(ps))
-	for _, p := range ps {
-		wss, _ := s.engine.Store().ListWorkspaces(p.ID)
-		out = append(out, map[string]any{
-			"id": p.ID, "name": p.Name, "configMode": p.ConfigMode,
-			"lastUsedAt": p.LastUsedAt, "workspaceCount": len(wss),
-		})
-	}
-	writeJSON(w, map[string]any{"projects": out})
 }
 
 // --- interceptors ---

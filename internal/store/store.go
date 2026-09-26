@@ -686,6 +686,21 @@ func (d *DB) IsTrusted(workspaceID, path string) (bool, error) {
 	return count > 0, err
 }
 
+// RepoTrustSHA returns the trusted sha256 for (workspace, path).
+// Trust is (workspace_id, path, sha256): a changed file becomes untrusted
+// until re-approved (§9.3).
+func (d *DB) RepoTrustSHA(workspaceID, path string) (string, bool, error) {
+	var sha string
+	err := d.db.QueryRow("SELECT sha256 FROM repo_trust WHERE workspace_id = ? AND path = ?", workspaceID, path).Scan(&sha)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return sha, true, nil
+}
+
 // Fingerprint is a git fingerprint for a project.
 type Fingerprint struct {
 	ProjectID string
@@ -985,4 +1000,258 @@ func (d *DB) AppendAudit(sess, harness, project, ws, action, args, result string
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		time.Now().Unix(), nullStr(sess), nullStr(harness), nullStr(project), nullStr(ws), action, nullStr(args), result, ms)
 	return err
+}
+
+// GetProcess returns a process row by global id.
+func (d *DB) GetProcess(id string) (*ProcessRow, error) {
+	var r ProcessRow
+	var app, spec, lifetime, restart, startedBy sql.NullString
+	var configRev sql.NullInt64
+	err := d.db.QueryRow(`SELECT id, workspace_id, app, spec_json, lifetime, restart_policy,
+		started_by_session, config_rev, created_at FROM processes WHERE id=? AND removed_at IS NULL`, id).
+		Scan(&r.ID, &r.WorkspaceID, &app, &spec, &lifetime, &restart, &startedBy, &configRev, &r.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	r.App, r.SpecJSON, r.Lifetime, r.Restart, r.StartedBy =
+		app.String, spec.String, lifetime.String, restart.String, startedBy.String
+	if configRev.Valid {
+		r.ConfigRev = configRev.Int64
+	}
+	return &r, nil
+}
+
+// ListProcesses returns live process rows for a workspace.
+func (d *DB) ListProcesses(workspaceID string) ([]*ProcessRow, error) {
+	rows, err := d.db.Query(`SELECT id, workspace_id, app, spec_json, lifetime, restart_policy,
+		started_by_session, config_rev, created_at FROM processes
+		WHERE workspace_id=? AND removed_at IS NULL ORDER BY created_at DESC`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*ProcessRow
+	for rows.Next() {
+		var r ProcessRow
+		var app, spec, lifetime, restart, startedBy sql.NullString
+		var configRev sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.WorkspaceID, &app, &spec, &lifetime, &restart,
+			&startedBy, &configRev, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.App, r.SpecJSON, r.Lifetime, r.Restart, r.StartedBy =
+			app.String, spec.String, lifetime.String, restart.String, startedBy.String
+		if configRev.Valid {
+			r.ConfigRev = configRev.Int64
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+// ConfigRevision mirrors one config_revisions row.
+type ConfigRevision struct {
+	ID        int64
+	ProjectID string
+	Layer     string
+	Content   string
+	SHA256    string
+	Valid     bool
+	Errors    string
+	Source    string
+	SessionID string
+	Message   string
+	CreatedAt int64
+}
+
+// AddRevision records a config revision and returns its id.
+func (d *DB) AddRevision(projectID, layer, content, sha string, valid bool, errors, source, session, message string) (int64, error) {
+	v := 0
+	if valid {
+		v = 1
+	}
+	res, err := d.db.Exec(`INSERT INTO config_revisions
+		(project_id, layer, content, sha256, valid, errors_json, source, session_id, message, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		projectID, layer, content, sha, v, nullStr(errors), source, nullStr(session), nullStr(message), time.Now().Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListRevisions returns revisions newest-first.
+func (d *DB) ListRevisions(projectID, layer string, limit int) ([]*ConfigRevision, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	q := `SELECT id, project_id, layer, content, sha256, valid, errors_json, source, session_id, message, created_at
+		FROM config_revisions WHERE project_id=?`
+	args := []any{projectID}
+	if layer != "" {
+		q += ` AND layer=?`
+		args = append(args, layer)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*ConfigRevision
+	for rows.Next() {
+		var r ConfigRevision
+		var v int
+		var errs, sess, msg sql.NullString
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Layer, &r.Content, &r.SHA256,
+			&v, &errs, &r.Source, &sess, &msg, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.Valid = v != 0
+		r.Errors, r.SessionID, r.Message = errs.String, sess.String, msg.String
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+// GetRevision returns one revision by id.
+func (d *DB) GetRevision(id int64) (*ConfigRevision, error) {
+	var r ConfigRevision
+	var v int
+	var errs, sess, msg sql.NullString
+	err := d.db.QueryRow(`SELECT id, project_id, layer, content, sha256, valid, errors_json, source, session_id, message, created_at
+		FROM config_revisions WHERE id=?`, id).Scan(
+		&r.ID, &r.ProjectID, &r.Layer, &r.Content, &r.SHA256,
+		&v, &errs, &r.Source, &sess, &msg, &r.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	r.Valid = v != 0
+	r.Errors, r.SessionID, r.Message = errs.String, sess.String, msg.String
+	return &r, nil
+}
+
+// SetActiveRevision points the project at its last good revision.
+func (d *DB) SetActiveRevision(projectID string, rev int64) error {
+	_, err := d.db.Exec("UPDATE projects SET active_rev=?, updated_at=? WHERE id=?", rev, time.Now().Unix(), projectID)
+	return err
+}
+
+// SetSetting / GetSetting persist daemon settings (SystemService).
+func (d *DB) SetSetting(key, valueJSON string) error {
+	_, err := d.db.Exec(`INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at`,
+		key, valueJSON, time.Now().Unix())
+	return err
+}
+
+// GetSetting returns a setting value or ("", false) when absent.
+func (d *DB) GetSetting(key string) (string, bool, error) {
+	var v string
+	err := d.db.QueryRow("SELECT value_json FROM settings WHERE key=?", key).Scan(&v)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// ListEvents pages the events table (cursor = row id).
+func (d *DB) ListEvents(workspace, process string, since int64, limit int) ([]*EventRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := `SELECT id, ts, type, project_id, workspace_id, process_id, instance_id, session_id, payload_json
+		FROM events WHERE id>?`
+	args := []any{since}
+	if workspace != "" {
+		q += ` AND workspace_id=?`
+		args = append(args, workspace)
+	}
+	if process != "" {
+		q += ` AND process_id=?`
+		args = append(args, process)
+	}
+	q += ` ORDER BY id ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*EventRow
+	for rows.Next() {
+		var r EventRow
+		var proj, ws, proc, inst, sess, payload sql.NullString
+		if err := rows.Scan(&r.ID, &r.TS, &r.Type, &proj, &ws, &proc, &inst, &sess, &payload); err != nil {
+			return nil, err
+		}
+		r.ProjectID, r.WorkspaceID, r.ProcessID = proj.String, ws.String, proc.String
+		r.InstanceID, r.SessionID, r.Payload = inst.String, sess.String, payload.String
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+// EventRow mirrors one events row.
+type EventRow struct {
+	ID          int64
+	TS          int64
+	Type        string
+	ProjectID   string
+	WorkspaceID string
+	ProcessID   string
+	InstanceID  string
+	SessionID   string
+	Payload     string
+}
+
+// AuditRow mirrors one audit row.
+type AuditRow struct {
+	ID          int64
+	TS          int64
+	SessionID   string
+	Harness     string
+	ProjectID   string
+	WorkspaceID string
+	Action      string
+	Args        string
+	Result      string
+	DurationMs  int64
+}
+
+// ListAudit pages the audit table newest-first.
+func (d *DB) ListAudit(workspace string, limit int) ([]*AuditRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := `SELECT id, ts, session_id, harness, project_id, workspace_id, action, args_json, result, duration_ms
+		FROM audit`
+	args := []any{}
+	if workspace != "" {
+		q += ` WHERE workspace_id=?`
+		args = append(args, workspace)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*AuditRow
+	for rows.Next() {
+		var r AuditRow
+		var sess, harness, proj, ws, argsJ sql.NullString
+		if err := rows.Scan(&r.ID, &r.TS, &sess, &harness, &proj, &ws, &r.Action, &argsJ, &r.Result, &r.DurationMs); err != nil {
+			return nil, err
+		}
+		r.SessionID, r.Harness, r.ProjectID = sess.String, harness.String, proj.String
+		r.WorkspaceID, r.Args = ws.String, argsJ.String
+		out = append(out, &r)
+	}
+	return out, rows.Err()
 }

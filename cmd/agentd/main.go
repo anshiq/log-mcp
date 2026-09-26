@@ -82,7 +82,9 @@ func run(logger *slog.Logger) error {
 	}
 	defer db.Close()
 
-	engine := core.New(db)
+	engine := core.NewWithOptions(db, core.Options{
+		DataDir: p.Data, Logger: logger, Version: version,
+	})
 	defer engine.Close()
 
 	// Reconnect shims from the previous generation before serving.
@@ -95,14 +97,26 @@ func run(logger *slog.Logger) error {
 		logger.Info("reconnected shims", "reconnected", len(rep.Reconnected), "orphaned", len(rep.Orphaned))
 	}
 
-	srv, err := server.New(engine, socketPath, version)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, err := server.NewWithOptions(engine, socketPath, version, func(keep bool) {
+		logger.Info("shutdown requested via API", "keepProcesses", keep)
+		if !keep {
+			// stop --all: stop every managed process concurrently first.
+			for _, pr := range engine.LoadedRuntimes() {
+				if rt, err := pr.Runtime(); err == nil {
+					_ = rt.Shutdown()
+				}
+			}
+		}
+		cancel()
+	})
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
 	defer srv.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
 		if err := srv.Serve(ctx); err != nil {
 			logger.Error("api server", "error", err.Error())
@@ -121,7 +135,12 @@ func run(logger *slog.Logger) error {
 		case syscall.SIGHUP:
 			logger.Info("reload (SIGHUP): config watcher picks up changes; nothing to do")
 		case syscall.SIGQUIT:
-			logger.Info("agentd draining with --all: stopping processes first (Phase 3 wires manager)")
+			logger.Info("agentd draining with --all: stopping managed processes")
+			for _, pr := range engine.LoadedRuntimes() {
+				if rt, err := pr.Runtime(); err == nil {
+					_ = rt.Shutdown()
+				}
+			}
 			return nil
 		default:
 			logger.Info("agentd draining: detaching shims, processes keep running", "signal", sig.String())

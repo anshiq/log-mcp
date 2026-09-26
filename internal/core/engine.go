@@ -11,11 +11,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"agent-runtime/internal/project"
+	iruntime "agent-runtime/internal/runtime"
 	"agent-runtime/internal/session"
 	"agent-runtime/internal/store"
 )
@@ -24,10 +26,16 @@ import (
 // One Engine per OS user hosts every project.
 type Engine struct {
 	store    *store.DB
+	dataDir  string
+	logger   *slog.Logger
+	version  string
 	projects *project.Registry
 	runtimes sync.Map // workspaceID -> *ProjectRuntime
 	sessions *session.Registry
+	mcpSubs  MCPSubscriptions
 	degraded sync.Map // workspaceID -> *degradedInfo
+	// forwarded tracks workspaces with an active event forwarder.
+	forwarded map[string]bool
 
 	mu     sync.RWMutex
 	ctx    context.Context
@@ -40,38 +48,49 @@ type degradedInfo struct {
 	stack  string
 }
 
-// ProjectRuntime hosts the runtime for a single workspace.
-// It mirrors today's runtime.Runtime minus globals; manager/policy/
-// audit/watcher are wired in Phase 3 when the Connect handlers land.
-// Until then the struct carries identity + lifecycle so the daemon,
-// CLI and tests can resolve, load, unload and degrade per project.
-type ProjectRuntime struct {
-	wsID      string
-	projectID string
-	loadedAt  time.Time
-	lastUsed  time.Time
-	degraded  bool
-	mu        sync.RWMutex
+// Options configures the engine.
+type Options struct {
+	DataDir string
+	Logger  *slog.Logger
+	Version string
 }
 
 // New creates a new multi-tenant engine.
 func New(db *store.DB) *Engine {
+	return NewWithOptions(db, Options{})
+}
+
+// NewWithOptions creates an engine with data dir / logger / version.
+func NewWithOptions(db *store.DB, opt Options) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
+	if opt.Logger == nil {
+		opt.Logger = slog.Default()
+	}
 	e := &Engine{
 		store:    db,
+		dataDir:  opt.DataDir,
+		logger:   opt.Logger,
+		version:  opt.Version,
 		projects: project.NewRegistry(storeAdapter{db}),
 		sessions: session.NewRegistry(),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	go e.reapLoop()
 	return e
 }
 
 // Store returns the state database (daemon is the only writer).
 func (e *Engine) Store() *store.DB { return e.store }
 
+// DataDir returns the daemon data dir (central storage root).
+func (e *Engine) DataDir() string { return e.dataDir }
+
 // Sessions returns the session registry.
 func (e *Engine) Sessions() *session.Registry { return e.sessions }
+
+// MCPSubscriptions returns the pull-model subscription tracker.
+func (e *Engine) MCPSubscriptions() *MCPSubscriptions { return &e.mcpSubs }
 
 // Go runs fn scoped to a project: panics are recovered, logged with a
 // stack, counted as degraded, and never take the daemon down.
@@ -108,9 +127,7 @@ func (e *Engine) IsDegraded(workspaceID string) (bool, string) {
 func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error) {
 	if rt, ok := e.runtimes.Load(workspaceID); ok {
 		pr := rt.(*ProjectRuntime)
-		pr.mu.Lock()
-		pr.lastUsed = time.Now()
-		pr.mu.Unlock()
+		pr.touch()
 		return pr, nil
 	}
 
@@ -129,29 +146,153 @@ func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error)
 	rt := &ProjectRuntime{
 		wsID:      ws.ID,
 		projectID: ws.ProjectID,
+		wsPath:    ws.Path,
+		dataDir:   e.dataDir,
+		logger:    e.logger,
 		loadedAt:  time.Now(),
 		lastUsed:  time.Now(),
+		stale:     map[string]bool{},
+		trusted: func(workspaceID, path, sha string) bool {
+			ok, err := e.store.IsTrusted(workspaceID, path)
+			if err != nil || !ok {
+				return false
+			}
+			have, found, err := e.store.RepoTrustSHA(workspaceID, path)
+			if err != nil || !found {
+				return false
+			}
+			return have == sha
+		},
 	}
 	e.runtimes.Store(workspaceID, rt)
+	_ = e.store.TouchProject(ws.ProjectID)
 	return rt, nil
 }
 
-// UnloadRuntime drops an idle runtime (kept while it has live processes
-// or connected sessions; otherwise unloaded after 10 min per §3.6).
+// forwardEvents persists a runtime's manager-bus events into the events
+// table so WatchEvents/ListEvents serve history + live from one cursor.
+// At most one forwarder runs per workspace (guarded by forwarded set).
+func (e *Engine) forwardEvents(pr *ProjectRuntime) {
+	e.mu.Lock()
+	if e.forwarded == nil {
+		e.forwarded = map[string]bool{}
+	}
+	if e.forwarded[pr.wsID] {
+		e.mu.Unlock()
+		return
+	}
+	e.forwarded[pr.wsID] = true
+	e.mu.Unlock()
+
+	bus := pr.ManagerBus()
+	if bus == nil {
+		e.mu.Lock()
+		delete(e.forwarded, pr.wsID)
+		e.mu.Unlock()
+		return
+	}
+	ch, unsub := bus.Subscribe()
+	e.Go(pr.wsID, func() {
+		defer unsub()
+		for ev := range ch {
+			_, _ = e.store.AppendEvent(
+				ev.Timestamp.UnixNano(), string(ev.Type),
+				pr.projectID, pr.wsID, ev.ProcessID, ev.InstanceID, "", "",
+			)
+		}
+	})
+}
+
+// UnloadRuntime drops an idle runtime and shuts its processes down.
 func (e *Engine) UnloadRuntime(workspaceID string) {
-	e.runtimes.Delete(workspaceID)
+	if rt, ok := e.runtimes.LoadAndDelete(workspaceID); ok {
+		rt.(*ProjectRuntime).shutdown()
+	}
+}
+
+// reapLoop unloads runtimes idle for 10+ minutes (no live processes and
+// no connected sessions) and reaps dead sessions for lease expiry.
+func (e *Engine) reapLoop() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-t.C:
+			e.reapOnce()
+		}
+	}
+}
+
+func (e *Engine) reapOnce() {
+	for _, id := range e.sessions.ReapExpired(5 * time.Minute) {
+		e.logger.Info("reaped idle session", "session", id)
+	}
+	e.runtimes.Range(func(key, val any) bool {
+		pr := val.(*ProjectRuntime)
+		if time.Since(pr.IdleSince()) < 10*time.Minute {
+			return true
+		}
+		if len(e.sessions.ListByWorkspace(key.(string))) > 0 {
+			return true
+		}
+		if rt, err := pr.Runtime(); err == nil {
+			if procs, err := rt.List(); err == nil && len(procs.Processes) > 0 {
+				return true
+			}
+		}
+		e.UnloadRuntime(key.(string))
+		return true
+	})
 }
 
 // Close unloads all runtimes and stops the engine.
 func (e *Engine) Close() error {
 	e.cancel()
-	e.runtimes.Range(func(_, _ any) bool { return true })
+	e.runtimes.Range(func(key, val any) bool {
+		val.(*ProjectRuntime).shutdown()
+		e.runtimes.Delete(key)
+		return true
+	})
 	return nil
+}
+
+// RangeRuntimes iterates loaded runtimes. The callback returns false to stop.
+func (e *Engine) RangeRuntimes(fn func(*ProjectRuntime) bool) {
+	e.runtimes.Range(func(_, val any) bool {
+		return fn(val.(*ProjectRuntime))
+	})
+}
+
+// LoadedRuntimes returns all currently loaded runtimes.
+func (e *Engine) LoadedRuntimes() []*ProjectRuntime {
+	var out []*ProjectRuntime
+	e.RangeRuntimes(func(pr *ProjectRuntime) bool {
+		out = append(out, pr)
+		return true
+	})
+	return out
 }
 
 // ResolveWorkspace resolves a path to a project and workspace.
 func (e *Engine) ResolveWorkspace(path string) (project.ID, project.WorkspaceID, error) {
 	return e.projects.Resolve(path)
+}
+
+// RuntimeFor returns the hosted process runtime for a workspace, loading
+// it on first use and attaching the event forwarder.
+func (e *Engine) RuntimeFor(workspaceID string) (*ProjectRuntime, *iruntime.Runtime, error) {
+	pr, err := e.GetOrCreateRuntime(workspaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	rt, err := pr.Runtime()
+	if err != nil {
+		return nil, nil, err
+	}
+	e.forwardEvents(pr)
+	return pr, rt, nil
 }
 
 // storeAdapter implements project.Store over *store.DB, converting

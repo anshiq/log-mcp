@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agent-runtime.dev/schema/agent-runtime.v3.json",
+  "title": "agent-runtime project config (v3)",
+  "description": "Project config for agent-runtime v3. Served by ConfigService.GetSchema and used by editors via yaml-language-server.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "enum": [1, 2, 3], "default": 3 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "shell_env": { "type": "string", "enum": ["login", "none"], "default": "login" },
+        "env": { "type": "array", "items": { "type": "string" } },
+        "stop_grace": { "type": "string", "default": "5s" },
+        "log_buffer_lines": { "type": "integer", "default": 10000 },
+        "max_exited_processes": { "type": "integer", "default": 50 },
+        "security": {
+          "type": "object",
+          "properties": {
+            "mode": { "type": "string", "enum": ["trusted", "restricted"], "default": "trusted" }
+          }
+        }
+      }
+    },
+    "apps": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string" },
+          "workdir": { "type": "string" },
+          "command": { "type": "array", "items": { "type": "string" } },
+          "env_file": { "type": "string" },
+          "env": { "type": "array", "items": { "type": "string" } },
+          "readiness": { "type": "array", "items": { "type": "string" } },
+          "health_check": {
+            "type": "object",
+            "properties": {
+              "http": { "type": "string" },
+              "tcp": { "type": "string" },
+              "interval": { "type": "string" },
+              "timeout": { "type": "string" },
+              "failure_threshold": { "type": "integer" }
+            }
+          },
+          "restart": {
+            "type": "object",
+            "properties": {
+              "policy": { "type": "string", "enum": ["never", "on-failure", "always"] },
+              "max_restarts": { "type": "integer" },
+              "backoff": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "cpu": { "type": "string" },
+              "memory": { "type": "string" }
+            }
+          },
+          "lifetime": { "type": "string", "enum": ["persistent", "session"], "default": "persistent" },
+          "autostart": { "type": "boolean", "default": false },
+          "reload": { "type": "string", "enum": ["manual", "restart"], "default": "manual" },
+          "pty": { "type": "boolean", "default": false },
+          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": { "default": { "type": "integer" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
