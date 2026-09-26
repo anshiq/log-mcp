@@ -3,11 +3,10 @@ BIN_DIR := bin
 
 .PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web build-gui ci-check
 
-build: ui-build
+build:
 	go build -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
 	go build -o $(BIN_DIR)/agentd ./cmd/agentd
 	go build -o $(BIN_DIR)/agent-runtime-shim ./cmd/agent-runtime-shim
-	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 # ui builds the shared frontend (GUI + web). The GUI shell embeds a copy.
 ui:
@@ -19,8 +18,10 @@ ui-web:
 ui-build:
 	@if [ -d ui/dist ]; then mkdir -p cmd/agent-runtime-gui/dist && cp -r ui/dist/. cmd/agent-runtime-gui/dist/; fi
 
+# agent-runtime-gui needs cgo + GTK/WebKitGTK dev headers, so it's kept out
+# of the default `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
 build-gui: ui ui-build
-	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+	go build -tags desktop,production,webkit2_41 -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 test:
 	go test ./...

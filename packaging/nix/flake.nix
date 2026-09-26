@@ -23,7 +23,7 @@
             src = ../..;
             # Real hash (no vendor/ dir): refresh after go.mod/go.sum changes with
             #   nix build ./packaging/nix#agent-runtime  # read expected hash from error
-            vendorHash = "sha256-zOGrs8/D4bgU9yvv7HVBE21OZ1du2QCTFViQ02E2StE=";
+            vendorHash = "sha256-4cNfrFOqa187gT3mR3j0REFRKUGB3zB6Owzb0pJguD8=";
             subPackages = [
               "cmd/agent-runtime"
               "cmd/agentd"
@@ -36,6 +36,20 @@
             ];
           };
           default = self.packages.${system}.agent-runtime;
+        };
+        devShells.default = pkgs.mkShell {
+          # cmd/agent-runtime-gui (Wails v2 + systray) needs cgo and native
+          # dev headers not present outside this shell. `make build` (no
+          # gui) doesn't need any of this; only `make build-gui` does:
+          #   nix develop ./packaging/nix -c make build-gui
+          packages = with pkgs; [
+            go
+            nodejs
+            pkg-config
+            gtk3
+            webkitgtk_4_1
+            libayatana-appindicator
+          ];
         };
       }) // {
         homeManagerModules.default = { config, lib, pkgs, ... }:

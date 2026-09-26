@@ -1,11 +1,10 @@
 // Command agent-runtime-gui is the desktop application shell.
-// Framework touchpoints are isolated here so a later move (Wails v2/v3,
-// Tauri) only affects this package.
 //
-// Today it: ensures the daemon, serves the embedded frontend (ui/dist,
-// go:embed) and reverse-proxies /api to agentd.sock with streaming
-// flush. The Wails window/tray/notifications bind onto this same proxy
-// in Phase 7 final assembly; `gui open` prints the local URL.
+// It ensures the daemon, serves the embedded frontend (ui/dist, go:embed)
+// and reverse-proxies /api to agentd.sock with streaming flush, inside a
+// native Wails v2 window with a system tray icon. Closing the window hides
+// it; the tray's Quit item exits agent-runtime-gui but never the daemon.
+// `gui open` prints daemon reachability without opening a window.
 package main
 
 import (
@@ -22,12 +21,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"agent-runtime/internal/platform/paths"
 	"agent-runtime/pkg/client"
 )
 
 //go:embed all:dist
 var embeddedDist embed.FS
+
+//go:embed icon.png
+var trayIcon []byte
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -43,10 +51,7 @@ func run(logger *slog.Logger) error {
 	if len(os.Args) > 1 && os.Args[1] == "open" {
 		return openGUI(logger)
 	}
-	// Default: run the local shell (frontend + /api proxy). The Wails
-	// window loads this same origin; closing the window leaves the tray
-	// (and never stops the daemon).
-	return serveShell(logger, "127.0.0.1:0")
+	return runNative(logger)
 }
 
 func openGUI(logger *slog.Logger) error {
@@ -63,7 +68,7 @@ func openGUI(logger *slog.Logger) error {
 	}
 	fmt.Printf("agent-runtime GUI: daemon %s api %s reachable at %s.\n",
 		v.DaemonVersion, v.APIVersion, p.SocketPath())
-	fmt.Println("Run `agent-runtime-gui` (no args) for the local shell, then open the printed URL.")
+	fmt.Println("Run `agent-runtime-gui` (no args) to open the native window.")
 	return nil
 }
 
@@ -76,7 +81,7 @@ func newProxy(socketPath, agent string) *httputil.ReverseProxy {
 			r.SetURL(target)
 			// The webview calls /api/<Service>/<Method>; the daemon
 			// serves /<Service>/<Method>. Strip the prefix here so one
-			// path scheme works for GUI, web UI and curl.
+			// path scheme works for the native shell, web UI and curl.
 			r.Out.URL.Path = strings.TrimPrefix(r.Out.URL.Path, "/api")
 			r.Out.Header.Set("X-Agent-Runtime-Client", agent)
 		},
@@ -91,24 +96,75 @@ func newProxy(socketPath, agent string) *httputil.ReverseProxy {
 	return proxy
 }
 
-func serveShell(logger *slog.Logger, addr string) error {
+// apiMiddleware routes /api/* to proxy and everything else to next
+// (the embedded frontend), so Wails' AssetServer can serve both from
+// one origin with no CORS.
+func apiMiddleware(proxy *httputil.ReverseProxy) assetserver.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				proxy.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// wailsBindingShim bridges Wails' auto-injected window.go.main.App.*
+// bindings to the window.__wailsBinding contract ui/src/lib/platform.ts
+// already expects, with no changes needed in ui/.
+const wailsBindingShim = `window.__wailsBinding = {
+	notify: window.go.main.App.Notify,
+	openInEditor: window.go.main.App.OpenInEditor,
+	saveDialog: window.go.main.App.SaveDialog,
+	writeFile: window.go.main.App.WriteFile
+};`
+
+func runNative(logger *slog.Logger) error {
 	p := paths.User()
 	if _, err := client.EnsureDaemon(p.SocketPath()); err != nil {
 		return fmt.Errorf("gui: %w", err)
 	}
-	mux := http.NewServeMux()
-	proxy := newProxy(p.SocketPath(), "gui/3.0.0")
-	mux.Handle("/api/", proxy)
 	sub, err := fs.Sub(embeddedDist, "dist")
 	if err != nil {
 		return fmt.Errorf("gui: embedded frontend missing (build ui/ first): %w", err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(sub)))
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("agent-runtime GUI shell at http://%s (proxying /api to %s)\n", ln.Addr(), p.SocketPath())
-	return srv.Serve(ln)
+	proxy := newProxy(p.SocketPath(), "gui/3.0.0")
+	app := &App{}
+
+	return wails.Run(&options.App{
+		Title:  "agent-runtime",
+		Width:  1100,
+		Height: 750,
+		AssetServer: &assetserver.Options{
+			Assets:     sub,
+			Middleware: apiMiddleware(proxy),
+		},
+		OnStartup: func(ctx context.Context) {
+			app.startup(ctx)
+			if hasTray {
+				go runTray(ctx, logger)
+			}
+		},
+		OnDomReady: func(ctx context.Context) {
+			wailsruntime.WindowExecJS(ctx, wailsBindingShim)
+		},
+		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			if !hasTray {
+				// No tray to reopen the window from (see hasTray):
+				// closing the window quits like a normal app.
+				return false
+			}
+			// Closing the window leaves the tray running; only the
+			// tray's Quit item calls runtime.Quit. The daemon is a
+			// separate process and is unaffected either way.
+			wailsruntime.WindowHide(ctx)
+			return true
+		},
+		Bind: []interface{}{app},
+		Linux: &linux.Options{
+			Icon: trayIcon,
+		},
+	})
 }
