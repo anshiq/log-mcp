@@ -1,0 +1,84 @@
+// IntegrationService manages harness integrations and skills.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service IntegrationService {
+  rpc ListHarnesses(ListHarnessesRequest) returns (ListHarnessesResponse);
+  rpc PreviewInstall(PreviewInstallRequest) returns (PreviewInstallResponse);
+  rpc InstallMCP(InstallMCPRequest) returns (InstallMCPResponse);
+  rpc RemoveMCP(RemoveMCPRequest) returns (RemoveMCPResponse);
+  rpc ListSkills(ListSkillsRequest) returns (ListSkillsResponse);
+  rpc InstallSkills(InstallSkillsRequest) returns (InstallSkillsResponse);
+  rpc RemoveSkills(RemoveSkillsRequest) returns (RemoveSkillsResponse);
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse);
+}
+
+message ListHarnessesRequest {}
+message Harness {
+  string id = 1;
+  string display_name = 2;
+  bool installed = 3;
+  string version = 4;
+  map<string, bool> scopes = 5; // scope -> installed
+}
+message ListHarnessesResponse { repeated Harness harnesses = 1; }
+
+message PreviewInstallRequest {
+  string harness = 1;
+  string scope = 2;
+}
+message PreviewInstallResponse {
+  string diff = 1;
+}
+
+message InstallMCPRequest {
+  string harness = 1;
+  string scope = 2;
+}
+message InstallMCPResponse {
+  string path = 1;
+  string diff = 2;
+}
+
+message RemoveMCPRequest {
+  string harness = 1;
+  string scope = 2;
+}
+message RemoveMCPResponse {
+  string path = 1;
+  string diff = 2;
+}
+
+message ListSkillsRequest {}
+message Skill {
+  string name = 1;
+  string version = 2;
+  bool installed = 3;
+}
+message ListSkillsResponse { repeated Skill skills = 1; }
+
+message InstallSkillsRequest {
+  repeated string skill_names = 1;
+  string scope = 2;
+}
+message InstallSkillsResponse {
+  map<string, bool> installed = 1;
+}
+
+message RemoveSkillsRequest {
+  repeated string skill_names = 1;
+}
+message RemoveSkillsResponse {}
+
+message CheckUpdatesRequest {}
+message UpdateInfo {
+  string name = 1;
+  string installed_version = 2;
+  string latest_version = 3;
+  bool outdated = 4;
+}
+message CheckUpdatesResponse { repeated UpdateInfo updates = 1; }

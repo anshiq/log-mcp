@@ -1,0 +1,41 @@
+// Common types used across all agentruntime.v1 services.
+// These are shared by all generated clients and servers.
+
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+// Uuid is a ULID-based identifier.
+message Uuid {
+  string value = 1;
+}
+
+// Cursor is an opaque pagination token.
+message Cursor {
+  string value = 1;
+}
+
+// ErrorInfo carries structured error details.
+message ErrorInfo {
+  string reason = 1;
+  string rule = 2;
+  string hint = 3;
+  string docs_url = 4;
+}
+
+// Pagination controls list responses.
+message Pagination {
+  int32 page_size = 1;
+  Cursor page_token = 2;
+}
+
+// Timestamp is a Unix nanosecond timestamp.
+message Timestamp {
+  int64 value = 1;
+}
+
+// Duration is a time.Duration expressed in nanoseconds.
+message Duration {
+  int64 value = 1;
+}

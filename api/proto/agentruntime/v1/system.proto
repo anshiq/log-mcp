@@ -1,0 +1,55 @@
+// SystemService provides daemon-level information and control.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service SystemService {
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message GetVersionRequest {}
+message GetVersionResponse {
+  string daemon_version = 1;
+  string api_version = 2;
+  string min_client_version = 3;
+  int32 shim_protocol = 4;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;
+  int64 uptime_seconds = 3;
+}
+
+message GetStatsRequest {}
+message GetStatsResponse {
+  int32 projects = 1;
+  int32 processes = 2;
+  int32 sessions = 3;
+  int64 log_disk_bytes = 4;
+  int64 index_lag_seconds = 5;
+}
+
+message GetSettingsRequest {}
+message GetSettingsResponse {
+  bytes daemon_config = 1;
+}
+
+message UpdateSettingsRequest {
+  bytes daemon_config = 1;
+}
+message UpdateSettingsResponse {}
+
+message ShutdownRequest {
+  bool keep_processes = 1;
+}
+message ShutdownResponse {}

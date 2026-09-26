@@ -1,0 +1,208 @@
+// ProcessService manages managed processes.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service ProcessService {
+  rpc Start(StartRequest) returns (StartResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc Restart(RestartRequest) returns (RestartResponse);
+  rpc Signal(SignalRequest) returns (SignalResponse);
+  rpc SendStdin(SendStdinRequest) returns (SendStdinResponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc WatchProcesses(WatchProcessesRequest) returns (stream ProcessEvent);
+  rpc WaitForExit(WaitForExitRequest) returns (WaitForExitResponse);
+  rpc SetRestartPolicy(SetRestartPolicyRequest) returns (SetRestartPolicyResponse);
+  rpc GetEnv(GetEnvRequest) returns (GetEnvResponse);
+  rpc OpenShell(OpenShellRequest) returns (OpenShellResponse);
+  rpc Attach(AttachRequest) returns (stream AttachEvent);
+  rpc GetResourceUsage(GetResourceUsageRequest) returns (GetResourceUsageResponse);
+  rpc WatchResourceUsage(WatchResourceUsageRequest) returns (stream ResourceUsageEvent);
+}
+
+message StartRequest {
+  string workspace_id = 1;
+  string app = 2;
+  repeated string command = 3;
+  string workdir = 4;
+  map<string, string> env = 5;
+  string env_file = 6;
+  string profile = 7;
+  string lifetime = 8; // persistent | session
+  string restart_policy = 9;
+  string session_id = 10;
+}
+message StartResponse {
+  string process_id = 1;
+  string instance_id = 2;
+  string status = 3;
+  int32 pid = 4;
+  string profile = 5;
+  repeated string command = 6;
+  string workdir = 7;
+  int64 readiness_ms = 8;
+}
+
+message StopRequest {
+  string process_id = 1;
+  string signal = 2;
+}
+message StopResponse {
+  string process_id = 1;
+  bool stopped = 2;
+}
+
+message RestartRequest {
+  string process_id = 1;
+}
+message RestartResponse {
+  string process_id = 1;
+  string new_instance_id = 2;
+}
+
+message SignalRequest {
+  string process_id = 1;
+  string signal = 2;
+  bool group = 3;
+}
+message SignalResponse {
+  string process_id = 1;
+  string signal = 2;
+}
+
+message SendStdinRequest {
+  string process_id = 1;
+  bytes data = 2;
+}
+message SendStdinResponse {
+  int64 written = 1;
+}
+
+message RemoveRequest {
+  string process_id = 1;
+  bool force = 2;
+}
+message RemoveResponse {
+  string process_id = 1;
+  bool removed = 2;
+}
+
+message GetRequest { string process_id = 1; }
+message GetResponse { ProcessInfo process = 1; }
+
+message ListRequest {
+  string workspace_id = 1;
+  string filter = 2;
+  Pagination pagination = 3;
+}
+message ListResponse {
+  repeated ProcessInfo processes = 1;
+  Cursor next_page_token = 2;
+}
+
+message ProcessInfo {
+  string id = 1;
+  string workspace_id = 2;
+  string app = 3;
+  string command = 4;
+  string workdir = 5;
+  string profile = 6;
+  string status = 7;
+  int32 pid = 8;
+  int32 restarts = 9;
+  string health = 10;
+  int64 started_at = 11;
+  int64 exited_at = 12;
+  int32 exit_code = 13;
+  string exit_signal = 14;
+}
+
+message ProcessEvent {
+  oneof event {
+    ProcessStarted started = 1;
+    ProcessStopped stopped = 2;
+    ProcessRestarted restarted = 3;
+    ProcessHealthChanged health = 4;
+    ProcessExited exited = 5;
+    ProcessGap gap = 6;
+  }
+  Cursor cursor = 7;
+}
+
+message ProcessStarted { ProcessInfo process = 1; }
+message ProcessStopped { string process_id = 1; int32 exit_code = 2; }
+message ProcessRestarted { string process_id = 1; string instance_id = 2; }
+message ProcessHealthChanged { string process_id = 1; string health = 2; }
+message ProcessExited { string process_id = 1; int32 exit_code = 2; }
+message ProcessGap { int64 dropped = 1; }
+
+message WaitForExitRequest {
+  string process_id = 1;
+  int32 timeout_ms = 2;
+}
+message WaitForExitResponse {
+  bool exited = 1;
+  int32 exit_code = 2;
+  bool timeout = 3;
+}
+
+message SetRestartPolicyRequest {
+  string process_id = 1;
+  string policy = 2;
+}
+message SetRestartPolicyResponse {
+  string process_id = 1;
+  string restart_policy = 2;
+}
+
+message GetEnvRequest {
+  string process_id = 1;
+  bool reveal = 2;
+  bool live = 3;
+}
+message GetEnvResponse {
+  string process_id = 1;
+  repeated string env = 2;
+  int32 redacted = 3;
+  string source = 4;
+}
+
+message OpenShellRequest {
+  string process_id = 1;
+  string app = 2;
+  int64 pid = 3;
+  string shell = 4;
+}
+message OpenShellResponse {
+  string process_id = 1;
+}
+
+message AttachRequest {
+  string process_id = 1;
+  bool pty = 2;
+  int32 rows = 3;
+  int32 cols = 4;
+}
+message AttachEvent {
+  bytes output = 1;
+  bool pty = 2;
+}
+
+message GetResourceUsageRequest { string process_id = 1; }
+message GetResourceUsageResponse {
+  double cpu_percent = 1;
+  int64 memory_bytes = 2;
+}
+
+message WatchResourceUsageRequest {
+  string process_id = 1;
+}
+message ResourceUsageEvent {
+  double cpu_percent = 1;
+  int64 memory_bytes = 2;
+}

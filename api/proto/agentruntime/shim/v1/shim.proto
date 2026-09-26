@@ -1,0 +1,60 @@
+// shim/v1 defines the internal protocol between the daemon
+// and the agent-runtime-shim. This is an internal, versioned
+// protocol not part of the public API.
+syntax = "proto3";
+
+package agentruntime.shim.v1;
+option go_package = "gen/agentruntime/shim/v1";
+
+import "google/protobuf/timestamp.proto";
+
+service ShimControl {
+  rpc Hello(HelloRequest) returns (HelloResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream FramedRecord);
+  rpc Signal(SignalRequest) returns (SignalResponse);
+  rpc Stdin(StdinRequest) returns (StdinResponse);
+  rpc Resize(ResizeRequest) returns (ResizeResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+}
+
+message HelloRequest {
+  int32 protocol_version = 1;
+}
+message HelloResponse {
+  int32 protocol_version = 1;
+  int32 pid = 2;
+  int32 pgid = 3;
+  string status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  int64 last_seq = 6;
+}
+
+message SubscribeRequest {
+  int64 from_seq = 1;
+}
+
+message SignalRequest {
+  string signal = 1;
+  bool group = 2;
+}
+message SignalResponse {}
+
+message StdinRequest {
+  bytes data = 1;
+}
+message StdinResponse {}
+
+message ResizeRequest {
+  int32 rows = 1;
+  int32 cols = 2;
+}
+message ResizeResponse {}
+
+message StopRequest {
+  int32 grace_ms = 1;
+}
+message StopResponse {}
+
+message ReleaseRequest {}
+message ReleaseResponse {}

@@ -1,0 +1,93 @@
+// ProjectService manages project identity and workspace resolution.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service ProjectService {
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc LinkWorkspace(LinkWorkspaceRequest) returns (LinkWorkspaceResponse);
+  rpc ForgetProject(ForgetProjectRequest) returns (ForgetProjectResponse);
+  rpc GC(GCRequest) returns (GCResponse);
+  rpc TrustRepoConfig(TrustRepoConfigRequest) returns (TrustRepoConfigResponse);
+}
+
+message ResolveRequest {
+  string path = 1;
+}
+message ResolveResponse {
+  string project_id = 1;
+  string workspace_id = 2;
+  string project_name = 3;
+  bool newly_created = 4;
+  repeated string unresolved_locators = 5;
+}
+
+message ListProjectsRequest {
+  Pagination pagination = 1;
+}
+message ListProjectsResponse {
+  repeated Project projects = 1;
+  Cursor next_page_token = 2;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string config_mode = 3;
+  int64 last_used_at = 4;
+  int32 workspace_count = 5;
+}
+
+message GetProjectRequest { string project_id = 1; }
+message GetProjectResponse { Project project = 1; }
+
+message UpdateProjectRequest {
+  string project_id = 1;
+  string name = 2;
+}
+message UpdateProjectResponse { Project project = 1; }
+
+message ListWorkspacesRequest {
+  string project_id = 1;
+  Pagination pagination = 2;
+}
+message ListWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+  Cursor next_page_token = 2;
+}
+
+message Workspace {
+  string id = 1;
+  string project_id = 2;
+  string path = 3;
+  bool confirmed = 4;
+  int64 last_seen_at = 5;
+}
+
+message LinkWorkspaceRequest {
+  string project_id = 1;
+  string path = 2;
+}
+message LinkWorkspaceResponse { Workspace workspace = 1; }
+
+message ForgetProjectRequest { string project_id = 1; }
+message ForgetProjectResponse {}
+
+message GCRequest {}
+message GCResponse {
+  repeated string removed_workspaces = 1;
+}
+
+message TrustRepoConfigRequest {
+  string workspace_id = 1;
+  string path = 2;
+  string sha256 = 3;
+}
+message TrustRepoConfigResponse {}

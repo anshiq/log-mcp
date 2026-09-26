@@ -1,0 +1,135 @@
+// ConfigService manages the layered configuration for projects.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service ConfigService {
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse);
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+  rpc Plan(PlanRequest) returns (PlanResponse);
+  rpc Apply(ApplyRequest) returns (ApplyResponse);
+  rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
+  rpc GetRevision(GetRevisionRequest) returns (GetRevisionResponse);
+  rpc Rollback(RollbackRequest) returns (RollbackResponse);
+  rpc WatchConfig(WatchConfigRequest) returns (stream ConfigEvent);
+}
+
+message GetConfigRequest {
+  string workspace_id = 1;
+  string layer = 2; // optional: "project", "workspace:<ws>", "repo:<ws>"
+}
+message GetConfigResponse {
+  bytes raw_yaml = 1;
+  bytes resolved_yaml = 2;
+  map<string, string> provenance = 3;
+}
+
+message GetSchemaRequest {}
+message GetSchemaResponse {
+  bytes json_schema = 1;
+}
+
+message ValidateRequest {
+  string workspace_id = 1;
+  bytes yaml = 2;
+}
+message ValidateResponse {
+  bool valid = 1;
+  repeated string errors = 2;
+}
+
+message PlanRequest {
+  string workspace_id = 1;
+  bytes yaml = 2;
+  int32 base_revision = 3;
+}
+message PlanResponse {
+  repeated RestartPlan restart_apps = 1;
+  repeated LivePlan live_apps = 2;
+  repeated StalePlan stale_apps = 3;
+}
+
+message RestartPlan {
+  string app = 1;
+}
+message LivePlan {
+  string app = 1;
+}
+message StalePlan {
+  string app = 1;
+}
+
+message ApplyRequest {
+  string workspace_id = 1;
+  bytes yaml = 2;
+  int32 base_revision = 3;
+  string message = 4;
+}
+message ApplyResponse {
+  int32 new_revision = 1;
+  repeated RestartPlan restart_apps = 2;
+}
+
+message ListRevisionsRequest {
+  string project_id = 1;
+  Pagination pagination = 2;
+}
+message ListRevisionsResponse {
+  repeated ConfigRevision revisions = 1;
+  Cursor next_page_token = 2;
+}
+
+message ConfigRevision {
+  int32 id = 1;
+  string layer = 2;
+  string sha256 = 3;
+  bool valid = 4;
+  string source = 5;
+  string session_id = 6;
+  string message = 7;
+  int64 created_at = 8;
+}
+
+message GetRevisionRequest {
+  string project_id = 1;
+  int32 id = 2;
+}
+message GetRevisionResponse {
+  ConfigRevision revision = 1;
+  bytes content = 2;
+}
+
+message RollbackRequest {
+  string project_id = 1;
+  int32 revision = 2;
+}
+message RollbackResponse {}
+
+message WatchConfigRequest {
+  string workspace_id = 1;
+  Cursor cursor = 2;
+}
+message ConfigEvent {
+  oneof event {
+    ConfigChanged changed = 1;
+    ConfigInvalid invalid = 2;
+    ConfigRolledBack rolled_back = 3;
+  }
+  Cursor cursor = 4;
+}
+
+message ConfigChanged {
+  string layer = 1;
+  string sha256 = 2;
+}
+message ConfigInvalid {
+  string layer = 1;
+  string errors = 2;
+}
+message ConfigRolledBack {
+  int32 revision = 1;
+}

@@ -74,6 +74,7 @@ One-shot commands:
 		newShellCmd(loaded, logger),
 		newIntegrateCmd(loaded, logger),
 		newDaemonCmd(loaded, logger),
+		newProjectCmd(loaded, logger),
 		newVersionCmd(),
 	)
 	if s != nil {

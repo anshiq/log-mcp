@@ -1,0 +1,55 @@
+// SessionService manages connected client sessions.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service SessionService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc Close(CloseRequest) returns (CloseResponse);
+}
+
+message RegisterRequest {
+  string kind = 1; // mcp | cli | gui | tui | web
+  string harness = 2;
+  int32 client_pid = 3;
+  string workspace_id = 4;
+}
+message RegisterResponse {
+  string session_id = 1;
+}
+
+message HeartbeatRequest {
+  string session_id = 1;
+}
+message HeartbeatResponse {
+  string session_id = 1;
+}
+
+message ListSessionsRequest { Pagination pagination = 1; }
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+  Cursor next_page_token = 2;
+}
+
+message Session {
+  string id = 1;
+  string kind = 2;
+  string harness = 3;
+  string harness_version = 4;
+  int32 client_pid = 5;
+  string workspace_id = 6;
+  int64 started_at = 7;
+  int64 last_seen_at = 8;
+}
+
+message GetSessionRequest { string session_id = 1; }
+message GetSessionResponse { Session session = 1; }
+
+message CloseRequest { string session_id = 1; }
+message CloseResponse {}

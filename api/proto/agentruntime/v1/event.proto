@@ -1,0 +1,43 @@
+// EventService provides event watching and listing.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service EventService {
+  rpc WatchEvents(WatchEventsRequest) returns (stream Event);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+}
+
+message WatchEventsRequest {
+  string workspace_id = 1;
+  string process_id = 2;
+  repeated string types = 3;
+  Cursor cursor = 4;
+}
+message Event {
+  int64 id = 1;
+  int64 ts = 2;
+  string type = 3;
+  string project_id = 4;
+  string workspace_id = 5;
+  string process_id = 6;
+  string instance_id = 7;
+  string session_id = 8;
+  string payload_json = 9;
+  Cursor cursor = 10;
+  bool snapshot = 11;
+  bool heartbeat = 12;
+}
+
+message ListEventsRequest {
+  string workspace_id = 1;
+  string process_id = 2;
+  Pagination pagination = 3;
+}
+message ListEventsResponse {
+  repeated Event events = 1;
+  Cursor next_page_token = 2;
+}

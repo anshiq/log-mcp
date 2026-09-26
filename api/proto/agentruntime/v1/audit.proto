@@ -1,0 +1,36 @@
+// AuditService provides access to the audit log.
+syntax = "proto3";
+
+package agentruntime.v1;
+option go_package = "gen/agentruntime/v1";
+
+import "agentruntime/v1/common.proto";
+
+service AuditService {
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse);
+}
+
+message ListAuditRequest {
+  string workspace_id = 1;
+  string action = 2;
+  string result = 3;
+  int64 from = 4;
+  int64 to = 5;
+  Pagination pagination = 6;
+}
+message AuditEntry {
+  int64 id = 1;
+  int64 ts = 2;
+  string session_id = 3;
+  string harness = 4;
+  string project_id = 5;
+  string workspace_id = 6;
+  string action = 7;
+  string args_json = 8;
+  string result = 9;
+  int32 duration_ms = 10;
+}
+message ListAuditResponse {
+  repeated AuditEntry entries = 1;
+  Cursor next_page_token = 2;
+}

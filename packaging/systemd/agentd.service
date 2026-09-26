@@ -1,0 +1,20 @@
+[Unit]
+Description=agent-runtime daemon (1 per OS user, hosts all projects)
+Documentation=https://github.com/anomalyco/opencode
+Requires=agentd.socket
+After=agentd.socket
+
+[Service]
+# KillMode=process is CRITICAL: systemd must not kill shims when agentd
+# restarts. Shims are setsid'd into their own sessions; the new daemon
+# re-attaches via shim.sock (§2.3, §R2).
+Type=notify
+KillMode=process
+Delegate=yes
+Restart=on-failure
+RestartSec=1s
+ExecStart=%h/.local/bin/agentd --foreground
+NotifyAccess=main
+
+[Install]
+WantedBy=default.target

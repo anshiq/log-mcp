@@ -1,0 +1,12 @@
+[Unit]
+Description=agent-runtime daemon (per-user background platform)
+Documentation=https://github.com/anomalyco/opencode
+After=default.target
+
+[Socket]
+ListenStream=%t/agent-runtime/agentd.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target
