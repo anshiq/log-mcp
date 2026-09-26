@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -139,8 +140,9 @@ func (s *Server) cfgValidate(w http.ResponseWriter, r *http.Request) (any, error
 
 func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
-		WorkspaceID string `json:"workspaceId"`
-		YAML        string `json:"yaml"`
+		WorkspaceID  string `json:"workspaceId"`
+		YAML         string `json:"yaml"`
+		BaseRevision int64  `json:"baseRevision"`
 	}
 	_ = decode(r, &req)
 	pr, wsID, err := s.resolveConfigScope(req.WorkspaceID, "")
@@ -174,7 +176,12 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 	}
 	changes := config.Plan(oldApps, newCfg.Apps, running)
-	return map[string]any{"changes": changes}, nil
+	var latestRevision int64
+	if revs, err := s.engine.Store().ListRevisions(pr.ProjectID(), "project", 1); err == nil && len(revs) > 0 {
+		latestRevision = revs[0].ID
+	}
+	stale := req.BaseRevision != 0 && latestRevision != 0 && req.BaseRevision != latestRevision
+	return map[string]any{"changes": changes, "latestRevision": latestRevision, "stale": stale}, nil
 }
 
 func validationJSON(errs []*config.ValidationError) []any {
@@ -190,6 +197,7 @@ func validationJSON(errs []*config.ValidationError) []any {
 func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
 		ProjectID       string `json:"projectId"`
+		WorkspaceID     string `json:"workspaceId"`
 		Layer           string `json:"layer"`
 		YAML            string `json:"yaml"`
 		BaseRevision    int64  `json:"baseRevision"`
@@ -205,7 +213,7 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 		return map[string]any{"applied": false, "errors": validationJSON(errs)}, nil
 	}
 	layer := req.Layer
-	if layer == "" || layer == "project" {
+	if layer == "" {
 		layer = "project"
 	}
 	// Optimistic concurrency: base_revision must match the latest known
@@ -214,12 +222,17 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 	if len(revs) > 0 && req.BaseRevision != 0 && revs[0].ID != req.BaseRevision {
 		return nil, fmt.Errorf("stale_revision: base %d, latest %d", req.BaseRevision, revs[0].ID)
 	}
-	// Resolve target file.
 	var target string
-	if layer == "project" {
+	switch layer {
+	case "project":
 		target = filepath.Join(s.engine.DataDir(), "projects", req.ProjectID, "agent-runtime.yaml")
-	} else {
-		return nil, fmt.Errorf("unknown layer %q (want project|workspace:<id>)", req.Layer)
+	case "workspace":
+		if req.WorkspaceID == "" {
+			return nil, fmt.Errorf("workspaceId required for layer=workspace")
+		}
+		target = filepath.Join(s.engine.DataDir(), "projects", req.ProjectID, "workspaces", req.WorkspaceID+".yaml")
+	default:
+		return nil, fmt.Errorf("unknown layer %q (want project|workspace)", req.Layer)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return nil, err
@@ -244,20 +257,51 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 	// Synchronously reload every loaded workspace of this project so the
 	// next Start sees the new revision without waiting for the ~300ms
 	// file-watcher debounce (the watcher still reconciles stale flags).
+	var restarted []string
 	for _, ws := range mustWorkspacesByProject(s, req.ProjectID) {
-		if pr, err := s.engine.GetOrCreateRuntime(ws); err == nil {
-			trusted := true
-			if res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), trusted, nil); errs == nil {
-				if rt, err := pr.Runtime(); err == nil {
-					rt.ReloadConfig(res.ToLoaded(pr.WorkspacePath()))
+		pr, err := s.engine.GetOrCreateRuntime(ws)
+		if err != nil {
+			continue
+		}
+		oldApps := map[string]config.V3App{}
+		if res := pr.ResolvedConfig(); res != nil {
+			oldApps = res.Apps
+		}
+		trusted := true
+		res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), trusted, nil)
+		if errs != nil {
+			continue
+		}
+		rt, err := pr.Runtime()
+		if err != nil {
+			continue
+		}
+		rt.ReloadConfig(res.ToLoaded(pr.WorkspacePath()))
+		if !req.RestartAffected {
+			continue
+		}
+		running := map[string][]string{}
+		if rows, err := s.engine.Store().ListProcesses(ws); err == nil {
+			for _, row := range rows {
+				if row.App != "" {
+					running[row.App] = append(running[row.App], row.ID)
 				}
 			}
 		}
+		for _, change := range config.Plan(oldApps, res.Apps, running) {
+			if change.Kind != config.ChangeRestartRequired {
+				continue
+			}
+			for _, pid := range change.AffectedProcIDs {
+				ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+				if err := rt.Restart(ctx, pid); err == nil {
+					restarted = append(restarted, pid)
+				}
+				cancel()
+			}
+		}
 	}
-	// The file watcher reconciles (stale marking / reload: restart) within
-	// ~300ms; reload: restart with restartAffected applies immediately via
-	// the planner flags in the Plan response the GUI already showed.
-	return map[string]any{"applied": true, "revision": rev}, nil
+	return map[string]any{"applied": true, "revision": rev, "restarted": restarted}, nil
 }
 
 func (s *Server) cfgRevisions(w http.ResponseWriter, r *http.Request) (any, error) {

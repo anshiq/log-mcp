@@ -157,18 +157,34 @@ func writeError(w http.ResponseWriter, err error) {
 	})
 }
 
-func errorCode(err error) string { return "internal" }
-
-func errorHTTPCode(err error) int {
+func errorCode(err error) string {
 	msg := err.Error()
 	switch {
 	case contains(msg, "unknown process"), contains(msg, "not found"):
-		return http.StatusNotFound
-	case contains(msg, "policy_denied"), contains(msg, "denied"):
-		return http.StatusForbidden
+		return "not_found"
+	case contains(msg, "stale_revision"):
+		return "stale_revision"
+	case contains(msg, "policy_denied"):
+		return "policy_denied"
 	case contains(msg, "repo_untrusted"):
+		return "repo_untrusted"
+	case contains(msg, "denied"):
+		return "denied"
+	case contains(msg, "requires either"), contains(msg, "required"), contains(msg, "invalid"), contains(msg, "unknown layer"):
+		return "invalid_argument"
+	}
+	return "internal"
+}
+
+func errorHTTPCode(err error) int {
+	switch errorCode(err) {
+	case "not_found":
+		return http.StatusNotFound
+	case "stale_revision":
+		return http.StatusConflict
+	case "policy_denied", "repo_untrusted", "denied":
 		return http.StatusForbidden
-	case contains(msg, "requires either"), contains(msg, "required"), contains(msg, "invalid"):
+	case "invalid_argument":
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
