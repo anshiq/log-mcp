@@ -67,7 +67,7 @@ c(){ curl -s --unix-socket $SP/a.sock -H 'Content-Type: application/json' -d "$2
 | F12 | `ui/src/routes/App.svelte` | No workspace or project selection. `LogService.get` is a one-shot fetch of 500 lines, not a tail. Tabs have no active state. Actions have no confirmation, progress or error feedback. |
 | F13 | **partially fixed** | Added `styles/tokens.css` + `styles/base.css` (dark-first, with a light-theme override), a real topbar/sidebar shell, and every rewritten component now styles from tokens instead of ad-hoc hex. Responsive layout, icons and the full component library (Phase 3.2) are still open. |
 | F14 | Tooling | `tsc --noEmit` doesn't check `.svelte` files (no `svelte-check`). `stores.test.ts` has one trivial test, and the e2e has 2 API-only tests. |
-| F15 | Missing screens | No UI for Projects/Workspaces, Events, Sessions, Integrations, Audit, Settings, Search, Env, Resources, Start, Signal, Remove, Restart policy, Stack start, Export, Clear logs, Shutdown. All of these exist in the API. |
+| F15 | **mostly fixed** | Added Projects/Workspaces, Events, Sessions, Integrations, Audit and Settings pages (a hash router now backs navigation instead of local tab state). Still open: Search, Resources tab, Start/Signal dialogs, Stack start, Export, Clear logs. |
 
 ### 1.3 GUI shell bugs (cmd/agent-runtime-gui)
 
@@ -132,6 +132,16 @@ Routes (hash router; works under Wails and any static host):
 A global **scope** (project + workspace, or "All workspaces") lives in the top bar, is persisted in `localStorage`, and filters every page.
 
 ---
+
+### Progress note (this session, condensed pass)
+
+Implemented in place of the granular file-by-file breakdown above:
+- **Router**: `lib/router.svelte.ts` — a lightweight hash router (`navigate`, `match` with `:param`/`:param?`), not the full guarded/scroll-restoring version 2.4 describes, but functional and used by every page below.
+- **Scope**: `lib/scope.svelte.ts` — current workspace/project, resolved from the topbar or the Projects page, persisted (last path) in `localStorage`.
+- **Pages** (`routes/pages/`): ProcessesPage (table + routed detail drawer), ConfigPage (editor + Revisions tab with diff-free list/rollback in `RevisionsPanel.svelte`), ProjectsPage, EventsPage (history + live watch), SessionsPage (polled), IntegrationsPage (harnesses + skills, install/remove MCP with a confirm-diff flow), AuditPage (paged), SettingsPage (daemon settings form + About + danger zone).
+- **Daemon**: `errorCode`/`errorHTTPCode` now classify real codes (stale_revision → 409, not just "internal" always); `ConfigService.Plan` accepts `baseRevision` and reports `stale`/`latestRevision`; `ConfigService.Apply` supports `layer: "workspace"` and actually restarts affected processes when `restartAffected` is set.
+
+Not built this pass: the full component library (3.2), CommandPalette, keyboard map, Table virtualization, Search/history log mode, Resources tab, Start-process dialog, Stack start UI, Export/Clear logs UI, and the Wails shell items in Phase 6. `svelte-check` was not added (no network access to add the dependency in this session); `npx tsc --noEmit` plus real `vite build` (both targets) were used as the verification gate instead, along with end-to-end curl checks against a real isolated daemon for every new page's API calls.
 
 ## 3. Phase 1: Daemon fixes the UI depends on
 

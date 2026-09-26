@@ -1,22 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import ProcessTable from '../components/ProcessTable.svelte';
-  import ProcessDetail from '../components/ProcessDetail.svelte';
   import Login from './Login.svelte';
-  import { createProcessStore, type Process } from '../lib/stores';
-  import { ProcessService, ProjectService, SystemService, hasAuthToken, setUnauthorizedHandler } from '../lib/api';
+  import ProcessesPage from './pages/ProcessesPage.svelte';
+  import ConfigPage from './pages/ConfigPage.svelte';
+  import ProjectsPage from './pages/ProjectsPage.svelte';
+  import EventsPage from './pages/EventsPage.svelte';
+  import SessionsPage from './pages/SessionsPage.svelte';
+  import IntegrationsPage from './pages/IntegrationsPage.svelte';
+  import AuditPage from './pages/AuditPage.svelte';
+  import SettingsPage from './pages/SettingsPage.svelte';
+  import { router } from '../lib/router.svelte';
+  import { scope } from '../lib/scope.svelte';
+  import { SystemService, hasAuthToken, setUnauthorizedHandler } from '../lib/api';
 
-  const store = createProcessStore();
-  let processes = $state<Process[]>([]);
-  let streamState = $state<'connecting' | 'open' | 'reconnecting' | 'closed'>('connecting');
-  let selectedProcess = $state('');
-  let tab = $state<'processes' | 'config'>('processes');
-  let workspacePath = $state('');
-  let workspaceId = $state('');
-  let projectName = $state('');
-  let resolveError = $state('');
-  let resolving = $state(false);
   let daemonVersion = $state('');
+  let daemonOk = $state(false);
+  let workspacePathInput = $state('');
   let authed = $state(__APP_TARGET__ !== 'web' || hasAuthToken());
 
   onMount(() => {
@@ -24,44 +23,34 @@
       setUnauthorizedHandler(() => (authed = false));
     }
     if (!authed) return;
-    void SystemService.version().then((v) => (daemonVersion = v.daemonVersion));
-    const off = store.connect('', true);
-    const unsub = store.processes.subscribe((m) => {
-      processes = [...m.values()];
+    if (router.path === '/') router.navigate('/processes', { replace: true });
+    void SystemService.version().then((v) => {
+      daemonVersion = v.daemonVersion;
+      daemonOk = true;
     });
-    const unsubState = store.streamState.subscribe((s) => (streamState = s));
-    return () => {
-      off();
-      unsub();
-      unsubState();
-    };
+    scope.restoreLast();
   });
 
-  async function resolveWorkspace() {
-    if (!workspacePath.trim()) return;
-    resolving = true;
-    resolveError = '';
-    try {
-      const res = await ProjectService.resolve(workspacePath.trim());
-      workspaceId = res.workspaceId;
-      projectName = res.projectName || workspacePath.trim();
-    } catch (err) {
-      resolveError = err instanceof Error ? err.message : String(err);
-    } finally {
-      resolving = false;
-    }
+  async function openWorkspace(e: Event) {
+    e.preventDefault();
+    if (!workspacePathInput.trim()) return;
+    await scope.resolve(workspacePathInput.trim());
+    workspacePathInput = '';
   }
 
-  async function act(action: string, ids: string[]) {
-    for (const id of ids) {
-      if (action === 'stop') await ProcessService.stop(id);
-      if (action === 'restart') await ProcessService.restart(id);
-      if (action === 'remove') await ProcessService.remove(id, true);
-    }
-  }
+  const navItems = [
+    { path: '/processes', label: 'Processes' },
+    { path: '/config', label: 'Config' },
+    { path: '/events', label: 'Events' },
+    { path: '/projects', label: 'Projects' },
+    { path: '/sessions', label: 'Sessions' },
+    { path: '/integrations', label: 'Integrations' },
+    { path: '/audit', label: 'Audit' },
+    { path: '/settings', label: 'Settings' }
+  ];
 
-  function openProcess(id: string) {
-    selectedProcess = id;
+  function isActive(path: string): boolean {
+    return router.path === path || router.path.startsWith(path + '/');
   }
 </script>
 
@@ -71,41 +60,49 @@
   <main>
     <header class="topbar">
       <span class="brand">agent-runtime</span>
-      <form class="scope" onsubmit={(e) => (e.preventDefault(), resolveWorkspace())}>
-        <input placeholder="Workspace path…" bind:value={workspacePath} aria-label="Workspace path" />
-        <button type="submit" disabled={resolving}>{resolving ? 'Resolving…' : 'Open'}</button>
+      <form class="scope" onsubmit={openWorkspace}>
+        <input placeholder="Workspace path…" bind:value={workspacePathInput} aria-label="Workspace path" />
+        <button type="submit" disabled={scope.resolving}>{scope.resolving ? 'Opening…' : 'Open'}</button>
       </form>
-      {#if projectName}
-        <span class="scope-name">{projectName}</span>
+      {#if scope.projectName}
+        <span class="scope-name">{scope.projectName}</span>
       {/if}
-      {#if resolveError}
-        <span class="scope-error">{resolveError}</span>
+      {#if scope.error}
+        <span class="scope-error">{scope.error}</span>
       {/if}
       <div class="spacer"></div>
-      <span class="status" class:ok={streamState === 'open'} class:bad={streamState !== 'open'}>
+      <span class="status" class:ok={daemonOk}>
         <span class="dot"></span>
         {daemonVersion ? `daemon ${daemonVersion}` : 'connecting…'}
       </span>
     </header>
     <div class="body">
       <nav class="sidebar">
-        <button class:active={tab === 'processes'} onclick={() => (tab = 'processes')}>Processes</button>
-        <button class:active={tab === 'config'} onclick={() => (tab = 'config')}>Config</button>
+        {#each navItems as item}
+          <button class:active={isActive(item.path)} onclick={() => router.navigate(item.path)}>{item.label}</button>
+        {/each}
       </nav>
       <div class="content">
-        {#if tab === 'processes'}
-          <ProcessTable {processes} onAction={act} onOpen={openProcess} />
+        {#if router.match('/processes/:id?')}
+          <ProcessesPage />
+        {:else if router.match('/config/:sub?')}
+          <ConfigPage />
+        {:else if router.match('/projects')}
+          <ProjectsPage />
+        {:else if router.match('/events')}
+          <EventsPage />
+        {:else if router.match('/sessions')}
+          <SessionsPage />
+        {:else if router.match('/integrations')}
+          <IntegrationsPage />
+        {:else if router.match('/audit')}
+          <AuditPage />
+        {:else if router.match('/settings')}
+          <SettingsPage />
         {:else}
-          {#await import('../components/ConfigEditor.svelte') then { default: ConfigEditor }}
-            <ConfigEditor {workspaceId} />
-          {/await}
+          <ProcessesPage />
         {/if}
       </div>
-      {#if selectedProcess}
-        <div class="drawer">
-          <ProcessDetail processId={selectedProcess} onClose={() => (selectedProcess = '')} />
-        </div>
-      {/if}
     </div>
   </main>
 {/if}
@@ -176,9 +173,6 @@
   .status.ok .dot {
     background: var(--ok);
   }
-  .status.bad .dot {
-    background: var(--warn);
-  }
   .body {
     flex: 1;
     display: flex;
@@ -214,9 +208,5 @@
     flex: 1;
     min-width: 0;
     overflow: auto;
-  }
-  .drawer {
-    width: 480px;
-    flex: none;
   }
 </style>
