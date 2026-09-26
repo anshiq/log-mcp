@@ -167,6 +167,40 @@ multi-select Start-stack with the dependency order shown), and the
 `app` field itself on `processInfo`'s JSON (was missing entirely,
 which is what surfaced the id-linkage bug above).
 
+### Third progress note (this session): Wails shell fixes, verified in the real window
+
+This environment turned out to have a usable nix devshell
+(`nix develop ./packaging/nix`) and a live Wayland/Hyprland desktop, so
+the GUI could actually be built and its real WebKitGTK window launched
+against an isolated test daemon (not just read/compiled) — confirmed
+via screenshots (grim) that the window renders, the sidebar/topbar/
+process table match the web build exactly, and the daemon-status dot
+goes green (the WatchProcesses NDJSON stream really does flow through
+the Wails AssetServer's proxy in the real window, not just headless —
+Phase 6.3's open question). Keyboard/mouse automation of the window
+itself was not attempted beyond that: the one `wtype` attempt landed in
+this very terminal instead of the GUI window (hyprctl's dispatch syntax
+here is a custom lua wrapper), so further interactive testing was
+judged not worth the risk of more misdirected input on a live desktop.
+
+Fixed in `cmd/agent-runtime-gui`:
+- `SingleInstanceLock` (a second launch focuses the existing window
+  instead of opening a duplicate).
+- Window size/position/maximised state now persists across launches
+  (`windowstate.go`, `$XDG_CONFIG_HOME/agent-runtime/gui.json`).
+- `AGENTD_SOCKET` env var overrides the daemon socket path (used to
+  point the GUI at an isolated test daemon instead of the real one).
+- `OpenInEditor` now detects a terminal editor (vim/nvim/nano/hx/helix/
+  emacs/...) and launches it inside a terminal emulator ($TERMINAL,
+  then a fixed list of common ones) instead of silently doing nothing;
+  it also now returns an error instead of swallowing one.
+- The system-default opener fallback is now correct on Windows
+  (`cmd /c start "" path` instead of a bare, non-executable `start`).
+
+Not done: a menu bar, and the loopback-HTTP-server fallback for G3
+(only needed if the AssetServer proxy turns out to buffer streams,
+which the screenshot check above did not indicate).
+
 ## 3. Phase 1: Daemon fixes the UI depends on
 
 All in `internal/server` unless noted. Each fix gets a regression test in `internal/server/server_test.go` (or a new `streams_test.go`).

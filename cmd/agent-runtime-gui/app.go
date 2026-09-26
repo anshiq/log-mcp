@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 
 	"github.com/gen2brain/beeep"
@@ -27,28 +28,65 @@ func (a *App) Notify(title, body string) {
 	_ = beeep.Notify(title, body, "")
 }
 
-// OpenInEditor opens path in $VISUAL/$EDITOR, falling back to the
-// platform's default opener.
-func (a *App) OpenInEditor(path string) {
-	if editor := os.Getenv("VISUAL"); editor != "" {
-		_ = exec.Command(editor, path).Start()
-		return
-	}
-	if editor := os.Getenv("EDITOR"); editor != "" {
-		_ = exec.Command(editor, path).Start()
-		return
-	}
-	_ = exec.Command(platformOpener(), path).Start()
+var terminalEditors = map[string]bool{
+	"vim": true, "vi": true, "nvim": true, "nano": true,
+	"hx": true, "helix": true, "emacs": true, "micro": true,
+	"joe": true, "ne": true, "pico": true,
 }
 
-func platformOpener() string {
+var terminalEmulatorFlags = []struct {
+	bin  string
+	args []string
+}{
+	{"x-terminal-emulator", []string{"-e"}},
+	{"gnome-terminal", []string{"--"}},
+	{"konsole", []string{"-e"}},
+	{"alacritty", []string{"-e"}},
+	{"kitty", nil},
+	{"xterm", []string{"-e"}},
+}
+
+// OpenInEditor opens path in $VISUAL/$EDITOR, falling back to the
+// platform's default opener.
+func (a *App) OpenInEditor(path string) error {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		return openWithSystemDefault(path)
+	}
+	name := filepath.Base(editor)
+	if terminalEditors[name] {
+		return launchInTerminal(editor, path)
+	}
+	return exec.Command(editor, path).Start()
+}
+
+func launchInTerminal(editor, path string) error {
+	if term := os.Getenv("TERMINAL"); term != "" {
+		if _, err := exec.LookPath(term); err == nil {
+			return exec.Command(term, "-e", editor, path).Start()
+		}
+	}
+	for _, cand := range terminalEmulatorFlags {
+		if _, err := exec.LookPath(cand.bin); err != nil {
+			continue
+		}
+		args := append(append([]string{}, cand.args...), editor, path)
+		return exec.Command(cand.bin, args...).Start()
+	}
+	return errors.New("no terminal emulator found to run " + editor)
+}
+
+func openWithSystemDefault(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return "open"
+		return exec.Command("open", path).Start()
 	case "windows":
-		return "start"
+		return exec.Command("cmd", "/c", "start", "", path).Start()
 	default:
-		return "xdg-open"
+		return exec.Command("xdg-open", path).Start()
 	}
 }
 

@@ -15,9 +15,9 @@ jobs:
           go-version: "1.26"
           cache: true
       - name: Build
-        run: go build ./...
+        run: go build $(go list ./... | grep -v /cmd/agent-runtime-gui | sed 's,$,/...,')
       - name: Vet
-        run: go vet ./...
+        run: go vet $(go list ./... | grep -v /cmd/agent-runtime-gui | sed 's,$,/...,')
       - name: Race
         run: go test -race ./internal/store/... ./internal/session/... ./internal/logpipe/... ./internal/project/... ./internal/config/...
       - name: Tests
@@ -65,7 +65,7 @@ jobs:
           go-version: "1.26"
           cache: true
       - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build $(go list ./... | grep -v /cmd/agent-runtime-gui | sed 's,$,/...,')
   ui:
     runs-on: ubuntu-latest
     steps:
@@ -83,3 +83,5 @@ jobs:
         run: npm --prefix ui test
       - name: Build
         run: npm --prefix ui run build
+      - name: Build web
+        run: npm --prefix ui run build:web

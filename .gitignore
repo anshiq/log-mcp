@@ -11,3 +11,7 @@ ui/dist-web/
 !/internal/webui/dist/
 /internal/webui/dist/*
 !/internal/webui/dist/index.html
+
+!/cmd/agent-runtime-gui/dist/
+/cmd/agent-runtime-gui/dist/*
+!/cmd/agent-runtime-gui/dist/index.html

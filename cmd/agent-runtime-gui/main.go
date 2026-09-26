@@ -31,6 +31,8 @@ import (
 	"agent-runtime/pkg/client"
 )
 
+var version = "v3.0.0-dev"
+
 //go:embed all:dist
 var embeddedDist embed.FS
 
@@ -54,9 +56,16 @@ func run(logger *slog.Logger) error {
 	return runNative(logger)
 }
 
+func socketPath() string {
+	if s := os.Getenv("AGENTD_SOCKET"); s != "" {
+		return s
+	}
+	return paths.User().SocketPath()
+}
+
 func openGUI(logger *slog.Logger) error {
-	p := paths.User()
-	c, err := client.EnsureDaemon(p.SocketPath())
+	sock := socketPath()
+	c, err := client.EnsureDaemon(sock)
 	if err != nil {
 		return fmt.Errorf("gui: %w", err)
 	}
@@ -67,7 +76,7 @@ func openGUI(logger *slog.Logger) error {
 		return fmt.Errorf("gui: daemon handshake: %w", err)
 	}
 	fmt.Printf("agent-runtime GUI: daemon %s api %s reachable at %s.\n",
-		v.DaemonVersion, v.APIVersion, p.SocketPath())
+		v.DaemonVersion, v.APIVersion, sock)
 	fmt.Println("Run `agent-runtime-gui` (no args) to open the native window.")
 	return nil
 }
@@ -122,27 +131,36 @@ const wailsBindingShim = `window.__wailsBinding = {
 };`
 
 func runNative(logger *slog.Logger) error {
-	p := paths.User()
-	if _, err := client.EnsureDaemon(p.SocketPath()); err != nil {
+	sock := socketPath()
+	if _, err := client.EnsureDaemon(sock); err != nil {
 		return fmt.Errorf("gui: %w", err)
 	}
 	sub, err := fs.Sub(embeddedDist, "dist")
 	if err != nil {
 		return fmt.Errorf("gui: embedded frontend missing (build ui/ first): %w", err)
 	}
-	proxy := newProxy(p.SocketPath(), "gui/3.0.0")
+	proxy := newProxy(sock, "gui/"+version)
 	app := &App{}
+	geometry := loadWindowState()
 
 	return wails.Run(&options.App{
 		Title:  "agent-runtime",
-		Width:  1100,
-		Height: 750,
+		Width:  geometry.Width,
+		Height: geometry.Height,
 		AssetServer: &assetserver.Options{
 			Assets:     sub,
 			Middleware: apiMiddleware(proxy),
 		},
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "agent-runtime-gui",
+			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+				wailsruntime.WindowShow(app.ctx)
+				wailsruntime.WindowUnminimise(app.ctx)
+			},
+		},
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
+			applyWindowState(ctx, geometry)
 			if hasTray {
 				go runTray(ctx, logger)
 			}
@@ -151,6 +169,7 @@ func runNative(logger *slog.Logger) error {
 			wailsruntime.WindowExecJS(ctx, wailsBindingShim)
 		},
 		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			saveWindowState(ctx)
 			if !hasTray {
 				// No tray to reopen the window from (see hasTray):
 				// closing the window quits like a normal app.
