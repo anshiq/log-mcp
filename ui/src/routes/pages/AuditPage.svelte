@@ -21,8 +21,9 @@
   async function load() {
     loading = true;
     try {
-      const res = await AuditService.list(scope.workspaceId, limit);
-      entries = (res.entries as AuditRow[]) ?? [];
+      const res = (await AuditService.list(scope.workspaceId, limit)) as unknown;
+      const arr = Array.isArray(res) ? res : (res as { entries?: AuditRow[] }).entries ?? [];
+      entries = arr as AuditRow[];
     } finally {
       loading = false;
     }

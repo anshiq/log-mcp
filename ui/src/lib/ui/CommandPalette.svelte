@@ -60,7 +60,8 @@
           <p class="empty">No matches.</p>
         {:else}
           {#each items as item, i (item.id)}
-            {@const header = i === 0 || items[i - 1].group !== item.group ? item.group : null}
+            {@const prev = i > 0 ? items[i - 1] : null}
+            {@const header = i === 0 || prev?.group !== item.group ? item.group : null}
             {#if header}
               <div class="group">{header}</div>
             {/if}

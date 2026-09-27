@@ -22,9 +22,11 @@
   let busy = $state<string | null>(null);
 
   async function load() {
-    const [h, s] = await Promise.all([IntegrationService.listHarnesses(), IntegrationService.listSkills()]);
-    harnesses = (h.harnesses as Harness[]) ?? [];
-    skills = (s.skills as Skill[]) ?? [];
+    const [h, s] = (await Promise.all([IntegrationService.listHarnesses(), IntegrationService.listSkills()])) as unknown as [unknown, unknown];
+    const ha = Array.isArray(h) ? h : (h as { harnesses?: Harness[] }).harnesses ?? [];
+    const sa = Array.isArray(s) ? s : (s as { skills?: Skill[] }).skills ?? [];
+    harnesses = ha as Harness[];
+    skills = sa as Skill[];
   }
 
   async function installMCP(h: Harness) {
@@ -63,12 +65,29 @@
     }
   }
 
-  onMount(load);
+  let updates = $state<Record<string, unknown>[]>([]);
+
+  async function checkUpdates() {
+    try {
+      const r = await IntegrationService.checkUpdates();
+      updates = r.updates ?? [];
+    } catch {
+      updates = [];
+    }
+  }
+
+  onMount(() => {
+    void load();
+    void checkUpdates();
+  });
 </script>
 
 <div class="page">
   <section>
     <h2>Harnesses</h2>
+    {#if updates.length > 0}
+      <p>{updates.length} updates available. <button onclick={() => void checkUpdates()}>Refresh</button></p>
+    {/if}
     <table>
       <thead>
         <tr>

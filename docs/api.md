@@ -93,3 +93,11 @@ HTTP status + `{"error", "code"}`; structured details
 (`policy_denied` + rule, `repo_untrusted`, `stale_revision`, `not_found`)
 travel as `ErrorInfo` with codegen. Handshake header on every call:
 `X-Agent-Runtime-Client: <kind>/<version>`.
+
+## Casing
+
+Requests accept camelCase; snake_case aliases are accepted for
+MCP compatibility (`process_id` ↔ `processId`, `timeout_ms` ↔ `timeoutMs`,
+`backlog_lines` ↔ `backlog`). Some responses remain snake_case for
+MCP compatibility (`process_id` in List/Get, `cpuNanos`); the web UI
+normalises to camelCase (`id`, `cpuPercent`). New fields are camelCase.

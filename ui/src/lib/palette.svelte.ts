@@ -33,11 +33,12 @@ class Palette {
     this.query = '';
     this.activeIndex = 0;
     try {
-      const res = await ProcessService.list('', true);
-      this.processes = (res.processes as Record<string, unknown>[]).map((p) => ({
-        id: String(p.id ?? p.process_id ?? ''),
-        command: String(p.command ?? ''),
-        status: String(p.status ?? '')
+      const res = (await ProcessService.list('', true)) as unknown;
+      const arr = Array.isArray(res) ? res : (res as { processes?: Record<string, unknown>[] }).processes ?? [];
+      this.processes = (arr as Record<string, unknown>[]).map((p) => ({
+        id: String(p['id'] ?? p['process_id'] ?? ''),
+        command: String(p['command'] ?? ''),
+        status: String(p['status'] ?? '')
       }));
     } catch {
       this.processes = [];

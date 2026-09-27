@@ -31,6 +31,7 @@ type Server struct {
 	handler    http.Handler
 	version    string
 	started    time.Time
+	tcpAddr    string
 	onShutdown func(keepProcesses bool)
 }
 

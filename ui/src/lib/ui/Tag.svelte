@@ -1,0 +1,1 @@
+<script lang="ts">let { label = '' }: { label?: string } = $props();</script><span class="tag">{label}</span><style>.tag{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0 var(--space-2);font-size:var(--fs-xs);color:var(--text-1)}</style>

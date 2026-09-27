@@ -63,11 +63,17 @@ func (s *Server) handleStartStack(w http.ResponseWriter, r *http.Request) (any, 
 		WorkspaceID string   `json:"workspaceId"`
 		Apps        []string `json:"apps"`
 		SessionID   string   `json:"sessionId"`
+		TimeoutMs   int      `json:"timeoutMs"`
 	}
 	_ = decode(r, &req)
 	if req.WorkspaceID == "" || len(req.Apps) == 0 {
 		return nil, fmt.Errorf("workspaceId and apps required")
 	}
+	timeout := 30 * time.Second
+	if req.TimeoutMs > 0 {
+		timeout = time.Duration(req.TimeoutMs)*time.Millisecond + 5*time.Second
+	}
+	_ = timeout
 	pr, rt, err := s.engine.RuntimeFor(req.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -84,14 +90,13 @@ func (s *Server) handleStartStack(w http.ResponseWriter, r *http.Request) (any, 
 	}
 	var started []any
 	for _, name := range order {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		res, err := rt.Start(ctx, api.StartRequest{App: name})
 		cancel()
 		if err != nil {
 			return map[string]any{"started": started, "failed": name, "error": err.Error()}, nil
 		}
-		// Wait for running state before the next dependency level.
-		deadline := time.Now().Add(30 * time.Second)
+		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
 			st, err := rt.Status(res.ProcessID)
 			if err == nil && (st.Status == "running" || st.Status == "ready") {

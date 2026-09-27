@@ -33,9 +33,20 @@ func newWebCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 			if len(token) > 0 && token[len(token)-1] == '\n' {
 				token = token[:len(token)-1]
 			}
-			// Fragment (#token=) never hits the wire; safe to print for
-			// pasting into the login screen.
-			url := "http://127.0.0.1:7350/#token=" + token
+			addr := "127.0.0.1:7350"
+			if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
+				if data, err := os.ReadFile(v + "/agent-runtime/tcp.addr"); err == nil {
+					if s := string(data); len(s) > 0 {
+						for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
+							s = s[:len(s)-1]
+						}
+						if s != "" {
+							addr = s
+						}
+					}
+				}
+			}
+			url := "http://" + addr + "/#token=" + token
 			fmt.Println(url)
 			fmt.Println("Remote: ssh -L 7350:127.0.0.1:7350 <host>, then open the URL above.")
 			openBrowser(url)

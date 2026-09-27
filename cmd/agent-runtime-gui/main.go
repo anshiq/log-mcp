@@ -50,6 +50,14 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	for i, a := range os.Args {
+		if a == "--socket" && i+1 < len(os.Args) {
+			_ = os.Setenv("AGENTD_SOCKET", os.Args[i+1])
+		}
+		if strings.HasPrefix(a, "--socket=") {
+			_ = os.Setenv("AGENTD_SOCKET", strings.TrimPrefix(a, "--socket="))
+		}
+	}
 	if len(os.Args) > 1 && os.Args[1] == "open" {
 		return openGUI(logger)
 	}
@@ -61,6 +69,15 @@ func socketPath() string {
 		return s
 	}
 	return paths.User().SocketPath()
+}
+
+func backgroundMode() bool {
+	for _, a := range os.Args {
+		if a == "--background" {
+			return true
+		}
+	}
+	return false
 }
 
 func openGUI(logger *slog.Logger) error {
@@ -105,12 +122,14 @@ func newProxy(socketPath, agent string) *httputil.ReverseProxy {
 	return proxy
 }
 
-// apiMiddleware routes /api/* to proxy and everything else to next
-// (the embedded frontend), so Wails' AssetServer can serve both from
-// one origin with no CORS.
 func apiMiddleware(proxy *httputil.ReverseProxy) assetserver.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/__wails_shim.js" {
+				w.Header().Set("Content-Type", "application/javascript")
+				_, _ = w.Write([]byte(wailsBindingShimJS))
+				return
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				proxy.ServeHTTP(w, r)
 				return
@@ -120,15 +139,18 @@ func apiMiddleware(proxy *httputil.ReverseProxy) assetserver.Middleware {
 	}
 }
 
-// wailsBindingShim bridges Wails' auto-injected window.go.main.App.*
-// bindings to the window.__wailsBinding contract ui/src/lib/platform.ts
-// already expects, with no changes needed in ui/.
-const wailsBindingShim = `window.__wailsBinding = {
-	notify: window.go.main.App.Notify,
-	openInEditor: window.go.main.App.OpenInEditor,
+const wailsBindingShimJS = `Object.defineProperty(window,"__wailsBinding",{configurable:true,get:function(){return {
+	notify: function(t,b,tag){ return window.go.main.App.Notify(t,b,tag||""); },
+	openInEditor: function(p,l){ return window.go.main.App.OpenInEditor(p,l||0); },
 	saveDialog: window.go.main.App.SaveDialog,
-	writeFile: window.go.main.App.WriteFile
-};`
+	writeFile: window.go.main.App.WriteFile,
+	pickDirectory: window.go.main.App.PickDirectory,
+	revealInFileManager: window.go.main.App.RevealInFileManager,
+	openExternal: window.go.main.App.OpenExternal,
+	setBadge: window.go.main.App.SetBadge
+};}});window.dispatchEvent(new Event("wails:ready"));`
+
+const wailsBindingShim = wailsBindingShimJS + `;window.dispatchEvent(new Event("wails:ready"));`
 
 func runNative(logger *slog.Logger) error {
 	sock := socketPath()
@@ -142,15 +164,24 @@ func runNative(logger *slog.Logger) error {
 	proxy := newProxy(sock, "gui/"+version)
 	app := &App{}
 	geometry := loadWindowState()
+	if geometry.Width < 900 {
+		geometry.Width = 1100
+	}
+	if geometry.Height < 600 {
+		geometry.Height = 750
+	}
 
 	return wails.Run(&options.App{
-		Title:  "agent-runtime",
-		Width:  geometry.Width,
-		Height: geometry.Height,
+		Title:     "agent-runtime",
+		Width:     geometry.Width,
+		Height:    geometry.Height,
+		MinWidth:  900,
+		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets:     sub,
 			Middleware: apiMiddleware(proxy),
 		},
+		Menu: buildMenu(),
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "agent-runtime-gui",
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
@@ -170,14 +201,13 @@ func runNative(logger *slog.Logger) error {
 		},
 		OnBeforeClose: func(ctx context.Context) (prevent bool) {
 			saveWindowState(ctx)
+			if backgroundMode() {
+				wailsruntime.WindowHide(ctx)
+				return true
+			}
 			if !hasTray {
-				// No tray to reopen the window from (see hasTray):
-				// closing the window quits like a normal app.
 				return false
 			}
-			// Closing the window leaves the tray running; only the
-			// tray's Quit item calls runtime.Quit. The daemon is a
-			// separate process and is unaffected either way.
 			wailsruntime.WindowHide(ctx)
 			return true
 		},

@@ -1,8 +1,16 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
+let version = '3.0.0';
+try {
+  const p = join(process.cwd(), 'package.json');
+  if (existsSync(p)) {
+    version = JSON.parse(readFileSync(p, 'utf-8')).version ?? version;
+  }
+} catch {
+}
 
 // VITE_TARGET=web builds the standalone web UI (served by the daemon on
 // the TCP listener or any static host, bearer-token login). The default
@@ -15,11 +23,23 @@ export default defineConfig({
   build: {
     outDir: target === 'web' ? 'dist-web' : 'dist',
     sourcemap: true,
-    target: 'es2022'
+    target: 'es2022',
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          monaco: ['monaco-editor'],
+          xterm: ['@xterm/xterm']
+        }
+      }
+    }
+  },
+  worker: {
+    format: 'es'
   },
   define: {
     __APP_TARGET__: JSON.stringify(target),
-    __APP_VERSION__: JSON.stringify(pkg.version)
+    __APP_VERSION__: JSON.stringify(version)
   },
   server: {
     proxy: {

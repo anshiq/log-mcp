@@ -1,0 +1,1 @@
+<script lang="ts">let { width = '100%', height = '16px' }: { width?: string; height?: string } = $props();</script><div class="sk" style={`width:${width};height:${height}`}></div><style>.sk{background:linear-gradient(90deg,var(--bg-2),var(--bg-3),var(--bg-2));border-radius:var(--radius-sm);animation:sh 1.4s infinite}@keyframes sh{50%{opacity:0.6}}</style>

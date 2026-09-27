@@ -2,7 +2,9 @@ import { router } from './router.svelte';
 import { palette } from './palette.svelte';
 
 const GOTO: Record<string, string> = {
+  o: '/',
   p: '/processes',
+  l: '/logs',
   a: '/apps',
   c: '/config',
   e: '/events',
@@ -17,18 +19,25 @@ function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el) return false;
   const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable || !!el.closest('.monaco-editor');
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable || !!el.closest('.monaco-editor') || !!el.closest('[role="dialog"]');
 }
 
-export function installGlobalKeys(): () => void {
+export function installGlobalKeys(opts: { onPrevProcess?: () => void; onNextProcess?: () => void } = {}): () => void {
   let pendingG = false;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handler(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       if (palette.open) palette.hide();
       else void palette.show();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (palette.open) {
+        palette.hide();
+        return;
+      }
       return;
     }
     if (isTyping(e.target)) return;
@@ -40,7 +49,7 @@ export function installGlobalKeys(): () => void {
       const path = GOTO[e.key];
       if (path) {
         e.preventDefault();
-        router.navigate(path);
+        void router.navigate(path);
       }
       return;
     }
@@ -57,6 +66,21 @@ export function installGlobalKeys(): () => void {
         e.preventDefault();
         search.focus();
       }
+      return;
+    }
+
+    if (e.key === '?') {
+      window.dispatchEvent(new CustomEvent('ar:shortcuts'));
+      return;
+    }
+
+    if (e.key === '[') {
+      opts.onPrevProcess?.();
+      return;
+    }
+    if (e.key === ']') {
+      opts.onNextProcess?.();
+      return;
     }
   }
 

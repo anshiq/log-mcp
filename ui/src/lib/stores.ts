@@ -61,11 +61,12 @@ export function createProcessStore(): ProcessStore {
             } else if (msg.kind === 'removed' && msg.processId) {
               next.delete(String(msg.processId));
             } else if (msg.kind === 'gap') {
-              void ProcessService.list(workspaceId, all).then((res) => {
+              void (ProcessService.list(workspaceId, all) as Promise<unknown>).then((res) => {
+                const arr = Array.isArray(res) ? (res as Process[]) : ((res as { processes?: Process[] }).processes ?? []);
                 processes.update((m) => {
                   const fresh = new Map(m);
                   fresh.clear();
-                  for (const p of res.processes as Process[]) fresh.set(pidOf(p), p);
+                  for (const p of arr) fresh.set(pidOf(p), p);
                   return fresh;
                 });
               });

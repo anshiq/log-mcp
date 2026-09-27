@@ -5,11 +5,13 @@
 package core
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"time"
 
 	"agent-runtime/internal/config"
+	"agent-runtime/internal/events"
 )
 
 type alertState struct {
@@ -94,8 +96,14 @@ func (e *Engine) checkAlerts(pr *ProjectRuntime, st *alertState) {
 				if msg == "" {
 					msg = "pattern matched: " + rule.rule.Pattern
 				}
+				payload, _ := json.Marshal(map[string]any{"message": msg, "line": truncateLine(en.Line, 300), "rule": rule.rule.Pattern})
 				_, _ = e.store.AppendEvent(time.Now().UnixNano(), "logs.alert",
-					pr.ProjectID(), wsID, p.ProcessID, "", "", msg+" :: "+truncateLine(en.Line, 300))
+					pr.ProjectID(), wsID, p.ProcessID, "", "", string(payload))
+				if bus := pr.ManagerBus(); bus != nil {
+					bus.Publish(events.Event{Type: "logs.alert", ProcessID: p.ProcessID, Timestamp: time.Now(), Payload: map[string]any{"message": msg, "line": truncateLine(en.Line, 300), "rule": rule.rule.Pattern}})
+				} else if rt2, err := pr.Runtime(); err == nil {
+					rt2.Manager().Events().Publish(events.Event{Type: "logs.alert", ProcessID: p.ProcessID, Timestamp: time.Now(), Payload: map[string]any{"message": msg, "line": truncateLine(en.Line, 300), "rule": rule.rule.Pattern}})
+				}
 			}
 		}
 		st.cursors[p.ProcessID] = maxID + 1

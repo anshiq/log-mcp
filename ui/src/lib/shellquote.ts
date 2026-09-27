@@ -4,7 +4,7 @@ export function splitCommand(input: string): string[] {
   let quote: '"' | "'" | null = null;
   let i = 0;
   while (i < input.length) {
-    const ch = input[i];
+    const ch = input[i] as string;
     if (quote) {
       if (ch === quote) {
         quote = null;

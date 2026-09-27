@@ -35,7 +35,7 @@
         workdir: a.workdir ?? ''
       }));
       if (apps.length === 0) mode = 'command';
-      else selectedApp = apps[0].name;
+      else selectedApp = apps[0]?.name ?? '';
     } catch {
       mode = 'command';
     }

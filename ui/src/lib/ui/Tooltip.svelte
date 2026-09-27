@@ -15,7 +15,7 @@
   }
 </script>
 
-<span class="wrap" onmouseenter={show} onmouseleave={hide} onfocusin={show} onfocusout={hide}>
+<span class="wrap" role="button" tabindex="0" onmouseenter={show} onmouseleave={hide} onfocusin={show} onfocusout={hide}>
   {@render children?.()}
   {#if visible}
     <span class="bubble" role="tooltip">{text}</span>

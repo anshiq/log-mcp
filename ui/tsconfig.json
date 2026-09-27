@@ -5,7 +5,9 @@
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*", "e2e/**/*"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "e2e/**/*"]
 }

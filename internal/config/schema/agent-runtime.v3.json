@@ -6,77 +6,86 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "version": { "type": "integer", "enum": [1, 2, 3], "default": 3 },
+    "version": { "type": "integer", "enum": [1, 2, 3], "default": 3, "description": "Config file version." },
     "project": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Project metadata.",
       "properties": {
-        "name": { "type": "string" }
+        "name": { "type": "string", "description": "Human-readable project name." }
       }
     },
     "runtime": {
       "type": "object",
+      "description": "Daemon runtime defaults for this project.",
       "properties": {
-        "shell_env": { "type": "string", "enum": ["login", "none"], "default": "login" },
-        "env": { "type": "array", "items": { "type": "string" } },
-        "stop_grace": { "type": "string", "default": "5s" },
-        "log_buffer_lines": { "type": "integer", "default": 10000 },
-        "max_exited_processes": { "type": "integer", "default": 50 },
+        "shell_env": { "type": "string", "enum": ["login", "none"], "default": "login", "description": "Whether shells source login profiles." },
+        "env": { "type": "array", "items": { "type": "string" }, "description": "Default environment entries as KEY=VALUE." },
+        "stop_grace": { "type": "string", "default": "5s", "description": "Grace period before SIGKILL after SIGTERM." },
+        "log_buffer_lines": { "type": "integer", "default": 10000, "description": "Ring buffer lines retained per process." },
+        "max_exited_processes": { "type": "integer", "default": 50, "description": "How many exited processes to keep listed." },
         "security": {
           "type": "object",
+          "description": "Security policy for this project.",
           "properties": {
-            "mode": { "type": "string", "enum": ["trusted", "restricted"], "default": "trusted" }
+            "mode": { "type": "string", "enum": ["trusted", "restricted"], "default": "trusted", "description": "Trusted allows repo configs; restricted requires explicit trust." }
           }
         }
       }
     },
     "apps": {
       "type": "object",
+      "description": "Named apps that can be started with Start or StartStack.",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "type": { "type": "string" },
-          "workdir": { "type": "string" },
-          "command": { "type": "array", "items": { "type": "string" } },
-          "env_file": { "type": "string" },
-          "env": { "type": "array", "items": { "type": "string" } },
-          "readiness": { "type": "array", "items": { "type": "string" } },
+          "type": { "type": "string", "description": "Process type or profile, e.g. node, python, shell." },
+          "workdir": { "type": "string", "description": "Working directory, relative to the workspace root." },
+          "command": { "type": "array", "items": { "type": "string" }, "description": "Command and arguments to run." },
+          "env_file": { "type": "string", "description": "Dotenv file applied to this app, relative to project root." },
+          "env": { "type": "array", "items": { "type": "string" }, "description": "Environment entries as KEY=VALUE; supports ${port:name} templates." },
+          "readiness": { "type": "array", "items": { "type": "string" }, "description": "Regex patterns that mark the app ready when matched in logs." },
           "health_check": {
             "type": "object",
+            "description": "Health probe configuration.",
             "properties": {
-              "http": { "type": "string" },
-              "tcp": { "type": "string" },
-              "interval": { "type": "string" },
-              "timeout": { "type": "string" },
-              "failure_threshold": { "type": "integer" }
+              "http": { "type": "string", "description": "HTTP URL to probe for health." },
+              "tcp": { "type": "string", "description": "TCP address to probe for health." },
+              "interval": { "type": "string", "description": "Probe interval, e.g. 10s." },
+              "timeout": { "type": "string", "description": "Probe timeout, e.g. 2s." },
+              "failure_threshold": { "type": "integer", "description": "Consecutive failures before unhealthy." }
             }
           },
           "restart": {
             "type": "object",
+            "description": "Restart policy for this app.",
             "properties": {
-              "policy": { "type": "string", "enum": ["never", "on-failure", "always"] },
-              "max_restarts": { "type": "integer" },
-              "backoff": { "type": "array", "items": { "type": "string" } }
+              "policy": { "type": "string", "enum": ["never", "on-failure", "always"], "description": "When to restart after exit." },
+              "max_restarts": { "type": "integer", "description": "Max restarts within the backoff window." },
+              "backoff": { "type": "array", "items": { "type": "string" }, "description": "Backoff delays between restarts." }
             }
           },
           "limits": {
             "type": "object",
+            "description": "Resource limits for this app.",
             "properties": {
-              "cpu": { "type": "string" },
-              "memory": { "type": "string" }
+              "cpu": { "type": "string", "description": "CPU limit, e.g. 500m, 2." },
+              "memory": { "type": "string", "description": "Memory limit, e.g. 512Mi, 2Gi." }
             }
           },
-          "lifetime": { "type": "string", "enum": ["persistent", "session"], "default": "persistent" },
-          "autostart": { "type": "boolean", "default": false },
-          "reload": { "type": "string", "enum": ["manual", "restart"], "default": "manual" },
-          "pty": { "type": "boolean", "default": false },
-          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "lifetime": { "type": "string", "enum": ["persistent", "session"], "default": "persistent", "description": "Persistent survives session close; session stops after lease grace." },
+          "autostart": { "type": "boolean", "default": false, "description": "Start automatically when the workspace loads." },
+          "reload": { "type": "string", "enum": ["manual", "restart"], "default": "manual", "description": "Manual marks stale on config change; restart restarts automatically." },
+          "pty": { "type": "boolean", "default": false, "description": "Allocate a PTY for colors and interactive CLIs." },
+          "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Other apps that must start first; used by StartStack order." },
           "ports": {
             "type": "object",
+            "description": "Named ports for templating and conflict detection.",
             "additionalProperties": {
               "type": "object",
-              "properties": { "default": { "type": "integer" } }
+              "description": "One named port declaration.",
+              "properties": { "default": { "type": "integer", "description": "Preferred port number." } }
             }
           }
         }

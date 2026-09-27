@@ -151,5 +151,29 @@ func (s *Server) ServeTCP(addr, token string) error {
 	if err != nil {
 		return fmt.Errorf("server: tcp listen %s: %w", addr, err)
 	}
+	s.tcpAddr = ln.Addr().String()
+	writeTCPPortFile(s.tcpAddr)
 	return srv.Serve(ln)
+}
+
+func writeTCPPortFile(addr string) {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		return
+	}
+	base := dir + "/agent-runtime"
+	_ = os.MkdirAll(base, 0o700)
+	_ = os.WriteFile(base+"/tcp.addr", []byte(addr+"\n"), 0o600)
+}
+
+func TCPAddrFromFile() string {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		return ""
+	}
+	data, err := os.ReadFile(dir + "/agent-runtime/tcp.addr")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

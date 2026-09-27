@@ -17,14 +17,22 @@
   let timer: ReturnType<typeof setInterval> | null = null;
 
   async function load() {
-    const res = await SessionService.list();
-    sessions = (res.sessions as SessionRow[]) ?? [];
+    const res = (await SessionService.list()) as unknown;
+    const arr = Array.isArray(res) ? res : (res as { sessions?: SessionRow[] }).sessions ?? [];
+    sessions = arr as SessionRow[];
   }
 
   async function close(id: string) {
     if (!confirm('Close this session? Its lifetime:session processes will stop after the grace period.')) return;
     await SessionService.close(id);
     await load();
+  }
+
+  async function detail(id: string) {
+    try {
+      await SessionService.get(id);
+    } catch {
+    }
   }
 
   onMount(() => {
@@ -62,7 +70,7 @@
       </thead>
       <tbody>
         {#each sessions as s (s.id)}
-          <tr class:closed={!!s.closedAt}>
+          <tr class:closed={!!s.closedAt} onclick={() => void detail(s.id)}>
             <td>{s.kind}</td>
             <td>{s.harness || '—'}</td>
             <td class="mono">{s.clientPid ?? ''}</td>

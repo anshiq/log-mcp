@@ -4,6 +4,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,30 +24,81 @@ func (s *Server) routeEvent(mux *http.ServeMux) {
 
 func (s *Server) eventList(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
-		WorkspaceID string `json:"workspaceId"`
-		ProcessID   string `json:"processId"`
-		Since       string `json:"since"`
-		Limit       int    `json:"limit"`
+		WorkspaceID string   `json:"workspaceId"`
+		ProcessID   string   `json:"processId"`
+		Since       string   `json:"since"`
+		Limit       int      `json:"limit"`
+		Types       []string `json:"types"`
+		Before      string   `json:"before"`
 	}
 	_ = decode(r, &req)
 	var since int64
 	if req.Since != "" {
 		since, _ = strconv.ParseInt(req.Since, 10, 64)
 	}
-	rows, err := s.engine.Store().ListEvents(req.WorkspaceID, req.ProcessID, since, req.Limit)
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	rows, err := s.engine.Store().ListEvents(req.WorkspaceID, req.ProcessID, since, limit+1)
 	if err != nil {
 		return nil, err
 	}
+	var beforeID int64
+	if req.Before != "" {
+		beforeID, _ = strconv.ParseInt(req.Before, 10, 64)
+	}
 	out := make([]any, 0, len(rows))
+	var nextBefore string
 	for _, e := range rows {
+		if beforeID > 0 && e.ID >= beforeID {
+			continue
+		}
+		if len(req.Types) > 0 {
+			allowed := false
+			for _, t := range req.Types {
+				if t == e.Type {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				continue
+			}
+		}
 		out = append(out, map[string]any{
 			"id": e.ID, "ts": e.TS, "type": e.Type,
 			"projectId": e.ProjectID, "workspaceId": e.WorkspaceID,
 			"processId": e.ProcessID, "instanceId": e.InstanceID,
-			"sessionId": e.SessionID,
+			"sessionId": e.SessionID, "payload": eventPayload(e.Payload),
+			"cursor": fmt.Sprint(e.ID),
 		})
+		if len(out) == limit {
+			break
+		}
 	}
-	return map[string]any{"events": out}, nil
+	if len(out) > 0 {
+		if m, ok := out[0].(map[string]any); ok {
+			if id, ok := m["id"]; ok {
+				nextBefore = fmt.Sprint(id)
+			}
+		}
+	}
+	return map[string]any{"events": out, "nextBefore": nextBefore}, nil
+}
+
+func eventPayload(raw string) any {
+	if raw == "" {
+		return map[string]any{}
+	}
+	var v any
+	if json.Unmarshal([]byte(raw), &v) == nil {
+		return v
+	}
+	return map[string]any{"message": raw}
 }
 
 func (s *Server) eventWatch(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +125,8 @@ func (s *Server) eventWatch(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		_ = sw.send(map[string]any{"kind": "event", "id": e.ID, "type": e.Type,
-			"processId": e.ProcessID, "cursor": fmt.Sprint(e.ID)})
+			"processId": e.ProcessID, "instanceId": e.InstanceID, "ts": e.TS,
+			"payload": eventPayload(e.Payload), "cursor": fmt.Sprint(e.ID)})
 		if e.ID > since {
 			since = e.ID
 		}
@@ -118,10 +171,24 @@ func (s *Server) eventWatch(w http.ResponseWriter, r *http.Request) {
 				if !eventAllowed(string(ev.Type), ev.ProcessID, req.Types, req.ProcessIDs) {
 					continue
 				}
+				payloadBytes, _ := json.Marshal(ev.Payload)
+				payloadStr := ""
+				if string(payloadBytes) != "null" {
+					payloadStr = string(payloadBytes)
+				}
+				id, _ := s.engine.Store().AppendEvent(ev.Timestamp.UnixNano(), string(ev.Type), "", req.WorkspaceID, ev.ProcessID, ev.InstanceID, "", payloadStr)
+				if id == 0 {
+					id = time.Now().UnixNano()
+				}
+				var payload any
+				if payloadStr != "" {
+					_ = json.Unmarshal([]byte(payloadStr), &payload)
+				}
 				select {
 				case queue <- map[string]any{"kind": "event", "type": string(ev.Type),
 					"processId": ev.ProcessID, "instanceId": ev.InstanceID,
-					"cursor": time.Now().UnixNano()}:
+					"ts": ev.Timestamp.UnixNano(), "payload": payload,
+					"cursor": fmt.Sprint(id), "id": id}:
 				default:
 					dropped++
 				}

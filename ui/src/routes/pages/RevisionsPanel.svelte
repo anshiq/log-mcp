@@ -13,8 +13,8 @@
   async function load() {
     loading = true;
     try {
-      const res = await ConfigService.revisions(projectId, 50);
-      revisions = res.revisions ?? [];
+      const res = (await ConfigService.revisions(projectId, 50)) as unknown;
+      revisions = (Array.isArray(res) ? res : (res as { revisions?: Record<string, unknown>[] }).revisions ?? []) as Record<string, unknown>[];
     } finally {
       loading = false;
     }

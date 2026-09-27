@@ -1,0 +1,1 @@
+<script lang="ts">let { value = 0, max = 100 }: { value?: number; max?: number } = $props();</script><div class="meter"><div class="fill" style={`width:${Math.min(100, (value / max) * 100)}%`}></div></div><style>.meter{height:8px;background:var(--bg-3);border-radius:var(--radius);overflow:hidden}.fill{height:100%;background:var(--ok)}</style>

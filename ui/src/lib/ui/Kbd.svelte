@@ -1,0 +1,1 @@
+<script lang="ts">let { keys = '' }: { keys?: string } = $props();</script><kbd>{keys}</kbd><style>kbd{background:var(--bg-3);border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--radius-sm);padding:0 var(--space-2);font-family:var(--font-mono);font-size:var(--fs-xs)}</style>

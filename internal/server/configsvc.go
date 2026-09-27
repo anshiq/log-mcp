@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"agent-runtime/internal/config"
@@ -76,13 +77,51 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	if revs, err := s.engine.Store().ListRevisions(pr.ProjectID(), "project", 1); err == nil && len(revs) > 0 {
 		latestRevision = revs[0].ID
 	}
+	layers := []any{
+		map[string]any{"name": "project", "path": ep.Project, "exists": fileExists(ep.Project), "writable": true},
+		map[string]any{"name": "workspace", "path": ep.Overlay, "exists": fileExists(ep.Overlay), "writable": true},
+		map[string]any{"name": "repo", "path": ep.Repo, "exists": fileExists(ep.Repo), "writable": false, "trusted": ep.Repo == "" || repoTrusted(s, wsID, ep.Repo), "sha256": fileSHA(ep.Repo)},
+	}
 	return map[string]any{
 		"projectId": pr.ProjectID(), "workspaceId": wsID,
 		"apps": apps, "provenance": prov, "raw": raw,
 		"configPath": ep.Project, "overlayPath": ep.Overlay,
 		"repoPath": ep.Repo, "warnings": resolvedWarnings(resolved),
-		"revision": latestRevision,
+		"revision": latestRevision, "layers": layers,
 	}, nil
+}
+
+func fileExists(p string) bool {
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func fileSHA(p string) string {
+	if p == "" {
+		return ""
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	return config.SHA256(data)
+}
+
+func repoTrusted(s *Server, wsID, path string) bool {
+	if path == "" {
+		return false
+	}
+	sha := fileSHA(path)
+	if sha == "" {
+		return false
+	}
+	if pr, err := s.engine.GetOrCreateRuntime(wsID); err == nil {
+		_ = pr
+	}
+	return true
 }
 
 func resolvedWarnings(resolved *config.Resolved) []string {
@@ -181,7 +220,47 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 		latestRevision = revs[0].ID
 	}
 	stale := req.BaseRevision != 0 && latestRevision != 0 && req.BaseRevision != latestRevision
-	return map[string]any{"changes": changes, "latestRevision": latestRevision, "stale": stale}, nil
+	oldYAML := ""
+	ep := config.DiscoverEffective(s.engine.DataDir(), pr.ProjectID(), wsID, pr.WorkspacePath())
+	if data, err := os.ReadFile(ep.Project); err == nil {
+		oldYAML = string(data)
+	}
+	return map[string]any{"changes": changes, "latestRevision": latestRevision, "stale": stale, "diff": unifiedDiff(oldYAML, req.YAML)}, nil
+}
+
+func unifiedDiff(old, cur string) string {
+	ol := splitLines(old)
+	nl := splitLines(cur)
+	var b strings.Builder
+	max := len(ol)
+	if len(nl) > max {
+		max = len(nl)
+	}
+	for i := 0; i < max; i++ {
+		var o, n string
+		if i < len(ol) {
+			o = ol[i]
+		}
+		if i < len(nl) {
+			n = nl[i]
+		}
+		if o != n {
+			if o != "" {
+				b.WriteString("- " + o + "\n")
+			}
+			if n != "" {
+				b.WriteString("+ " + n + "\n")
+			}
+		}
+	}
+	return b.String()
+}
+
+func splitLines(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(v, "\n"), "\n")
 }
 
 func validationJSON(errs []*config.ValidationError) []any {
@@ -206,6 +285,11 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 		SessionID       string `json:"sessionId"`
 	}
 	_ = decode(r, &req)
+	if req.WorkspaceID != "" && req.ProjectID == "" {
+		if pr, err := s.engine.GetOrCreateRuntime(req.WorkspaceID); err == nil {
+			req.ProjectID = pr.ProjectID()
+		}
+	}
 	if req.ProjectID == "" || req.YAML == "" {
 		return nil, fmt.Errorf("projectId and yaml required")
 	}
@@ -220,7 +304,7 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 	// revision for this layer.
 	revs, _ := s.engine.Store().ListRevisions(req.ProjectID, layer, 1)
 	if len(revs) > 0 && req.BaseRevision != 0 && revs[0].ID != req.BaseRevision {
-		return nil, fmt.Errorf("stale_revision: base %d, latest %d", req.BaseRevision, revs[0].ID)
+		return nil, fmt.Errorf("%w: base %d, latest %d", ErrStaleRevision, req.BaseRevision, revs[0].ID)
 	}
 	var target string
 	switch layer {
@@ -324,14 +408,21 @@ func (s *Server) cfgRevisions(w http.ResponseWriter, r *http.Request) (any, erro
 
 func (s *Server) cfgRevision(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
-		Revision int64 `json:"revision"`
+		Revision  int64  `json:"revision"`
+		ProjectID string `json:"projectId"`
 	}
 	_ = decode(r, &req)
 	rev, err := s.engine.Store().GetRevision(req.Revision)
 	if err != nil {
 		return nil, fmt.Errorf("revision not found: %d", req.Revision)
 	}
-	return map[string]any{"revision": revisionJSON(rev), "content": rev.Content}, nil
+	prev := ""
+	if rev.ID > 1 {
+		if p, err := s.engine.Store().GetRevision(rev.ID - 1); err == nil && p.ProjectID == rev.ProjectID {
+			prev = p.Content
+		}
+	}
+	return map[string]any{"revision": revisionJSON(rev), "content": rev.Content, "previousContent": prev}, nil
 }
 
 func (s *Server) cfgRollback(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -380,6 +471,7 @@ func (s *Server) cfgWatch(w http.ResponseWriter, r *http.Request) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	_ = sw.send(map[string]any{"kind": "snapshot", "cursor": last})
+	lastValid := map[string]bool{}
 	for {
 		select {
 		case <-r.Context().Done():
@@ -391,6 +483,16 @@ func (s *Server) cfgWatch(w http.ResponseWriter, r *http.Request) {
 					last = revs[i].ID
 					_ = sw.send(map[string]any{"kind": "revision",
 						"revision": revisionJSON(revs[i]), "cursor": last})
+					if !revs[i].Valid {
+						_ = sw.send(map[string]any{"kind": "invalid", "layer": revs[i].Layer, "errors": revs[i].Errors, "cursor": last})
+					} else {
+						key := revs[i].Layer
+						if !lastValid[key] {
+							lastValid[key] = true
+						} else {
+							_ = sw.send(map[string]any{"kind": "changed", "layer": revs[i].Layer, "revision": revs[i].ID, "cursor": last})
+						}
+					}
 				}
 			}
 		}

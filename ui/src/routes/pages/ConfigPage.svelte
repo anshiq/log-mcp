@@ -1,8 +1,22 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { scope } from '../../lib/scope.svelte';
   import { router } from '../../lib/router.svelte';
+  import { ConfigService } from '../../lib/api';
 
   const onRevisions = $derived(router.match('/config/revisions') !== null);
+  let external = $state('');
+  let watcher: { close(): void } | null = null;
+
+  onMount(() => {
+    if (scope.projectId) {
+      watcher = ConfigService.watch(scope.projectId, (msg) => {
+        if (msg.kind === 'changed' || msg.kind === 'invalid') external = String(msg.kind);
+      });
+    }
+  });
+
+  onDestroy(() => watcher?.close());
 </script>
 
 <div class="page">
@@ -10,6 +24,9 @@
     <button class:active={!onRevisions} onclick={() => router.navigate('/config')}>Editor</button>
     <button class:active={onRevisions} onclick={() => router.navigate('/config/revisions')}>Revisions</button>
   </div>
+  {#if external}
+    <p class="hint">Config changed on disk ({external}). <button onclick={() => (external = '')}>Dismiss</button></p>
+  {/if}
   {#if !scope.workspaceId}
     <p class="hint">Open a workspace from the top bar to edit its config.</p>
   {:else if onRevisions}

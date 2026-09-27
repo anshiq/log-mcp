@@ -2,3 +2,8 @@
 
 declare const __APP_TARGET__: 'wails' | 'web';
 declare const __APP_VERSION__: string;
+declare module '*.svelte' {
+  import type { Component } from 'svelte';
+  const component: Component;
+  export default component;
+}

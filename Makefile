@@ -1,7 +1,7 @@
 BINARY := agent-runtime
 BIN_DIR := bin
 
-.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web ui-web-embed build-gui ci-check
+.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web ui-web-embed build-gui ui-check ci-check
 
 build:
 	@if [ -d ui/dist-web ]; then $(MAKE) ui-web-embed; fi
@@ -29,16 +29,19 @@ ui-build:
 # agent-runtime-gui needs cgo + GTK/WebKitGTK dev headers, so it's kept out
 # of the default `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
 build-gui: ui ui-build
-	go build -tags desktop,production,webkit2_41 -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+	go build -ldflags "-X main.version=$$(git describe --tags --always --dirty 2>/dev/null || echo v3.0.0-dev)" -tags desktop,production,webkit2_41 -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+
+ui-check:
+	cd ui && npm run check && npm test && npm run build && npm run build:web
 
 test:
-	go test ./...
+	go test $$(go list ./... | grep -v /cmd/agent-runtime-gui)
 
 race:
-	go test -race ./...
+	go test -race $$(go list ./... | grep -v /cmd/agent-runtime-gui)
 
 vet:
-	go vet ./...
+	go vet $$(go list ./... | grep -v /cmd/agent-runtime-gui)
 
 fmt:
 	gofmt -l -w .
@@ -74,5 +77,5 @@ gen-deps:
 	go install github.com/bufbuild/buf/cmd/protoc-gen-es@latest
 	@echo "Protobuf tooling installed"
 
-ci-check: build vet race test proto
+ci-check: build vet race test proto ui-check
 	@echo "All checks passed"

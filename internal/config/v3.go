@@ -154,30 +154,114 @@ func Validate(data []byte) []*ValidationError {
 		return errs
 	}
 	for name, app := range cfg.Apps {
+		loc := nodeLoc(root, []string{"apps", name})
 		if app.Lifetime != "" && app.Lifetime != "persistent" && app.Lifetime != "session" {
-			errs = append(errs, &ValidationError{Path: "apps." + name + ".lifetime",
+			errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".lifetime",
 				Message: fmt.Sprintf("lifetime must be persistent|session, got %q", app.Lifetime)})
 		}
 		if app.Reload != "" && app.Reload != "manual" && app.Reload != "restart" {
-			errs = append(errs, &ValidationError{Path: "apps." + name + ".reload",
+			errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".reload",
 				Message: fmt.Sprintf("reload must be manual|restart, got %q", app.Reload)})
 		}
 		for _, pat := range app.Readiness {
 			if err := checkRegexp(pat); err != nil {
-				errs = append(errs, &ValidationError{Path: "apps." + name + ".readiness", Message: err.Error()})
+				errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".readiness", Message: err.Error()})
 			}
 		}
 		for _, p := range app.DependsOn {
 			if _, ok := cfg.Apps[p]; !ok {
-				errs = append(errs, &ValidationError{Path: "apps." + name + ".depends_on",
+				errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".depends_on",
 					Message: fmt.Sprintf("depends on unknown app %q", p)})
 			}
 		}
+		for _, e := range app.Env {
+			for _, m := range portTemplate.FindAllStringSubmatch(e, -1) {
+				if len(m) < 2 || m[1] == "" {
+					errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".env", Message: "invalid port template " + e})
+				}
+			}
+		}
 	}
+	seenPorts := map[int]string{}
+	for name, app := range cfg.Apps {
+		loc := nodeLoc(root, []string{"apps", name, "ports"})
+		for pname, decl := range app.Ports {
+			if decl.Default == 0 {
+				continue
+			}
+			if prev, ok := seenPorts[decl.Default]; ok {
+				errs = append(errs, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + name + ".ports." + pname, Message: fmt.Sprintf("duplicate port %d also used by %q", decl.Default, prev)})
+			} else {
+				seenPorts[decl.Default] = name + "." + pname
+			}
+		}
+	}
+	errs = append(errs, checkDependsCycles(cfg.Apps, root)...)
 	return errs
 }
 
-var yamlFieldErrRe = regexp.MustCompile(`^line (\d+): (.*)$`)
+type loc struct {
+	line int
+	col  int
+}
+
+func nodeLoc(root *yaml.Node, path []string) loc {
+	cur := root
+	for _, seg := range path {
+		if cur == nil || cur.Kind != yaml.MappingNode {
+			return loc{}
+		}
+		found := false
+		for i := 0; i+1 < len(cur.Content); i += 2 {
+			if cur.Content[i].Value == seg {
+				if len(path) > 0 && seg == path[len(path)-1] {
+					return loc{line: cur.Content[i].Line, col: cur.Content[i].Column}
+				}
+				cur = cur.Content[i+1]
+				found = true
+				break
+			}
+		}
+		if !found {
+			return loc{}
+		}
+	}
+	return loc{}
+}
+
+func checkDependsCycles(apps map[string]V3App, root *yaml.Node) []*ValidationError {
+	visited := map[string]int{}
+	var stack []string
+	var out []*ValidationError
+	var visit func(n string)
+	visit = func(n string) {
+		if visited[n] == 2 {
+			return
+		}
+		if visited[n] == 1 {
+			cycle := append(append([]string{}, stack...), n)
+			loc := nodeLoc(root, []string{"apps", n})
+			out = append(out, &ValidationError{Line: loc.line, Column: loc.col, Path: "apps." + n + ".depends_on", Message: "depends_on cycle: " + strings.Join(cycle, " -> ")})
+			return
+		}
+		visited[n] = 1
+		stack = append(stack, n)
+		for _, d := range apps[n].DependsOn {
+			if _, ok := apps[d]; ok {
+				visit(d)
+			}
+		}
+		stack = stack[:len(stack)-1]
+		visited[n] = 2
+	}
+	for name := range apps {
+		visit(name)
+	}
+	return out
+}
+
+var yamlFieldErrRe = regexp.MustCompile(`^line (\d+): field (\S+) not found in type (.*)$`)
+var yamlFieldErrRe2 = regexp.MustCompile(`^line (\d+): (.*)$`)
 
 func unknownFieldErrors(err error) []*ValidationError {
 	te, ok := err.(*yaml.TypeError)
@@ -186,13 +270,17 @@ func unknownFieldErrors(err error) []*ValidationError {
 	}
 	out := make([]*ValidationError, 0, len(te.Errors))
 	for _, msg := range te.Errors {
-		m := yamlFieldErrRe.FindStringSubmatch(msg)
-		if m == nil {
-			out = append(out, &ValidationError{Message: msg})
+		if m := yamlFieldErrRe.FindStringSubmatch(msg); m != nil {
+			line, _ := strconv.Atoi(m[1])
+			out = append(out, &ValidationError{Line: line, Column: 1, Path: m[2], Message: m[2] + " is not a known field (" + m[3] + ")"})
 			continue
 		}
-		line, _ := strconv.Atoi(m[1])
-		out = append(out, &ValidationError{Line: line, Message: m[2]})
+		if m := yamlFieldErrRe2.FindStringSubmatch(msg); m != nil {
+			line, _ := strconv.Atoi(m[1])
+			out = append(out, &ValidationError{Line: line, Column: 1, Path: "", Message: m[2]})
+			continue
+		}
+		out = append(out, &ValidationError{Message: msg})
 	}
 	return out
 }

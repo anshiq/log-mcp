@@ -26,8 +26,9 @@
   async function load() {
     loading = true;
     try {
-      const res = await ProjectService.list();
-      projects = (res.projects as ProjectRow[]) ?? [];
+      const res = (await ProjectService.list()) as unknown;
+      const arr = Array.isArray(res) ? res : (res as { projects?: ProjectRow[] }).projects ?? [];
+      projects = arr as ProjectRow[];
     } finally {
       loading = false;
     }
@@ -40,8 +41,9 @@
       expanded = next;
       return;
     }
-    const res = await ProjectService.workspaces(p.id);
-    expanded = { ...expanded, [p.id]: (res.workspaces as WorkspaceRow[]) ?? [] };
+    const res = (await ProjectService.workspaces(p.id)) as unknown;
+    const arr = Array.isArray(res) ? res : (res as { workspaces?: WorkspaceRow[] }).workspaces ?? [];
+    expanded = { ...expanded, [p.id]: arr as WorkspaceRow[] };
   }
 
   async function useWorkspace(w: WorkspaceRow) {
@@ -65,6 +67,13 @@
     await scope.resolve(newPath.trim());
     newPath = '';
     await load();
+  }
+
+  async function trustRepo(w: WorkspaceRow) {
+    try {
+      await ProjectService.trustRepoConfig(w.id, w.path + '/agent-runtime.yaml', '');
+    } catch {
+    }
   }
 
   onMount(load);
@@ -103,6 +112,7 @@
                   <span class="path mono">{w.path}</span>
                   {#if !w.confirmed}<span class="badge">unconfirmed</span>{/if}
                   <button onclick={() => useWorkspace(w)}>Use as scope</button>
+                  <button onclick={() => void trustRepo(w)}>Trust repo config</button>
                 </li>
               {/each}
             </ul>

@@ -33,6 +33,7 @@
               "-s"
               "-w"
               "-X agent-runtime/internal/mcp.Version=${version}"
+              "-X main.version=${version}"
             ];
           };
           default = self.packages.${system}.agent-runtime;

@@ -1,0 +1,1 @@
+<div class="splash"><div class="logo">agent-runtime</div><div class="hint">Connecting to daemon…</div></div><style>.splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:var(--space-3)}.logo{font-size:var(--fs-2xl);font-weight:700}.hint{color:var(--text-2)}</style>

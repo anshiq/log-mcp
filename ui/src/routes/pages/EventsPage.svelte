@@ -31,8 +31,8 @@
   ];
 
   async function loadHistory() {
-    const res = await EventService.list(scope.workspaceId, 200);
-    events = ((res.events as EventRow[]) ?? []).reverse();
+    const res = (await EventService.list(scope.workspaceId, 200)) as unknown as { events: unknown[] };
+    events = ((res.events ?? []) as unknown as EventRow[]).reverse();
   }
 
   function connect() {

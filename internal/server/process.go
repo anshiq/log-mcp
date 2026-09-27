@@ -23,6 +23,7 @@ import (
 	"agent-runtime/internal/events"
 	"agent-runtime/internal/process"
 	iruntime "agent-runtime/internal/runtime"
+	"agent-runtime/internal/store"
 	"agent-runtime/pkg/api"
 )
 
@@ -157,7 +158,33 @@ func writeError(w http.ResponseWriter, err error) {
 	})
 }
 
+var (
+	ErrNotFound      = fmt.Errorf("not_found")
+	ErrStaleRevision = fmt.Errorf("stale_revision")
+	ErrPolicyDenied  = fmt.Errorf("policy_denied")
+	ErrRepoUntrusted = fmt.Errorf("repo_untrusted")
+	ErrInvalidArg    = fmt.Errorf("invalid_argument")
+)
+
 func errorCode(err error) string {
+	if err == nil {
+		return "internal"
+	}
+	if isErr(err, ErrStaleRevision) {
+		return "stale_revision"
+	}
+	if isErr(err, ErrNotFound) {
+		return "not_found"
+	}
+	if isErr(err, ErrPolicyDenied) {
+		return "policy_denied"
+	}
+	if isErr(err, ErrRepoUntrusted) {
+		return "repo_untrusted"
+	}
+	if isErr(err, ErrInvalidArg) {
+		return "invalid_argument"
+	}
 	msg := err.Error()
 	switch {
 	case contains(msg, "unknown process"), contains(msg, "not found"):
@@ -174,6 +201,26 @@ func errorCode(err error) string {
 		return "invalid_argument"
 	}
 	return "internal"
+}
+
+func isErr(err, target error) bool {
+	if err == nil {
+		return false
+	}
+	if contains(err.Error(), target.Error()) {
+		return true
+	}
+	for err != nil {
+		if err == target {
+			return true
+		}
+		u, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = u.Unwrap()
+	}
+	return false
 }
 
 func errorHTTPCode(err error) int {
@@ -340,7 +387,11 @@ func (s *Server) handleProcStop(w http.ResponseWriter, r *http.Request) (any, er
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	d := 30 * time.Second
+	if req.TimeoutMs > 0 {
+		d = time.Duration(req.TimeoutMs)*time.Millisecond + 5*time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), d)
 	defer cancel()
 	if err := rt.Stop(ctx, req.ProcessID); err != nil {
 		return nil, err
@@ -491,7 +542,25 @@ func (s *Server) handleProcList(w http.ResponseWriter, r *http.Request) (any, er
 	}
 	if req.AllWorkspaces || req.WorkspaceID == "" {
 		s.engine.RangeRuntimes(collect)
-		// Also surface store rows for workspaces not currently loaded.
+		seen := map[string]bool{}
+		for _, m := range out {
+			if mm, ok := m.(map[string]any); ok {
+				if id, ok := mm["process_id"].(string); ok {
+					seen[id] = true
+				}
+			}
+		}
+		for _, pr := range s.engine.LoadedRuntimes() {
+			_ = pr
+		}
+		extra := s.unloadedStoreRows()
+		for _, e := range extra {
+			if id, ok := e["processId"].(string); ok {
+				if !seen[id] {
+					out = append(out, e)
+				}
+			}
+		}
 	} else {
 		pr, _, err := s.engine.RuntimeFor(req.WorkspaceID)
 		if err != nil {
@@ -505,6 +574,29 @@ func (s *Server) handleProcList(w http.ResponseWriter, r *http.Request) (any, er
 	return map[string]any{"processes": out}, nil
 }
 
+func (s *Server) unloadedStoreRows() []map[string]any {
+	loaded := map[string]bool{}
+	s.engine.RangeRuntimes(func(pr *corePR) bool {
+		loaded[pr.WorkspaceID()] = true
+		return true
+	})
+	var out []map[string]any
+	projs, _ := s.engine.Store().ListProjects()
+	for _, p := range projs {
+		wss, _ := s.engine.Store().ListWorkspaces(p.ID)
+		for _, ws := range wss {
+			if loaded[ws.ID] {
+				continue
+			}
+			rows, _ := s.engine.Store().ListProcesses(ws.ID)
+			for _, row := range rows {
+				out = append(out, s.storeRowInfo(ws.ID, p.ID, row))
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) processInfo(pr *corePR, st *api.StatusResult) map[string]any {
 	ports := []int{}
 	if st.PID > 0 {
@@ -512,19 +604,44 @@ func (s *Server) processInfo(pr *corePR, st *api.StatusResult) map[string]any {
 			ports = p
 		}
 	}
+	if ports == nil {
+		ports = []int{}
+	}
 	app := ""
+	lifetime := ""
+	sessionID := ""
 	if row, err := s.engine.Store().GetProcess(st.ProcessID); err == nil {
 		app = row.App
+		lifetime = row.Lifetime
+		sessionID = row.StartedBy
+		if lifetime == "" {
+			lifetime = "persistent"
+		}
 	}
 	return map[string]any{
-		"id": st.ProcessID, "instanceId": st.InstanceID, "app": app,
+		"id": st.ProcessID, "processId": st.ProcessID, "instanceId": st.InstanceID, "app": app,
 		"workspaceId": pr.WorkspaceID(), "projectId": pr.ProjectID(),
 		"command": st.Command, "args": st.Args, "workdir": st.WorkDir, "profile": st.Profile,
 		"status": st.Status, "pid": st.PID, "restarts": st.Restarts,
 		"health": st.Health, "startedAt": st.StartedAt, "exitedAt": st.ExitedAt,
-		"exitCode": st.ExitCode, "restartPolicy": st.RestartPolicy,
+		"exitCode": st.ExitCode, "exitSignal": "", "restartPolicy": st.RestartPolicy,
 		"stdoutLines": st.StdoutLines, "stderrLines": st.StderrLines,
-		"ports": ports, "stale": pr.IsStale(""),
+		"ports": ports, "stale": pr.IsStale(""), "loaded": true,
+		"lifetime": lifetime, "sessionId": sessionID,
+	}
+}
+
+func (s *Server) storeRowInfo(wsID, projectID string, row *store.ProcessRow) map[string]any {
+	return map[string]any{
+		"id": row.ID, "processId": row.ID, "instanceId": "", "app": row.App,
+		"workspaceId": wsID, "projectId": projectID,
+		"command": "", "args": []string{}, "workdir": "", "profile": "",
+		"status": "exited", "pid": 0, "restarts": 0,
+		"health": "unknown", "startedAt": nil, "exitedAt": nil,
+		"exitCode": nil, "exitSignal": "", "restartPolicy": row.Restart,
+		"stdoutLines": 0, "stderrLines": 0,
+		"ports": []int{}, "stale": false, "loaded": false,
+		"lifetime": row.Lifetime, "sessionId": row.StartedBy,
 	}
 }
 
@@ -584,6 +701,9 @@ func (s *Server) handleProcWatch(w http.ResponseWriter, r *http.Request) {
 				if ev.Type == events.Removed {
 					enqueue(map[string]any{"kind": "removed", "processId": ev.ProcessID,
 						"cursor": fmt.Sprint(time.Now().UnixNano())})
+					continue
+				}
+				if ev.Type == events.Stdout || ev.Type == events.Stderr {
 					continue
 				}
 				st, err := rt.Status(ev.ProcessID)
@@ -665,6 +785,7 @@ func (s *Server) flushCoalesced(sw *streamWriter, coalesce map[string]map[string
 
 func (s *Server) snapshotProcesses(workspaceID string, all bool) ([]any, error) {
 	var out []any
+	seen := map[string]bool{}
 	collect := func(pr *corePR) bool {
 		rt, err := pr.Runtime()
 		if err != nil {
@@ -679,14 +800,23 @@ func (s *Server) snapshotProcesses(workspaceID string, all bool) ([]any, error) 
 			if err != nil {
 				continue
 			}
+			seen[p.ProcessID] = true
 			out = append(out, s.processInfo(pr, st))
 		}
 		return true
 	}
 	if all || workspaceID == "" {
 		s.engine.RangeRuntimes(collect)
+		for _, e := range s.unloadedStoreRows() {
+			if id, ok := e["processId"].(string); ok && !seen[id] {
+				out = append(out, e)
+			}
+		}
 	} else if pr, err := s.engine.GetOrCreateRuntime(workspaceID); err == nil {
 		collect(pr)
+	}
+	if out == nil {
+		out = []any{}
 	}
 	return out, nil
 }
@@ -698,7 +828,12 @@ func (s *Server) handleProcWaitExit(w http.ResponseWriter, r *http.Request) (any
 	if err != nil {
 		return nil, err
 	}
-	ctx := r.Context()
+	d := 30 * time.Second
+	if req.TimeoutMS > 0 {
+		d = time.Duration(req.TimeoutMS)*time.Millisecond + 5*time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), d)
+	defer cancel()
 	res, err := rt.WaitForExit(ctx, req)
 	if err != nil {
 		return nil, err
@@ -807,7 +942,7 @@ func (s *Server) handleProcAttach(w http.ResponseWriter, r *http.Request) {
 	}
 	defer sw.Close()
 	defer proc.UnsubscribeLogs(subID)
-	_ = sw.send(map[string]any{"kind": "batch", "lines": logs.Entries})
+	_ = sw.send(map[string]any{"kind": "batch", "lines": attachBatchLines(logs.Entries)})
 	done := r.Context().Done()
 	for {
 		select {
@@ -816,13 +951,26 @@ func (s *Server) handleProcAttach(w http.ResponseWriter, r *http.Request) {
 		case <-wake:
 			for _, e := range proc.Logs.From(lastID) {
 				lastID = e.ID + 1
-				if err := sw.send(map[string]any{"kind": "line",
-					"line": map[string]any{"stream": string(e.Stream), "line": e.Line}}); err != nil {
+				if err := sw.send(map[string]any{"kind": "output", "data": e.Line,
+					"stream": string(e.Stream), "id": e.ID,
+					"timestamp": e.Timestamp.Format(time.RFC3339Nano),
+					"cursor":    req.ProcessID + ":" + fmt.Sprint(e.ID)}); err != nil {
 					return
 				}
 			}
 		}
 	}
+}
+
+func attachBatchLines(entries []api.LogEntry) []any {
+	out := make([]any, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, map[string]any{
+			"data": e.Line, "stream": e.Stream, "id": e.ID,
+			"timestamp": e.Timestamp, "cursor": fmt.Sprint(e.ID),
+		})
+	}
+	return out
 }
 
 func (s *Server) handleProcResUsage(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -841,13 +989,17 @@ func (s *Server) handleProcResUsage(w http.ResponseWriter, r *http.Request) (any
 	mem, cpu := proc.LiveUsage()
 	st, _ := rt.Status(req.ProcessID)
 	ports := []int{}
-	if st.PID > 0 {
+	if st != nil && st.PID > 0 {
 		ports = process.ListeningPortsForPID(st.PID)
 	}
-	return map[string]any{
-		"processId": req.ProcessID, "pid": st.PID,
-		"memoryBytes": mem, "cpuNanos": cpu, "ports": ports,
-	}, nil
+	if ports == nil {
+		ports = []int{}
+	}
+	pid := 0
+	if st != nil {
+		pid = st.PID
+	}
+	return usagePayload(req.ProcessID, pid, mem, cpu, ports), nil
 }
 
 func (s *Server) handleProcWatchUsage(w http.ResponseWriter, r *http.Request) {
@@ -878,8 +1030,19 @@ func (s *Server) handleProcWatchUsage(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-t.C:
 			mem, cpu := proc.LiveUsage()
-			if err := sw.send(map[string]any{"memoryBytes": mem, "cpuNanos": cpu,
-				"at": time.Now().UnixNano()}); err != nil {
+			st, _ := rt.Status(req.ProcessID)
+			pid := 0
+			ports := []int{}
+			if st != nil {
+				pid = st.PID
+				if pid > 0 {
+					ports = process.ListeningPortsForPID(pid)
+				}
+			}
+			if ports == nil {
+				ports = []int{}
+			}
+			if err := sw.send(usagePayload(req.ProcessID, pid, mem, cpu, ports)); err != nil {
 				return
 			}
 		}

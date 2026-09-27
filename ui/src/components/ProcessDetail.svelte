@@ -100,8 +100,34 @@
   }
 
   async function exportLogs() {
-    const text = lines.map((l) => `${l.timestamp ? l.timestamp + ' ' : ''}${l.stream ? '[' + l.stream + '] ' : ''}${l.line}`).join('\n');
-    await getPlatform().saveFile(`${processId}.log`, text);
+    let data = '';
+    const h = LogService.exportLogs(processId, 'txt', (msg) => {
+      if (msg.kind === 'chunk' && typeof msg['data'] === 'string') data += msg['data'] as string;
+      if (msg.kind === 'done') {
+        h.close();
+        void getPlatform().saveFile(`${processId}.log`, data || lines.map((l) => l.line).join('\n'));
+      }
+    });
+    setTimeout(() => {
+      if (!data) {
+        h.close();
+        void getPlatform().saveFile(`${processId}.log`, lines.map((l) => l.line).join('\n'));
+      }
+    }, 5000);
+  }
+
+  async function waitExit() {
+    try {
+      await ProcessService.waitForExit(processId, 5000);
+    } catch {
+    }
+  }
+
+  async function waitLog() {
+    try {
+      await LogService.waitForLog(processId, 'ready', undefined, 5000);
+    } catch {
+    }
   }
 
   function formatBytes(b: number): string {
@@ -164,10 +190,12 @@
               regex
             </label>
             <button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button>
+            <button type="button" onclick={() => void waitLog()}>Wait for log</button>
           </form>
         {:else}
           <button onclick={clearLogs}>Clear</button>
           <button onclick={exportLogs}>Export</button>
+          <button onclick={() => void waitExit()}>Wait for exit</button>
         {/if}
       </div>
       {#if logMode === 'live'}

@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -238,9 +239,19 @@ func (e *Engine) forwardEvents(pr *ProjectRuntime) {
 	e.Go(pr.wsID, func() {
 		defer unsub()
 		for ev := range ch {
+			payload := ""
+			if ev.Payload != nil {
+				if b, err := json.Marshal(ev.Payload); err == nil && string(b) != "null" {
+					payload = string(b)
+				}
+			}
+			ts := ev.Timestamp.UnixNano()
+			if ts == 0 {
+				ts = time.Now().UnixNano()
+			}
 			_, _ = e.store.AppendEvent(
-				ev.Timestamp.UnixNano(), string(ev.Type),
-				pr.projectID, pr.wsID, ev.ProcessID, ev.InstanceID, "", "",
+				ts, string(ev.Type),
+				pr.projectID, pr.wsID, ev.ProcessID, ev.InstanceID, "", payload,
 			)
 		}
 	})
