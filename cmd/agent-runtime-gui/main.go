@@ -31,7 +31,7 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-var version = "v3.0.0-dev"
+var version = "v0.4.0"
 
 //go:embed all:dist
 var embeddedDist embed.FS

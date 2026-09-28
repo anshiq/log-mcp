@@ -16,7 +16,7 @@ import (
 // var so release builds can stamp the git tag via -ldflags
 // (-X agent-runtime/internal/mcp.Version={{.Version}}); local builds keep the
 // default.
-var Version = "0.1.0"
+var Version = "0.4.0"
 
 // Instructions is surfaced to every connected agent (Claude Code, Codex,
 // Gemini CLI, ...). It is deliberately imperative: it is the agent's authority

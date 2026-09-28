@@ -24,7 +24,7 @@ import (
 	"agent-runtime/internal/store"
 )
 
-var version = "v3.0.0-dev"
+var version = "v0.4.0"
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{

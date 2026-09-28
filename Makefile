@@ -29,7 +29,7 @@ ui-build:
 # agent-runtime-gui needs cgo + GTK/WebKitGTK dev headers, so it's kept out
 # of the default `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
 build-gui: ui ui-build
-	go build -ldflags "-X main.version=$$(git describe --tags --always --dirty 2>/dev/null || echo v3.0.0-dev)" -tags desktop,production,webkit2_41 -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+	go build -ldflags "-X main.version=$$(git describe --tags --always --dirty 2>/dev/null || echo v0.4.0-dev)" -tags desktop,production,webkit2_41 -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 ui-check:
 	cd ui && npm run check && npm test && npm run build && npm run build:web

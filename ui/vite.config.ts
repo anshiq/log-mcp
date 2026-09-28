@@ -3,7 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-let version = '3.0.0';
+let version = '0.4.0';
 try {
   const p = join(process.cwd(), 'package.json');
   if (existsSync(p)) {
