@@ -70,7 +70,7 @@ func run(logger *slog.Logger) error {
 	if err := d.WritePid(); err != nil {
 		return fmt.Errorf("write pid: %w", err)
 	}
-	defer os.Remove(socketPath + ".pid")
+	defer os.Remove(d.PidPath())
 
 	dbPath := dataDir + "/state.db"
 	if dataOverride != "" {

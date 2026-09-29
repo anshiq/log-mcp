@@ -116,6 +116,9 @@ func (d *Daemon) WritePid() error {
 	return os.WriteFile(d.pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 }
 
+// PidPath returns the daemon pid file path.
+func (d *Daemon) PidPath() string { return d.pidPath }
+
 // ReadPid returns the recorded pid or 0.
 func (d *Daemon) ReadPid() int {
 	data, err := os.ReadFile(d.pidPath)
