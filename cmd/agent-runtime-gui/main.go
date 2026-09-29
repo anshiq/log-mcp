@@ -161,6 +161,17 @@ func runNative(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("gui: embedded frontend missing (build ui/ first): %w", err)
 	}
+	index, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		return fmt.Errorf("gui: embedded frontend missing index.html (run make build-gui): %w", err)
+	}
+	if !strings.Contains(string(index), `id="app"`) {
+		return fmt.Errorf("gui: embedded frontend is stale placeholder (run make build-gui to rebuild ui/)")
+	}
+	entries, err := fs.ReadDir(sub, "assets")
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("gui: embedded frontend has no assets (run make build-gui to rebuild ui/)")
+	}
 	proxy := newProxy(sock, "gui/"+version)
 	app := &App{}
 	geometry := loadWindowState()

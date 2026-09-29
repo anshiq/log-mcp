@@ -22,6 +22,15 @@ func daemonClient() (*client.Client, error) {
 	return client.EnsureDaemon(p.SocketPath())
 }
 
+func procIDOf(p map[string]any) string {
+	for _, k := range []string{"id", "processId", "process_id"} {
+		if v, _ := p[k].(string); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func resolveWorkspace(cl *client.Client, project string) (string, string, error) {
 	if project == "" {
 		if v := os.Getenv("AGENT_RUNTIME_PROJECT"); v != "" {
@@ -68,9 +77,9 @@ func newDaemonPsCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 				fmt.Println("no processes")
 				return nil
 			}
-			for _, p := range items {
-				fmt.Printf("%s\t%v\t%v\t%v\n", p["process_id"], p["status"], p["command"], p["pid"])
-			}
+		for _, p := range items {
+			fmt.Printf("%s\t%v\t%v\t%v\n", procIDOf(p), p["status"], p["command"], p["pid"])
+		}
 			return nil
 		},
 	}

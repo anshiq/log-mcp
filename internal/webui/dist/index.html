@@ -1,8 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>agent-runtime</title>
+    <script>
+      try {
+        var p = JSON.parse(localStorage.getItem('ar.prefs.v1') || '{}');
+        var t = p.theme || 'system';
+        var r = t === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+        document.documentElement.dataset.theme = r;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-DP3JAmRh.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/monaco-CQ0w-70L.js">
+    <link rel="modulepreload" crossorigin href="/assets/xterm-D4-Za9bL.js">
+    <link rel="stylesheet" crossorigin href="/assets/monaco-BvPYLX3q.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-3FG_9nnP.css">
   </head>
-  <body></body>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

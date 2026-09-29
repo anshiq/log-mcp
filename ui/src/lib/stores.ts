@@ -46,6 +46,17 @@ export function createProcessStore(): ProcessStore {
     streamState,
     connect(workspaceId = '', all = true) {
       const onState: StreamStateHandler = (s) => streamState.set(s);
+      const applyList = (arr: Process[]) => {
+        processes.update(() => {
+          const fresh = new Map<string, Process>();
+          for (const p of arr) fresh.set(pidOf(p), p);
+          return fresh;
+        });
+      };
+      void (ProcessService.list(workspaceId, all) as Promise<unknown>).then((res) => {
+        const arr = Array.isArray(res) ? (res as Process[]) : ((res as { processes?: Process[] }).processes ?? []);
+        applyList(arr);
+      }).catch(() => {});
       const handle: StreamHandle = ProcessService.watch(
         workspaceId,
         all,
@@ -74,7 +85,12 @@ export function createProcessStore(): ProcessStore {
             return next;
           });
         },
-        onState
+        onState,
+        {
+          onSnapshot: (msg) => {
+            if (Array.isArray(msg.snapshot)) applyList(msg.snapshot as Process[]);
+          }
+        }
       );
       return () => handle.close();
     }

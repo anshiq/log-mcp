@@ -30,19 +30,20 @@ func newDaemonCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 			Use:   "start",
 			Short: "Start the daemon in the background",
 			RunE: func(c *cobra.Command, args []string) error {
-				started, err := daemon.Start(loaded, logger)
-				if err != nil {
-					return err
-				}
-				if !started {
+				p := paths.User()
+				d := daemon.New(p.SocketPath(), p.Data)
+				if d.IsRunning() {
 					fmt.Println("daemon is already running")
 					return nil
 				}
 				fmt.Println("starting daemon...")
-				if err := daemon.WaitReady(loaded.ProjectDir, 10*time.Second); err != nil {
+				if err := d.Start(); err != nil {
 					return err
 				}
-				fmt.Printf("daemon ready (socket %s)\n", daemon.SocketPath(loaded.ProjectDir))
+				if err := d.WaitReady(10 * time.Second); err != nil {
+					return err
+				}
+				fmt.Printf("daemon ready (socket %s)\n", p.SocketPath())
 				return nil
 			},
 		},
@@ -50,23 +51,34 @@ func newDaemonCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 			Use:   "stop",
 			Short: "Stop the daemon, gracefully shutting down its processes",
 			RunE: func(c *cobra.Command, args []string) error {
-				if !daemon.IsRunning(loaded.ProjectDir) {
+				p := paths.User()
+				d := daemon.New(p.SocketPath(), p.Data)
+				if !d.IsRunning() {
 					fmt.Println("daemon is not running")
 					return nil
 				}
-				if err := daemon.Stop(loaded.ProjectDir, 20*time.Second); err != nil {
+				if err := d.Stop(false); err != nil {
 					return err
 				}
-				fmt.Println("daemon stopped")
-				return nil
+				deadline := time.Now().Add(20 * time.Second)
+				for time.Now().Before(deadline) {
+					if !d.IsRunning() {
+						fmt.Println("daemon stopped")
+						return nil
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				return fmt.Errorf("daemon did not stop within 20s")
 			},
 		},
 		&cobra.Command{
 			Use:   "status",
 			Short: "Report whether the daemon is running",
 			RunE: func(c *cobra.Command, args []string) error {
-				if daemon.IsRunning(loaded.ProjectDir) {
-					fmt.Printf("running (pid %d)\n", daemon.ReadPid(loaded.ProjectDir))
+				p := paths.User()
+				d := daemon.New(p.SocketPath(), p.Data)
+				if d.IsRunning() {
+					fmt.Printf("running (pid %d)\n", d.ReadPid())
 				} else {
 					fmt.Println("not running")
 				}
