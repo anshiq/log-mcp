@@ -1,224 +1,302 @@
 <script lang="ts">
-  import type { Process } from '../lib/stores';
+  import ChevronUp from '@lucide/svelte/icons/chevron-up';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+  import SquareTerminal from '@lucide/svelte/icons/square-terminal';
+  import SearchX from '@lucide/svelte/icons/search-x';
+  import Plus from '@lucide/svelte/icons/plus';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
+  import RotateCw from '@lucide/svelte/icons/rotate-cw';
+  import type { Process } from '../lib/api/types';
+  import ProcessStatus from './ProcessStatus.svelte';
+  import RowActions from './RowActions.svelte';
+  import { procActions } from './processActions.svelte';
+  import {
+    commandLine,
+    displayName,
+    healthTone,
+    isExited,
+    isFailed,
+    isLive,
+    sortRows,
+    uptimeText,
+    type SortDir,
+    type SortKey
+  } from './processView';
 
   let {
-    processes = [] as Process[],
-    onAction,
+    rows,
+    totalCount,
+    loading = false,
+    selected = $bindable(new Set<string>()),
+    openId = '',
+    showWorkspace = false,
+    workspaceLabel,
     onOpen,
+    onLogs,
+    onCopyId,
+    onRemoved,
     onStart,
-    onSignal
+    onClearFilters
   }: {
-    processes?: Process[];
-    onAction?: (action: string, ids: string[]) => void;
-    onOpen?: (id: string) => void;
-    onStart?: () => void;
-    onSignal?: (signal: string, ids: string[]) => void;
+    rows: Process[];
+    totalCount: number;
+    loading?: boolean;
+    selected?: Set<string>;
+    openId?: string;
+    showWorkspace?: boolean;
+    workspaceLabel: (id: string) => string;
+    onOpen: (id: string) => void;
+    onLogs: (id: string) => void;
+    onCopyId: (id: string) => void;
+    onRemoved: (ids: string[]) => void;
+    onStart: () => void;
+    onClearFilters: () => void;
   } = $props();
 
-  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT', 'SIGUSR1', 'SIGUSR2', 'SIGKILL'];
-
-  function sendSignal(id: string, e: Event) {
-    const select = e.currentTarget as HTMLSelectElement;
-    const signal = select.value;
-    select.value = '';
-    if (signal) onSignal?.(signal, [id]);
-  }
-
-  let filter = $state('');
-  let statusFilter = $state<'all' | 'running' | 'exited' | 'failed'>('all');
-  let selected = $state(new Set<string>());
-  let sortKey = $state<keyof Process | 'uptime'>('command');
-  let sortDir = $state(1);
+  let sortKey = $state<SortKey | null>(null);
+  let sortDir = $state<SortDir>('asc');
   let now = $state(Date.now());
+  let body: HTMLTableSectionElement | null = $state(null);
+  let lastChecked = $state('');
 
   $effect(() => {
     const t = setInterval(() => (now = Date.now()), 1000);
     return () => clearInterval(t);
   });
 
-  function idOf(p: Process): string {
-    return String(p.id ?? p.process_id ?? '');
-  }
+  const sorted = $derived(sortRows(rows, sortKey, sortDir));
+  const allChecked = $derived(sorted.length > 0 && sorted.every((p) => selected.has(p.id)));
+  const someChecked = $derived(!allChecked && sorted.some((p) => selected.has(p.id)));
 
-  function statusClass(p: Process): 'ok' | 'off' | 'bad' | 'busy' {
-    const s = String(p.status ?? '');
-    if (s === 'running' || s === 'ready') return 'ok';
-    if (s === 'exited' || s === 'stopped') return 'off';
-    if (s === 'starting' || s === 'stopping') return 'busy';
-    return 'bad';
-  }
-
-  function uptimeOf(p: Process): string {
-    if (!p.startedAt || p.status === 'exited' || p.status === 'stopped') return '';
-    const start = Date.parse(p.startedAt);
-    if (Number.isNaN(start)) return '';
-    const secs = Math.max(0, Math.floor((now - start) / 1000));
-    if (secs < 60) return `${secs}s`;
-    if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`;
-    return `${Math.floor(secs / 86400)}d`;
-  }
-
-  const filtered = $derived(
-    processes
-      .filter((p) => {
-        if (statusFilter === 'all') return true;
-        if (statusFilter === 'running') return p.status === 'running' || p.status === 'ready';
-        if (statusFilter === 'exited') return p.status === 'exited' || p.status === 'stopped';
-        return statusFilter === 'failed' && (p.status === 'failed' || p.status === 'crashed');
-      })
-      .filter((p) => {
-        if (!filter) return true;
-        const f = filter.toLowerCase();
-        return (
-          String(p.command ?? '').toLowerCase().includes(f) ||
-          idOf(p).toLowerCase().includes(f) ||
-          String(p.pid ?? '').includes(f) ||
-          String(p.profile ?? '').toLowerCase().includes(f)
-        );
-      })
-  );
-
-  const rows = $derived(
-    [...filtered].sort((a, b) => {
-      const av = sortKey === 'uptime' ? uptimeOf(a) : String(a[sortKey] ?? '');
-      const bv = sortKey === 'uptime' ? uptimeOf(b) : String(b[sortKey] ?? '');
-      return av < bv ? -sortDir : av > bv ? sortDir : 0;
-    })
-  );
-
-  function sortBy(key: typeof sortKey) {
-    if (sortKey === key) sortDir = -sortDir;
-    else {
+  function sortBy(key: SortKey) {
+    if (sortKey !== key) {
       sortKey = key;
-      sortDir = 1;
+      sortDir = 'asc';
+    } else if (sortDir === 'asc') {
+      sortDir = 'desc';
+    } else {
+      sortKey = null;
+      sortDir = 'asc';
     }
   }
 
-  function toggle(id: string) {
+  function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
+    if (sortKey !== key) return 'none';
+    return sortDir === 'asc' ? 'ascending' : 'descending';
+  }
+
+  function toggle(id: string, range: boolean) {
     const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    const on = !next.has(id);
+    if (range && lastChecked) {
+      const a = sorted.findIndex((p) => p.id === lastChecked);
+      const b = sorted.findIndex((p) => p.id === id);
+      if (a >= 0 && b >= 0) {
+        for (const p of sorted.slice(Math.min(a, b), Math.max(a, b) + 1)) {
+          if (on) next.add(p.id);
+          else next.delete(p.id);
+        }
+      }
+    } else if (on) next.add(id);
+    else next.delete(id);
+    lastChecked = id;
     selected = next;
   }
 
   function toggleAll() {
-    if (selected.size === rows.length) selected = new Set();
-    else selected = new Set(rows.map(idOf));
+    selected = allChecked ? new Set() : new Set(sorted.map((p) => p.id));
   }
 
-  function bulk(action: string) {
-    onAction?.(action, [...selected]);
-    selected = new Set();
+  function indeterminate(node: HTMLInputElement, value: boolean) {
+    node.indeterminate = value;
+    return {
+      update(v: boolean) {
+        node.indeterminate = v;
+      }
+    };
   }
 
-  const statusCounts = $derived({
-    running: processes.filter((p) => p.status === 'running' || p.status === 'ready').length,
-    exited: processes.filter((p) => p.status === 'exited' || p.status === 'stopped').length,
-    failed: processes.filter((p) => p.status === 'failed' || p.status === 'crashed').length
+  function rowClick(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, label')) return;
+    const id = target.closest('tr')?.dataset['id'];
+    if (id) onOpen(id);
+  }
+
+  function rowKey(e: KeyboardEvent) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains('name-btn')) return;
+    const all = [...(body?.querySelectorAll<HTMLElement>('.name-btn') ?? [])];
+    const i = all.indexOf(target);
+    let next = i;
+    if (e.key === 'ArrowDown') next = Math.min(all.length - 1, i + 1);
+    else if (e.key === 'ArrowUp') next = Math.max(0, i - 1);
+    else if (e.key === 'Home') next = 0;
+    else next = all.length - 1;
+    e.preventDefault();
+    all[next]?.focus();
+  }
+
+  $effect(() => {
+    const el = body;
+    if (!el) return;
+    el.addEventListener('click', rowClick);
+    el.addEventListener('keydown', rowKey);
+    return () => {
+      el.removeEventListener('click', rowClick);
+      el.removeEventListener('keydown', rowKey);
+    };
   });
+
+  const columns: { key: SortKey; label: string; cls: string; num?: boolean }[] = [
+    { key: 'status', label: 'Status', cls: 'c-status' },
+    { key: 'name', label: 'Process', cls: 'c-name' },
+    { key: 'pid', label: 'PID', cls: 'c-pid', num: true },
+    { key: 'uptime', label: 'Uptime', cls: 'c-uptime' },
+    { key: 'restarts', label: 'Restarts', cls: 'c-restarts', num: true },
+    { key: 'health', label: 'Health', cls: 'c-health' }
+  ];
 </script>
 
-<div class="procs">
-  <div class="toolbar">
-    <input class="search" placeholder="Filter by command, id, pid…" bind:value={filter} aria-label="Filter processes" />
-    <div class="chips">
-      <button class="chip" class:active={statusFilter === 'all'} onclick={() => (statusFilter = 'all')}>
-        All {processes.length}
-      </button>
-      <button class="chip" class:active={statusFilter === 'running'} onclick={() => (statusFilter = 'running')}>
-        Running {statusCounts.running}
-      </button>
-      <button class="chip" class:active={statusFilter === 'exited'} onclick={() => (statusFilter = 'exited')}>
-        Exited {statusCounts.exited}
-      </button>
-      <button class="chip" class:active={statusFilter === 'failed'} onclick={() => (statusFilter = 'failed')}>
-        Failed {statusCounts.failed}
-      </button>
+<div class="table-wrap">
+  {#if loading}
+    <div class="skeleton" aria-busy="true" aria-label="Loading processes">
+      {#each [0, 1, 2, 3, 4, 5] as i (i)}
+        <div class="sk-row" style="--d:{i * 90}ms">
+          <span class="sk sk-dot"></span>
+          <span class="sk sk-pill"></span>
+          <span class="sk-stack">
+            <span class="sk sk-line" style="width:{34 + ((i * 13) % 30)}%"></span>
+            <span class="sk sk-line thin" style="width:{52 + ((i * 17) % 34)}%"></span>
+          </span>
+          <span class="sk sk-line short"></span>
+        </div>
+      {/each}
     </div>
-    <div class="toolbar-spacer"></div>
-    {#if selected.size > 0}
-      <div class="bulk">
-        <span>{selected.size} selected</span>
-        <button onclick={() => bulk('restart')}>Restart</button>
-        <button onclick={() => bulk('stop')}>Stop</button>
-        <select
-          class="signal"
-          aria-label="Send signal to selection"
-          onchange={(e) => {
-            const el = e.currentTarget as HTMLSelectElement;
-            if (el.value) onSignal?.(el.value, [...selected]);
-            el.value = '';
-          }}
-        >
-          <option value="" selected disabled>Signal…</option>
-          {#each signals as sig}
-            <option value={sig}>{sig}</option>
-          {/each}
-        </select>
-        <button class="danger" onclick={() => bulk('remove')}>Remove</button>
+  {:else if totalCount === 0}
+    <div class="empty-state">
+      <div class="icon-wrap"><SquareTerminal size={22} /></div>
+      <h3>No processes yet</h3>
+      <p>
+        Run a dev server, worker or any long-running command and it shows up here with live logs and health. You can
+        also start apps from the Apps page or from a terminal with <span class="mono inline-code">agent-runtime start -- &lt;command&gt;</span>.
+      </p>
+      <div class="cta">
+        <button class="btn primary" onclick={onStart}><Plus size={14} /> Start your first process</button>
+        <a class="btn" href="#/apps"><FolderOpen size={14} /> Browse apps</a>
       </div>
-    {/if}
-    <button class="primary" onclick={onStart}>Start process</button>
-  </div>
-  {#if rows.length === 0}
-    <div class="empty">
-      {#if processes.length === 0}
-        No processes yet. Start one from the Apps tab or the CLI.
-      {:else}
-        No processes match this filter.
-      {/if}
+    </div>
+  {:else if rows.length === 0}
+    <div class="empty-state">
+      <div class="icon-wrap"><SearchX size={22} /></div>
+      <h3>No matching processes</h3>
+      <p>Nothing matches the current search and status filter.</p>
+      <button class="btn" onclick={onClearFilters}>Clear filters</button>
     </div>
   {:else}
-    <table>
+    <table class="data procs-table">
       <thead>
         <tr>
-          <th class="checkbox">
+          <th class="c-check">
             <input
               type="checkbox"
-              checked={selected.size > 0 && selected.size === rows.length}
+              checked={allChecked}
+              use:indeterminate={someChecked}
               onchange={toggleAll}
-              aria-label="Select all"
+              aria-label="Select all processes"
             />
           </th>
-          <th><button onclick={() => sortBy('status')}>Status {sortKey === 'status' ? (sortDir > 0 ? '▲' : '▼') : ''}</button></th>
-          <th><button onclick={() => sortBy('command')}>Command {sortKey === 'command' ? (sortDir > 0 ? '▲' : '▼') : ''}</button></th>
-          <th><button onclick={() => sortBy('profile')}>Profile {sortKey === 'profile' ? (sortDir > 0 ? '▲' : '▼') : ''}</button></th>
-          <th class="num">PID</th>
-          <th><button onclick={() => sortBy('uptime')}>Uptime {sortKey === 'uptime' ? (sortDir > 0 ? '▲' : '▼') : ''}</button></th>
-          <th class="num">Restarts</th>
-          <th>Health</th>
-          <th>Ports</th>
-          <th></th>
+          {#each columns as col (col.key)}
+            <th class="{col.cls} sortable" class:num={col.num} class:sorted={sortKey === col.key} aria-sort={ariaSort(col.key)}>
+              <button type="button" class="sort" onclick={() => sortBy(col.key)}>
+                <span>{col.label}</span>
+                <span class="chev">
+                  {#if sortKey === col.key}
+                    {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}
+                  {:else}
+                    <ChevronsUpDown size={12} />
+                  {/if}
+                </span>
+              </button>
+            </th>
+          {/each}
+          <th class="c-ports">Ports</th>
+          <th class="c-actions"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
-      <tbody>
-        {#each rows as p (idOf(p))}
-          {@const id = idOf(p)}
-          <tr class:stale={p.stale}>
-            <td class="checkbox">
-              <input type="checkbox" checked={selected.has(id)} onchange={() => toggle(id)} aria-label="Select {id}" />
+      <tbody bind:this={body}>
+        {#each sorted as p (p.id)}
+          {@const pending = procActions.busy.get(p.id) ?? ''}
+          {@const tone = healthTone(p.health)}
+          {@const line = commandLine(p)}
+          {@const time = uptimeText(p, now)}
+          <tr
+            data-id={p.id}
+            class:open={openId === p.id}
+            class:checked={selected.has(p.id)}
+            class:dim={!pending && isExited(p)}
+            class:stale={p.stale}
+          >
+            <td class="c-check">
+              <input
+                type="checkbox"
+                checked={selected.has(p.id)}
+                onclick={(e) => toggle(p.id, e.shiftKey)}
+                aria-label="Select {displayName(p)}"
+              />
             </td>
-            <td><span class="dot {statusClass(p)}"></span>{p.status}</td>
-            <td class="mono link" onclick={() => onOpen?.(id)} role="button" tabindex="0"
-              onkeydown={(e) => e.key === 'Enter' && onOpen?.(id)}>
-              {p.command}{p.args?.length ? ' ' + p.args.join(' ') : ''}
+            <td class="c-status"><ProcessStatus process={p} {pending} /></td>
+            <td class="c-name">
+              <button
+                type="button"
+                class="name-btn"
+                aria-current={openId === p.id ? 'true' : undefined}
+                aria-label="Open {displayName(p)}"
+                title={line}
+                onclick={() => onOpen(p.id)}
+              >
+                <span class="name-line">
+                  <span class="name">{displayName(p)}</span>
+                  {#if p.stale}<span class="badge warn" title="Config changed since this process started">stale</span>{/if}
+                  {#if showWorkspace}<span class="badge ws" title={p.workdir || p.workspaceId}>{workspaceLabel(p.workspaceId)}</span>{/if}
+                </span>
+                <span class="mono link cmd">{line}</span>
+              </button>
             </td>
-            <td>{p.profile ?? ''}</td>
-            <td class="mono num">{p.pid ?? ''}</td>
-            <td class="mono">{uptimeOf(p)}</td>
-            <td class="num" class:warn={(p.restarts ?? 0) > 0}>{p.restarts ?? 0}</td>
-            <td>{p.health ?? ''}</td>
-            <td class="mono">{Array.isArray(p.ports) && p.ports.length ? p.ports.join(', ') : '—'}</td>
-            <td class="actions">
-              <button class="ghost" onclick={() => onAction?.('restart', [id])} title="Restart">↻</button>
-              <button class="ghost" onclick={() => onAction?.('stop', [id])} title="Stop">■</button>
-              <select class="signal" aria-label="Send signal" onchange={(e) => sendSignal(id, e)}>
-                <option value="" selected disabled>Signal…</option>
-                {#each signals as sig}
-                  <option value={sig}>{sig}</option>
-                {/each}
-              </select>
+            <td class="c-pid num mono muted">{p.pid && isLive(p) ? p.pid : '—'}</td>
+            <td class="c-uptime mono" class:muted={!isLive(p)}>
+              {#if isLive(p) && p.startedAt}
+                <span class="uptime">{time}</span>
+              {:else if isFailed(p) || isExited(p)}
+                <span class="ended">{time || '—'}</span>
+              {:else}
+                <span class="muted">{time || '—'}</span>
+              {/if}
+            </td>
+            <td class="c-restarts num">
+              {#if p.restarts > 0}<span class="badge warn"><RotateCw size={10} />{p.restarts}</span>{:else}<span class="muted">0</span>{/if}
+            </td>
+            <td class="c-health">
+              {#if tone}
+                <span class="badge {tone === 'busy' ? 'info' : tone === 'off' ? '' : tone}">{p.health}</span>
+              {:else}
+                <span class="muted">—</span>
+              {/if}
+            </td>
+            <td class="c-ports">
+              {#if p.ports.length > 0}
+                <span class="ports">
+                  {#each p.ports.slice(0, 2) as port (port)}<span class="badge mono port">:{port}</span>{/each}
+                  {#if p.ports.length > 2}<span class="badge mono" title={p.ports.join(', ')}>+{p.ports.length - 2}</span>{/if}
+                </span>
+              {:else}
+                <span class="muted">—</span>
+              {/if}
+            </td>
+            <td class="c-actions">
+              <RowActions process={p} {onLogs} {onCopyId} {onRemoved} />
             </td>
           </tr>
         {/each}
@@ -228,192 +306,375 @@
 </div>
 
 <style>
-  .procs {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    padding: var(--space-5);
-    gap: var(--space-4);
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+  }
+  .procs-table {
+    table-layout: fixed;
+    min-width: 0;
+  }
+  .procs-table :global(th),
+  .procs-table :global(td) {
+    padding: 0 var(--space-4);
     overflow: hidden;
   }
-  .toolbar {
-    display: flex;
-    gap: var(--space-4);
-    align-items: center;
-    flex-wrap: wrap;
+  .procs-table :global(th) {
+    height: 36px;
+    padding-top: 0;
+    padding-bottom: 0;
   }
-  .search {
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: var(--space-3) var(--space-4);
-    color: var(--text-0);
-    min-width: 260px;
-  }
-  .search:focus {
-    border-color: var(--accent);
-    outline: none;
-  }
-  .chips {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .toolbar-spacer {
-    flex: 1;
-  }
-  .primary {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-4);
-    font-size: var(--fs-sm);
-  }
-  .chip {
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: var(--space-2) var(--space-4);
-    font-size: var(--fs-sm);
-    color: var(--text-1);
-  }
-  .chip.active {
-    border-color: var(--accent);
-    color: var(--text-0);
-    background: var(--accent-subtle);
-  }
-  .bulk {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    background: var(--bg-2);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    padding: var(--space-2) var(--space-4);
-  }
-  .bulk button,
-  .actions button,
-  select.signal {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
-    color: var(--text-0);
-    font-size: var(--fs-sm);
-  }
-  .bulk button.danger {
-    color: var(--err);
-    border-color: var(--err);
-  }
-  .empty {
-    color: var(--text-2);
-    text-align: center;
-    padding: var(--space-8);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--fs-sm);
-    flex: 1;
-    overflow: auto;
-    display: block;
-  }
-  thead {
-    display: table;
-    width: 100%;
-    table-layout: fixed;
-  }
-  tbody {
-    display: table;
-    width: 100%;
-    table-layout: fixed;
-  }
-  th,
-  td {
-    text-align: left;
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--border);
-  }
-  th {
-    color: var(--text-2);
-    font-weight: 500;
-    text-transform: uppercase;
-    font-size: var(--fs-xs);
-    letter-spacing: 0.04em;
-  }
-  th button {
-    background: none;
-    border: none;
-    color: inherit;
-    padding: 0;
-    font: inherit;
-  }
-  th.checkbox,
-  td.checkbox {
-    width: 32px;
-  }
-  th.num,
-  td.num {
-    text-align: right;
-  }
-  tr:hover {
-    background: var(--bg-2);
-  }
-  tr.stale {
-    background: color-mix(in srgb, var(--warn) 8%, transparent);
-  }
-  .mono {
-    font-family: var(--font-mono);
-  }
-  .link {
+  .procs-table tbody tr {
+    height: 52px;
     cursor: pointer;
   }
-  .link:hover {
+  .procs-table tbody :global(td) {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .procs-table input[type='checkbox'] {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg-2);
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  }
+  .procs-table input[type='checkbox']:hover {
+    border-color: var(--text-2);
+  }
+  .procs-table input[type='checkbox']:checked,
+  .procs-table input[type='checkbox']:indeterminate {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .procs-table input[type='checkbox']:checked::after {
+    content: '';
+    width: 8px;
+    height: 4px;
+    border-left: 2px solid var(--accent-fg);
+    border-bottom: 2px solid var(--accent-fg);
+    transform: translateY(-1px) rotate(-45deg);
+  }
+  .procs-table input[type='checkbox']:indeterminate::after {
+    content: '';
+    width: 8px;
+    height: 0;
+    border-bottom: 2px solid var(--accent-fg);
+  }
+  .c-check {
+    width: 44px;
+    padding-right: 0 !important;
+  }
+  .c-status {
+    width: 128px;
+  }
+  .c-pid {
+    width: 82px;
+  }
+  .c-uptime {
+    width: 128px;
+  }
+  .c-restarts {
+    width: 92px;
+  }
+  .c-health {
+    width: 104px;
+  }
+  .c-ports {
+    width: 148px;
+  }
+  .c-actions {
+    width: 132px;
+    text-align: right;
+  }
+  th.c-actions {
+    padding-right: var(--space-4);
+  }
+  td.c-actions {
+    padding-left: 0 !important;
+    padding-right: var(--space-3) !important;
+  }
+  .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    margin: 0 -4px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+  }
+  .sort:hover {
+    color: var(--text-0);
+    background: var(--bg-hover);
+  }
+  th.num .sort {
+    flex-direction: row-reverse;
+  }
+  .chev {
+    display: inline-grid;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .sort:hover .chev,
+  .sort:focus-visible .chev,
+  th.sorted .chev {
+    opacity: 1;
+  }
+  th.sorted {
+    color: var(--text-0);
+  }
+  th.sorted .chev {
     color: var(--accent);
   }
-  .warn {
-    color: var(--warn);
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: var(--space-3);
+  tr.checked :global(td) {
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
   }
-  .dot.ok {
-    background: var(--ok);
+  tr.open :global(td) {
+    background: var(--accent-subtle) !important;
   }
-  .dot.off {
-    background: var(--neutral);
+  tr.open :global(td.c-check) {
+    box-shadow: inset 2px 0 0 var(--accent);
   }
-  .dot.bad {
-    background: var(--err);
+  tr.dim .name,
+  tr.dim .cmd {
+    opacity: 0.8;
   }
-  .dot.busy {
-    background: var(--warn);
-    animation: pulse 1.2s infinite;
+  tr.stale :global(td.c-check) {
+    box-shadow: inset 2px 0 0 var(--warn);
   }
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.35;
-    }
-  }
-  .actions {
+  .name-btn {
     display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-  }
-  .ghost {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    padding: 3px 6px;
+    margin: -3px -6px;
+    border: none;
+    border-radius: var(--radius-sm);
     background: transparent;
-    border: 1px solid transparent;
+    color: var(--text-0);
+    text-align: left;
+    cursor: pointer;
   }
-  .ghost:hover {
-    border-color: var(--border-strong);
+  .name-btn:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+  .name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .name {
+    font-weight: 600;
+    font-size: var(--fs-md);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .name-line .badge {
+    flex: none;
+    font-size: 10.5px;
+    padding: 0 7px;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+  }
+  .badge.ws {
+    color: var(--text-1);
+  }
+  .cmd {
+    display: block;
+    width: 100%;
+    font-size: 11.5px;
+    color: var(--text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 400;
+  }
+  tr:hover .cmd,
+  .name-btn:focus-visible .cmd {
+    color: var(--text-1);
+  }
+  .uptime {
+    color: var(--text-0);
+    font-variant-numeric: tabular-nums;
+  }
+  .ended {
+    color: var(--text-2);
+    font-size: 11.5px;
+  }
+  .c-uptime {
+    font-size: var(--fs-sm);
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .badge :global(svg) {
+    flex: none;
+  }
+  .ports {
+    display: inline-flex;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .port {
+    font-size: 10.5px;
+  }
+  .badge.port {
+    color: var(--info);
+    background: color-mix(in srgb, var(--info) 10%, transparent);
+    border-color: color-mix(in srgb, var(--info) 26%, transparent);
+  }
+
+  .empty-state {
+    min-height: 100%;
+    padding-block: 72px;
+  }
+  .empty-state p {
+    max-width: 460px;
+    line-height: 1.55;
+  }
+  .inline-code {
+    font-size: 11.5px;
+    padding: 1px 6px;
+    border-radius: 4px;
     background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--text-1);
+    white-space: nowrap;
+  }
+  .cta {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  a.btn {
+    text-decoration: none;
+  }
+
+  .skeleton {
+    display: flex;
+    flex-direction: column;
+  }
+  .sk-row {
+    display: grid;
+    grid-template-columns: 14px 96px 1fr 80px;
+    align-items: center;
+    gap: var(--space-5);
+    height: 56px;
+    padding: 0 var(--space-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .sk-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .sk {
+    display: block;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-hover) 50%, var(--bg-3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    animation-delay: var(--d, 0ms);
+  }
+  .sk-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+  }
+  .sk-pill {
+    height: 20px;
+  }
+  .sk-line {
+    height: 12px;
+  }
+  .sk-line.thin {
+    height: 9px;
+  }
+  .sk-line.short {
+    width: 100%;
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @container procs (max-width: 1000px) {
+    .c-health {
+      display: none;
+    }
+  }
+  @container procs (max-width: 880px) {
+    .c-ports {
+      display: none;
+    }
+  }
+  @container procs (max-width: 780px) {
+    .c-restarts {
+      display: none;
+    }
+  }
+  @container procs (max-width: 680px) {
+    .c-pid {
+      display: none;
+    }
+  }
+  @container procs (max-width: 620px) {
+    .c-actions {
+      width: 52px;
+    }
+    .c-status {
+      width: 116px;
+    }
+    .c-uptime {
+      width: 108px;
+    }
+  }
+  @container procs (max-width: 520px) {
+    .c-uptime {
+      display: none;
+    }
+    .procs-table :global(th),
+    .procs-table :global(td) {
+      padding-inline: var(--space-3);
+    }
   }
 </style>

@@ -1,411 +1,340 @@
+<script lang="ts" module>
+  export type DetailTab = 'logs' | 'info' | 'env' | 'resources' | 'terminal';
+</script>
+
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import LogViewer from './LogViewer.svelte';
-  import { LogService, ProcessService, type StreamHandle } from '../lib/api';
-  import { getPlatform } from '../lib/platform';
+  import { onMount } from 'svelte';
+  import X from '@lucide/svelte/icons/x';
+  import Copy from '@lucide/svelte/icons/copy';
+  import RotateCw from '@lucide/svelte/icons/rotate-cw';
+  import Square from '@lucide/svelte/icons/square';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
+  import ScrollText from '@lucide/svelte/icons/scroll-text';
+  import Info from '@lucide/svelte/icons/info';
+  import KeyRound from '@lucide/svelte/icons/key-round';
+  import Activity from '@lucide/svelte/icons/activity';
+  import SquareTerminal from '@lucide/svelte/icons/square-terminal';
+  import SearchX from '@lucide/svelte/icons/search-x';
+  import type { Component } from 'svelte';
+  import type { Process } from '../lib/api/types';
+  import { scopeState } from '../lib/state/scope.svelte';
+  import ProcessStatus from './ProcessStatus.svelte';
+  import ProcessLogs from './ProcessLogs.svelte';
+  import ProcessInfo from './ProcessInfo.svelte';
+  import ProcessEnv from './ProcessEnv.svelte';
+  import ProcessResources from './ProcessResources.svelte';
+  import TerminalTab from './Terminal.svelte';
+  import ActionMenu from './ActionMenu.svelte';
+  import { processMenu } from './processMenu';
+  import { procActions } from './processActions.svelte';
+  import { commandLine, displayName, isLive } from './processView';
 
-  let { processId, onClose }: { processId: string; onClose: () => void } = $props();
+  let {
+    processId,
+    process,
+    tab = $bindable('logs'),
+    onClose,
+    onCopyId,
+    onRemoved
+  }: {
+    processId: string;
+    process?: Process;
+    tab?: DetailTab;
+    onClose: () => void;
+    onCopyId: (id: string) => void;
+    onRemoved: (ids: string[]) => void;
+  } = $props();
 
-  let tab = $state<'logs' | 'terminal' | 'env' | 'resources'>('logs');
-  let lines = $state<{ line: string; stream?: string; timestamp?: string }[]>([]);
-  let logMode = $state<'live' | 'search'>('live');
-  let searchQuery = $state('');
-  let searchRegex = $state(false);
-  let searching = $state(false);
-  let searchResults = $state<{ line: string; stream?: string; timestamp?: string }[]>([]);
-  let searchTruncated = $state(false);
-  let env = $state<string[]>([]);
-  let envLoading = $state(false);
-  let revealed = $state(false);
-  let handle: StreamHandle | null = null;
-
-  let cpuPercent = $state(0);
-  let memoryBytes = $state(0);
-  let ports = $state<number[]>([]);
-  let resourcesTimer: ReturnType<typeof setInterval> | null = null;
-  let lastCpuNanos = 0;
-  let lastSampleAt = 0;
-
-  function connectLogs() {
-    handle?.close();
-    lines = [];
-    handle = LogService.tail('', [processId], 500, (msg) => {
-      if (msg.kind === 'batch' && Array.isArray(msg.lines)) {
-        lines = [...lines, ...(msg.lines as typeof lines)];
-      } else if (msg.kind === 'line') {
-        lines = [...lines, msg as unknown as (typeof lines)[number]];
-      }
-    });
-  }
-
-  async function loadEnv() {
-    envLoading = true;
-    try {
-      const res = await ProcessService.getEnv(processId, revealed, false);
-      env = (res.env as string[]) ?? [];
-    } finally {
-      envLoading = false;
-    }
-  }
-
-  async function sampleResources() {
-    const res = await ProcessService.getResourceUsage(processId);
-    const now = Date.now();
-    if (lastSampleAt > 0) {
-      const deltaNanos = res.cpuNanos - lastCpuNanos;
-      const deltaMs = now - lastSampleAt;
-      if (deltaMs > 0) cpuPercent = Math.max(0, (deltaNanos / 1e6 / deltaMs) * 100);
-    }
-    lastCpuNanos = res.cpuNanos;
-    lastSampleAt = now;
-    memoryBytes = res.memoryBytes;
-    ports = res.ports ?? [];
-  }
-
-  function startResourcePolling() {
-    stopResourcePolling();
-    lastCpuNanos = 0;
-    lastSampleAt = 0;
-    void sampleResources();
-    resourcesTimer = setInterval(sampleResources, 2000);
-  }
-
-  function stopResourcePolling() {
-    if (resourcesTimer) clearInterval(resourcesTimer);
-    resourcesTimer = null;
-  }
-
-  async function runSearch() {
-    if (!searchQuery.trim()) return;
-    searching = true;
-    try {
-      const res = await LogService.search({
-        processIds: [processId],
-        query: searchQuery.trim(),
-        regex: searchRegex,
-        maxRows: 500
-      });
-      const matches = (res.matches as { line: string; stream?: string; timestamp?: string | number }[]) ?? [];
-      searchResults = matches.map((m) => ({ line: m.line, stream: m.stream, timestamp: m.timestamp?.toString() }));
-      searchTruncated = !!res.truncatedScan;
-    } finally {
-      searching = false;
-    }
-  }
-
-  async function clearLogs() {
-    if (!confirm('Clear this process\'s logs?')) return;
-    await LogService.clear(processId);
-    lines = [];
-  }
-
-  async function exportLogs() {
-    let data = '';
-    const h = LogService.exportLogs(processId, 'txt', (msg) => {
-      if (msg.kind === 'chunk' && typeof msg['data'] === 'string') data += msg['data'] as string;
-      if (msg.kind === 'done') {
-        h.close();
-        void getPlatform().saveFile(`${processId}.log`, data || lines.map((l) => l.line).join('\n'));
-      }
-    });
-    setTimeout(() => {
-      if (!data) {
-        h.close();
-        void getPlatform().saveFile(`${processId}.log`, lines.map((l) => l.line).join('\n'));
-      }
-    }, 5000);
-  }
-
-  async function waitExit() {
-    try {
-      await ProcessService.waitForExit(processId, 5000);
-    } catch {
-    }
-  }
-
-  async function waitLog() {
-    try {
-      await LogService.waitForLog(processId, 'ready', undefined, 5000);
-    } catch {
-    }
-  }
-
-  function formatBytes(b: number): string {
-    if (b < 1024) return `${b} B`;
-    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-    if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
-    return `${(b / 1024 / 1024 / 1024).toFixed(1)} GB`;
-  }
+  let waited = $state(false);
+  const tabs: { id: DetailTab; label: string; icon: Component<{ size?: number | string }> }[] = [
+    { id: 'logs', label: 'Logs', icon: ScrollText },
+    { id: 'info', label: 'Overview', icon: Info },
+    { id: 'env', label: 'Env', icon: KeyRound },
+    { id: 'resources', label: 'Resources', icon: Activity },
+    { id: 'terminal', label: 'Terminal', icon: SquareTerminal }
+  ];
 
   onMount(() => {
-    connectLogs();
+    const t = setTimeout(() => (waited = true), 2500);
+    return () => clearTimeout(t);
   });
 
-  onDestroy(() => {
-    handle?.close();
-    stopResourcePolling();
-  });
+  const live = $derived(process ? isLive(process) : false);
+  const pending = $derived(procActions.busy.get(processId) ?? '');
+  const line = $derived(process ? commandLine(process) : '');
+  const items = $derived(
+    process ? processMenu(process, { onCopyId, afterRemove: onRemoved }) : []
+  );
 
-  $effect(() => {
-    if (tab === 'env') void loadEnv();
-    if (tab === 'resources') startResourcePolling();
-    else stopResourcePolling();
-  });
-
-  $effect(() => {
-    void processId;
-    connectLogs();
-  });
+  function tabKey(e: KeyboardEvent) {
+    const idx = tabs.findIndex((t) => t.id === tab);
+    let next = idx;
+    if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    else return;
+    e.preventDefault();
+    tab = tabs[next]!.id;
+    (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+  }
 </script>
 
 <div class="detail">
-  <div class="header">
-    <span class="id mono">{processId}</span>
-    <button class="close" onclick={onClose} aria-label="Close">✕</button>
-  </div>
-  <div class="tabs">
-    <button class:active={tab === 'logs'} onclick={() => (tab = 'logs')}>Logs</button>
-    <button class:active={tab === 'terminal'} onclick={() => (tab = 'terminal')}>Terminal</button>
-    <button class:active={tab === 'env'} onclick={() => (tab = 'env')}>Env</button>
-    <button class:active={tab === 'resources'} onclick={() => (tab = 'resources')}>Resources</button>
-  </div>
-  <div class="body">
-    {#if tab === 'logs'}
-      <div class="logtoolbar">
-        <div class="modeswitch">
-          <button class:active={logMode === 'live'} onclick={() => (logMode = 'live')}>Live</button>
-          <button class:active={logMode === 'search'} onclick={() => (logMode = 'search')}>Search</button>
-        </div>
-        {#if logMode === 'search'}
-          <form
-            class="searchform"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void runSearch();
-            }}
-          >
-            <input placeholder="Search history…" bind:value={searchQuery} aria-label="Search logs" />
-            <label class="regex">
-              <input type="checkbox" bind:checked={searchRegex} />
-              regex
-            </label>
-            <button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button>
-            <button type="button" onclick={() => void waitLog()}>Wait for log</button>
-          </form>
-        {:else}
-          <button onclick={clearLogs}>Clear</button>
-          <button onclick={exportLogs}>Export</button>
-          <button onclick={() => void waitExit()}>Wait for exit</button>
+  <header class="head">
+    <div class="title">
+      <div class="row1">
+        <h2 class="name" title={process ? displayName(process) : processId}>{process ? displayName(process) : 'Process'}</h2>
+        {#if process}<ProcessStatus {process} {pending} />{/if}
+      </div>
+      <div class="row2">
+        <button type="button" class="idchip mono" title="Copy process id" aria-label="Copy process id" onclick={() => onCopyId(processId)}>
+          <Copy size={11} />{processId}
+        </button>
+        {#if process}
+          <span class="dotsep"></span>
+          <span class="ws truncate">{scopeState.workspaceLabel(process.workspaceId)}</span>
         {/if}
       </div>
-      {#if logMode === 'live'}
-        <div class="logbody"><LogViewer {lines} /></div>
-      {:else}
-        <div class="logbody">
-          {#if searchTruncated}
-            <p class="hint">Results were truncated; narrow the query for a complete scan.</p>
-          {/if}
-          <LogViewer lines={searchResults} />
-        </div>
+    </div>
+    <div class="head-actions">
+      {#if process}
+        <button
+          type="button"
+          class="btn sm"
+          title="Restart"
+          disabled={!!pending}
+          onclick={() => void procActions.restart([processId])}
+        >
+          <RotateCw size={13} /> Restart
+        </button>
+        <button
+          type="button"
+          class="btn sm stop"
+          title="Stop"
+          disabled={!!pending || !live}
+          onclick={() => void procActions.stop([processId])}
+        >
+          <Square size={12} /> Stop
+        </button>
+        <ActionMenu {items} label="More process actions" triggerClass="btn icon sm">
+          <Ellipsis size={15} />
+        </ActionMenu>
       {/if}
-    {:else if tab === 'terminal'}
-      {#await import('./Terminal.svelte') then { default: Terminal }}
-        <Terminal {processId} />
-      {/await}
+      <button type="button" class="btn ghost icon sm" aria-label="Close details" title="Close (Esc)" onclick={onClose}>
+        <X size={16} />
+      </button>
+    </div>
+  </header>
+
+  {#if process && line}
+    <div class="cmdrow mono truncate" title={line}>{line}</div>
+  {/if}
+
+  <div class="tablist" role="tablist" aria-label="Process details" tabindex="-1" onkeydown={tabKey}>
+    {#each tabs as t (t.id)}
+      {@const Icon = t.icon}
+      <button
+        type="button"
+        role="tab"
+        id="tab-{t.id}"
+        class="tab"
+        class:active={tab === t.id}
+        aria-selected={tab === t.id}
+        aria-controls="panel"
+        tabindex={tab === t.id ? 0 : -1}
+        onclick={() => (tab = t.id)}
+      >
+        <Icon size={13} />{t.label}
+      </button>
+    {/each}
+  </div>
+
+  <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
+    {#if !process}
+      {#if waited}
+        <div class="missing">
+          <div class="icon-wrap"><SearchX size={20} /></div>
+          <h3>Process not found</h3>
+          <p>It may have been removed, or it belongs to a workspace that is not loaded.</p>
+          <button type="button" class="btn" onclick={onClose}>Close</button>
+        </div>
+      {:else}
+        <div class="missing"><span class="muted">Loading process…</span></div>
+      {/if}
+    {:else if tab === 'logs'}
+      <ProcessLogs {processId} {live} />
+    {:else if tab === 'info'}
+      <ProcessInfo {process} />
     {:else if tab === 'env'}
-      <div class="env">
-        <label class="reveal">
-          <input type="checkbox" bind:checked={revealed} onchange={loadEnv} />
-          Reveal secrets
-        </label>
-        {#if envLoading}
-          <p class="muted">Loading…</p>
-        {:else}
-          <ul class="mono">
-            {#each env as line}
-              <li>{line}</li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
+      <ProcessEnv {processId} />
+    {:else if tab === 'resources'}
+      <ProcessResources {processId} {live} />
     {:else}
-      <div class="resources">
-        <div class="stat">
-          <span class="label">CPU</span>
-          <span class="value">{cpuPercent.toFixed(1)}%</span>
-        </div>
-        <div class="stat">
-          <span class="label">Memory</span>
-          <span class="value">{formatBytes(memoryBytes)}</span>
-        </div>
-        <div class="stat">
-          <span class="label">Ports</span>
-          <span class="value mono">{ports.length ? ports.join(', ') : '—'}</span>
-        </div>
-      </div>
+      <TerminalTab {processId} interactive={live} />
     {/if}
   </div>
 </div>
 
 <style>
   .detail {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: var(--bg-1);
-    border-left: 1px solid var(--border);
-  }
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-4) var(--space-5);
-    border-bottom: 1px solid var(--border);
-  }
-  .id {
-    font-size: var(--fs-sm);
-    color: var(--text-1);
-  }
-  .close {
-    background: transparent;
-    border: none;
-    color: var(--text-1);
-    font-size: var(--fs-md);
-  }
-  .tabs {
-    display: flex;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-5) 0;
-  }
-  .tabs button {
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-1);
-    padding: var(--space-3) var(--space-2);
-    font-size: var(--fs-sm);
-  }
-  .tabs button.active {
-    color: var(--text-0);
-    border-bottom-color: var(--accent);
-  }
-  .body {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+    background: var(--bg-1);
   }
-  .logtoolbar {
+  .head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
+  }
+  .title {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .row1 {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-5);
-    border-bottom: 1px solid var(--border);
+    min-width: 0;
   }
-  .logtoolbar button {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
-    color: var(--text-0);
-    font-size: var(--fs-xs);
+  .name {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
-  .modeswitch {
-    display: flex;
-    gap: var(--space-1);
-  }
-  .modeswitch button.active {
-    background: var(--accent-subtle);
-    border-color: var(--accent);
-    color: var(--text-0);
-  }
-  .searchform {
+  .row2 {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    flex: 1;
+    gap: var(--space-3);
+    min-width: 0;
+    font-size: var(--fs-xs);
+    color: var(--text-2);
   }
-  .searchform input:not([type]) {
-    flex: 1;
+  .idchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
     background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
-    color: var(--text-0);
-    font-size: var(--fs-xs);
-  }
-  .regex {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
     color: var(--text-1);
-    font-size: var(--fs-xs);
+    font-size: 10.5px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .hint {
-    color: var(--warn);
-    font-size: var(--fs-xs);
-    padding: var(--space-2) var(--space-5) 0;
-    margin: 0;
+  .idchip:hover {
+    color: var(--text-0);
+    border-color: var(--border-strong);
   }
-  .logbody {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
+  .dotsep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-2);
+    flex: none;
   }
-  .logbody > :global(.logwrap) {
-    flex: 1;
-    min-height: 0;
-  }
-  .resources {
-    padding: var(--space-5);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-  .stat {
-    display: flex;
-    justify-content: space-between;
-    padding: var(--space-3) var(--space-4);
-    background: var(--bg-2);
-    border-radius: var(--radius);
-  }
-  .stat .label {
-    color: var(--text-2);
-    font-size: var(--fs-sm);
-  }
-  .stat .value {
-    font-size: var(--fs-md);
-    font-weight: 500;
-  }
-  .env {
-    padding: var(--space-5);
-    height: 100%;
-    overflow: auto;
-  }
-  .reveal {
+  .head-actions {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--fs-sm);
+    gap: 6px;
+    flex: none;
+  }
+  .stop:hover:not(:disabled) {
+    color: var(--err);
+  }
+  .cmdrow {
+    margin: 0 var(--space-5) var(--space-3);
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-0);
+    border: 1px solid var(--border);
     color: var(--text-1);
-    margin-bottom: var(--space-4);
+    font-size: 11.5px;
   }
-  .env ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .tablist {
+    display: flex;
+    gap: 2px;
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 10px;
+    margin-bottom: -1px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-1);
     font-size: var(--fs-sm);
+    font-weight: 500;
+    white-space: nowrap;
   }
-  .env li {
-    padding: var(--space-1) 0;
+  .tab:hover {
     color: var(--text-0);
+    background: transparent;
   }
-  .muted {
+  .tab.active {
+    color: var(--text-0);
+    border-bottom-color: var(--accent);
+  }
+  .tab :global(svg) {
     color: var(--text-2);
   }
-  .mono {
-    font-family: var(--font-mono);
+  .tab.active :global(svg) {
+    color: var(--accent);
+  }
+  .panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .missing {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8);
+    text-align: center;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+  .missing .icon-wrap {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: var(--bg-3);
+    color: var(--text-1);
+  }
+  .missing h3 {
+    color: var(--text-0);
+    font-size: var(--fs-lg);
+  }
+  .missing p {
+    margin: 0;
+    max-width: 300px;
   }
 </style>

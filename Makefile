@@ -1,7 +1,8 @@
 BINARY := agent-runtime
 BIN_DIR := bin
+PREFIX ?= $(HOME)/.local
 
-.PHONY: build test race vet fmt tidy clean install snapshot proto gen-deps ui ui-web ui-web-embed build-gui ui-check ci-check
+.PHONY: build test race vet fmt tidy clean install install-gui snapshot proto gen-deps ui ui-web ui-web-embed build-gui ui-check ci-check
 
 build:
 	@if [ -d ui/dist-web ]; then $(MAKE) ui-web-embed; fi
@@ -19,12 +20,19 @@ ui-web:
 
 ui-web-embed:
 	@if [ -d ui/dist-web ]; then \
-		rm -rf internal/webui/dist/assets internal/webui/dist/index.html; \
+		rm -rf internal/webui/dist; \
+		mkdir -p internal/webui/dist; \
 		cp -r ui/dist-web/. internal/webui/dist/; \
+		printf '{"rev":"%s","dirty":%s,"built":"%s"}\n' "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" "$$(git diff --quiet 2>/dev/null && echo false || echo true)" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" > internal/webui/dist/.build.json; \
 	fi
 
 ui-build:
-	@if [ -d ui/dist ]; then mkdir -p cmd/agent-runtime-gui/dist && cp -r ui/dist/. cmd/agent-runtime-gui/dist/; fi
+	@if [ -d ui/dist ]; then \
+		rm -rf cmd/agent-runtime-gui/dist; \
+		mkdir -p cmd/agent-runtime-gui/dist; \
+		cp -r ui/dist/. cmd/agent-runtime-gui/dist/; \
+		printf '{"rev":"%s","dirty":%s,"built":"%s"}\n' "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" "$$(git diff --quiet 2>/dev/null && echo false || echo true)" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" > cmd/agent-runtime-gui/dist/.build.json; \
+	fi
 
 # agent-runtime-gui needs cgo + GTK/WebKitGTK dev headers, so it's kept out
 # of the default `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
@@ -60,6 +68,10 @@ install:
 	go install ./cmd/agent-runtime
 	go install ./cmd/agentd
 	go install ./cmd/agent-runtime-shim
+
+install-gui: build-gui
+	install -Dm755 $(BIN_DIR)/agent-runtime-gui $(DESTDIR)$(PREFIX)/bin/agent-runtime-gui
+	install -Dm644 packaging/desktop/agent-runtime.desktop $(DESTDIR)$(PREFIX)/share/applications/agent-runtime.desktop
 
 snapshot:
 	goreleaser release --snapshot --clean

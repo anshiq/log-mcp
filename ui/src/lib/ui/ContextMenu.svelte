@@ -1,1 +1,70 @@
-<script lang="ts">import type { Snippet } from 'svelte';let { items = [], children }: { items: { id: string; label: string; onSelect?: () => void }[]; children?: Snippet } = $props();let x = $state(0);let y = $state(0);let open = $state(false);function onCtx(e: MouseEvent) { e.preventDefault(); x = e.clientX; y = e.clientY; open = true; }</script><div oncontextmenu={onCtx} role="presentation">{#if children}{@render children()}{/if}{#if open}<div class="ctx" style={`left:${x}px;top:${y}px`} role="menu">{#each items as it}<button role="menuitem" onclick={() => { it.onSelect?.(); open = false; }}>{it.label}</button>{/each}</div>{/if}</div><svelte:window onclick={() => (open = false)} /><style>.ctx{position:fixed;z-index:50;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-pop);min-width:160px}.ctx button{display:block;width:100%;text-align:left;background:transparent;border:none;color:var(--text-0);padding:var(--space-2) var(--space-4)}.ctx button:hover{background:var(--bg-3)}</style>
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { floating } from './floating';
+  import { layer, outsideClick } from './overlay';
+  import { pop } from './motion';
+  import MenuList from './MenuList.svelte';
+  import type { MenuItem } from './menu';
+
+  let {
+    items = [],
+    label = 'Context menu',
+    onSelect,
+    children
+  }: {
+    items?: MenuItem[];
+    label?: string;
+    onSelect?: (id: string) => void;
+    children?: Snippet;
+  } = $props();
+
+  let point = $state<{ x: number; y: number } | null>(null);
+  let host: HTMLDivElement | null = $state(null);
+
+  function onContext(e: MouseEvent) {
+    e.preventDefault();
+    point = { x: e.clientX, y: e.clientY };
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      const r = (e.target as HTMLElement).getBoundingClientRect();
+      point = { x: r.left + 12, y: r.bottom - 4 };
+    }
+  }
+
+  function close() {
+    point = null;
+  }
+</script>
+
+<div bind:this={host} class="host" oncontextmenu={onContext} onkeydown={onKey} role="presentation">
+  {#if children}{@render children()}{/if}
+</div>
+
+{#if point}
+  <div
+    class="pane"
+    use:floating={{ anchor: point, placement: 'bottom-start', offset: 2 }}
+    use:layer={{ onClose: close, focus: 'none' }}
+    use:outsideClick={{ onOutside: close }}
+    oncontextmenu={(e) => e.preventDefault()}
+    in:pop={{ duration: 110, y: 2 }}
+    out:pop={{ duration: 80, y: 2 }}
+    role="presentation"
+  >
+    <MenuList {items} {label} {onSelect} onClose={close} />
+  </div>
+{/if}
+
+<svelte:window onblur={close} onresize={close} />
+
+<style>
+  .host {
+    display: contents;
+  }
+  .pane {
+    display: flex;
+  }
+</style>

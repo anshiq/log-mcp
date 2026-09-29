@@ -126,37 +126,54 @@ export function toRevision(raw: Record<string, unknown>): Revision {
 }
 
 export function toHarness(raw: Record<string, unknown>): Harness {
+  const id = str(raw['id'] ?? raw['name'] ?? raw['harness']);
+  const displayName = str(raw['displayName'] ?? raw['display_name'] ?? raw['name'] ?? id);
+  const mcp = raw['mcpGlobal'] === true || raw['mcpConfigured'] === true || raw['mcp_configured'] === true;
+  const skills = Array.isArray(raw['skillsGlobal']) ? (raw['skillsGlobal'] as unknown[]).map((x) => str(x)) : [];
   return {
-    name: str(raw['name'] ?? raw['harness']),
+    id,
+    name: displayName,
+    displayName,
     detected: raw['detected'] === true,
     version: str(raw['version']),
-    mcpConfigured: raw['mcpConfigured'] === true || raw['mcp_configured'] === true
+    mcpConfigured: mcp,
+    mcpGlobal: mcp,
+    skillsGlobal: skills
   };
 }
 
+function epochMs(v: unknown): number {
+  if (typeof v === 'number') return v < 1e11 ? v * 1000 : v > 1e14 ? Math.round(v / 1e6) : v;
+  return num(v) ?? 0;
+}
+
 export function toSession(raw: Record<string, unknown>): Session {
+  const closedAt = epochMs(raw['closedAt'] ?? raw['closed_at']);
   return {
     id: str(raw['id'] ?? raw['sessionId'] ?? raw['session_id']),
     kind: str(raw['kind'], 'mcp'),
     harness: str(raw['harness']),
-    clientPid: typeof raw['clientPid'] === 'number' ? (raw['clientPid'] as number) : 0,
+    harnessVersion: str(raw['harnessVersion'] ?? raw['harness_version']),
+    clientPid: typeof raw['clientPid'] === 'number' ? (raw['clientPid'] as number) : typeof raw['client_pid'] === 'number' ? (raw['client_pid'] as number) : 0,
     workspaceId: str(raw['workspaceId'] ?? raw['workspace_id']),
-    started: num(raw['startedAt'] ?? raw['started_at']) ?? 0,
-    lastSeen: num(raw['lastSeen'] ?? raw['last_seen']) ?? 0,
-    closed: raw['closed'] === true
+    started: epochMs(raw['startedAt'] ?? raw['started_at']),
+    lastSeen: epochMs(raw['lastSeenAt'] ?? raw['last_seen_at'] ?? raw['lastSeen'] ?? raw['last_seen']),
+    closedAt,
+    closed: raw['closed'] === true || closedAt > 0
   };
 }
 
 export function toAuditEntry(raw: Record<string, unknown>): AuditEntry {
   return {
     id: typeof raw['id'] === 'number' ? raw['id'] : 0,
-    time: typeof raw['ts'] === 'number' ? (raw['ts'] as number) * 1000 : (num(raw['ts']) ?? 0),
+    time: epochMs(raw['ts']),
     action: str(raw['action']),
     result: str(raw['result']),
     duration: typeof raw['durationMs'] === 'number' ? (raw['durationMs'] as number) : (typeof raw['duration'] === 'number' ? (raw['duration'] as number) : 0),
     session: str(raw['sessionId'] ?? raw['session_id']),
     harness: str(raw['harness']),
-    workspaceId: str(raw['workspaceId'] ?? raw['workspace_id'])
+    workspaceId: str(raw['workspaceId'] ?? raw['workspace_id']),
+    projectId: str(raw['projectId'] ?? raw['project_id'])
   };
 }
 

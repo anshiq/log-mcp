@@ -1,232 +1,698 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ProjectService } from '../../lib/api';
-  import { scope } from '../../lib/scope.svelte';
+  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+  import FolderPlus from '@lucide/svelte/icons/folder-plus';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
+  import Link from '@lucide/svelte/icons/link';
+  import ShieldCheck from '@lucide/svelte/icons/shield-check';
+  import Eraser from '@lucide/svelte/icons/eraser';
+  import Copy from '@lucide/svelte/icons/copy';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
+  import { ProjectService, ConfigService } from '../../lib/api';
+  import { scopeState } from '../../lib/state/scope.svelte';
+  import { palette } from '../../lib/palette.svelte';
+  import { dialogs } from '../../lib/state/dialogs.svelte';
+  import { toasts, toastError } from '../../lib/toasts.svelte';
+  import { getPlatform } from '../../lib/platform';
+  import Dialog from '../../lib/ui/Dialog.svelte';
+  import Button from '../../lib/ui/Button.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
+  import Input from '../../lib/ui/Input.svelte';
+  import SearchField from '../../lib/ui/SearchField.svelte';
+  import Badge from '../../lib/ui/Badge.svelte';
+  import Banner from '../../lib/ui/Banner.svelte';
+  import Skeleton from '../../lib/ui/Skeleton.svelte';
+  import EmptyState from '../../lib/ui/EmptyState.svelte';
+  import RelativeTime from '../../lib/ui/RelativeTime.svelte';
 
   interface ProjectRow {
     id: string;
     name: string;
-    configMode?: string;
-    lastUsedAt?: number;
-    workspaceCount?: number;
+    configMode: string;
+    lastUsedAt: number;
+    workspaceCount: number;
   }
   interface WorkspaceRow {
     id: string;
+    projectId: string;
     path: string;
-    confirmed?: boolean;
-    lastSeenAt?: number;
+    confirmed: boolean;
+    lastSeenAt: number;
+    missing: boolean;
+  }
+
+  function ms(n: unknown): number {
+    const v = typeof n === 'number' ? n : Number(n ?? 0);
+    if (!v) return 0;
+    return v < 1e12 ? v * 1000 : v;
   }
 
   let projects = $state<ProjectRow[]>([]);
-  let expanded = $state<Record<string, WorkspaceRow[]>>({});
+  let workspaces = $state<Record<string, WorkspaceRow[]>>({});
+  let expanded = $state<Record<string, boolean>>({});
   let loading = $state(true);
-  let newPath = $state('');
-  let gcResult = $state<string[] | null>(null);
+  let loadError = $state('');
+  let filter = $state('');
+  let gcRunning = $state(false);
+  let missingIds = $state<Set<string>>(new Set());
 
-  async function load() {
-    loading = true;
+  let openDialog = $state(false);
+  let openPath = $state('');
+  let openError = $state('');
+  let openBusy = $state(false);
+  let linkTarget = $state<ProjectRow | null>(null);
+
+  let renamingId = $state('');
+  let renameValue = $state('');
+  let renameBusy = $state(false);
+
+  let busyWs = $state('');
+
+  const visible = $derived.by(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) => p.name.toLowerCase().includes(q) || (workspaces[p.id] ?? []).some((w) => w.path.toLowerCase().includes(q)));
+  });
+
+  const pathInvalid = $derived(openPath.trim() !== '' && !/^(\/|~|[A-Za-z]:[\\/]|\\\\)/.test(openPath.trim()));
+
+  function baseName(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  }
+
+  async function load(initial = false) {
+    if (initial) loading = true;
+    loadError = '';
     try {
-      const res = (await ProjectService.list()) as unknown;
-      const arr = Array.isArray(res) ? res : (res as { projects?: ProjectRow[] }).projects ?? [];
-      projects = arr as ProjectRow[];
+      const list = (await ProjectService.list()) as Record<string, unknown>[];
+      const rows: ProjectRow[] = list.map((p) => ({
+        id: String(p['id'] ?? ''),
+        name: String(p['name'] ?? p['id'] ?? ''),
+        configMode: String(p['configMode'] ?? ''),
+        lastUsedAt: ms(p['lastUsedAt']),
+        workspaceCount: Number(p['workspaceCount'] ?? 0)
+      }));
+      rows.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+      const entries = await Promise.all(
+        rows.map(async (p) => {
+          try {
+            const raw = (await ProjectService.workspaces(p.id)) as Record<string, unknown>[];
+            return [
+              p.id,
+              raw.map<WorkspaceRow>((w) => ({
+                id: String(w['id'] ?? ''),
+                projectId: p.id,
+                path: String(w['path'] ?? ''),
+                confirmed: w['confirmed'] !== false,
+                lastSeenAt: ms(w['lastSeenAt']),
+                missing: w['missing'] === true
+              }))
+            ] as const;
+          } catch {
+            return [p.id, [] as WorkspaceRow[]] as const;
+          }
+        })
+      );
+      projects = rows;
+      workspaces = Object.fromEntries(entries);
+      if (initial && rows.length <= 3) expanded = Object.fromEntries(rows.map((p) => [p.id, true]));
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
     }
   }
 
-  async function toggle(p: ProjectRow) {
-    if (expanded[p.id]) {
-      const next = { ...expanded };
-      delete next[p.id];
-      expanded = next;
-      return;
-    }
-    const res = (await ProjectService.workspaces(p.id)) as unknown;
-    const arr = Array.isArray(res) ? res : (res as { workspaces?: WorkspaceRow[] }).workspaces ?? [];
-    expanded = { ...expanded, [p.id]: arr as WorkspaceRow[] };
+  async function refreshAll() {
+    await Promise.all([load(), scopeState.refresh()]);
   }
 
-  async function useWorkspace(w: WorkspaceRow) {
-    await scope.resolve(w.path);
+  function toggle(id: string) {
+    expanded = { ...expanded, [id]: !expanded[id] };
+  }
+
+  function openOpenDialog() {
+    openPath = '';
+    openError = '';
+    linkTarget = null;
+    scopeState.error = '';
+    openDialog = true;
+  }
+
+  function openLinkDialog(p: ProjectRow) {
+    openPath = '';
+    openError = '';
+    linkTarget = p;
+    openDialog = true;
+  }
+
+  async function browse() {
+    const picked = await getPlatform().pickDirectory();
+    if (picked) openPath = picked;
+  }
+
+  async function submitPath(e: Event) {
+    e.preventDefault();
+    const path = openPath.trim();
+    if (!path || openBusy) return;
+    openBusy = true;
+    openError = '';
+    try {
+      if (linkTarget) {
+        const target = linkTarget;
+        await ProjectService.linkWorkspace(target.id, path);
+        toasts.ok(`Linked ${baseName(path)} to ${target.name}`);
+        expanded = { ...expanded, [target.id]: true };
+        openDialog = false;
+        await refreshAll();
+      } else {
+        const ok = await scopeState.open(path);
+        if (ok) {
+          toasts.ok(`Opened ${scopeState.label}`);
+          openDialog = false;
+          await load();
+        } else {
+          openError = scopeState.error || 'Could not open that folder.';
+        }
+      }
+    } catch (err) {
+      openError = err instanceof Error ? err.message : String(err);
+    } finally {
+      openBusy = false;
+    }
+  }
+
+  function startRename(p: ProjectRow) {
+    renamingId = p.id;
+    renameValue = p.name;
+  }
+
+  function cancelRename() {
+    renamingId = '';
+    renameValue = '';
+  }
+
+  async function commitRename(p: ProjectRow) {
+    const name = renameValue.trim();
+    if (!name || name === p.name) {
+      cancelRename();
+      return;
+    }
+    renameBusy = true;
+    try {
+      await ProjectService.update(p.id, name);
+      toasts.ok(`Renamed to ${name}`);
+      cancelRename();
+      await refreshAll();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      renameBusy = false;
+    }
   }
 
   async function forget(p: ProjectRow) {
-    if (!confirm(`Forget project "${p.name}"? Workspaces move to a 30-day trash.`)) return;
-    await ProjectService.forget(p.id);
-    await load();
-  }
-
-  async function gc() {
-    const res = await ProjectService.gc();
-    gcResult = res.removedWorkspaces ?? [];
-  }
-
-  async function addPath(e: Event) {
-    e.preventDefault();
-    if (!newPath.trim()) return;
-    await scope.resolve(newPath.trim());
-    newPath = '';
-    await load();
-  }
-
-  async function trustRepo(w: WorkspaceRow) {
+    const ok = await dialogs.confirm(`“${p.name}” and its workspaces move to a 30-day trash. Your files on disk are not touched.`, {
+      title: 'Forget project',
+      confirmLabel: 'Forget project',
+      danger: true
+    });
+    if (!ok) return;
     try {
-      await ProjectService.trustRepoConfig(w.id, w.path + '/agent-runtime.yaml', '');
-    } catch {
+      await ProjectService.forget(p.id);
+      toasts.ok(`Forgot ${p.name}`);
+      await refreshAll();
+    } catch (err) {
+      toastError(err);
     }
   }
 
-  onMount(load);
+  async function gc() {
+    gcRunning = true;
+    try {
+      const res = await ProjectService.gc();
+      const removed = res.removedWorkspaces ?? [];
+      missingIds = new Set([...missingIds, ...removed]);
+      if (removed.length === 0) toasts.info('No missing workspaces found');
+      else toasts.ok(`Marked ${removed.length} missing workspace${removed.length === 1 ? '' : 's'} as unused`);
+      await refreshAll();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      gcRunning = false;
+    }
+  }
+
+  function useWorkspace(w: WorkspaceRow) {
+    scopeState.select(w.id);
+    toasts.ok(`Scope set to ${scopeState.workspaceLabel(w.id)}`);
+  }
+
+  async function trustRepo(w: WorkspaceRow) {
+    busyWs = w.id;
+    try {
+      const bundle = await ConfigService.get(w.id);
+      const repo = (bundle.layers as { name: string; path: string; exists: boolean; sha256?: string; trusted?: boolean }[]).find((l) => l.name === 'repo');
+      if (!repo || !repo.exists || !repo.sha256) {
+        toasts.info('This workspace has no agent-runtime.yaml to trust');
+        return;
+      }
+      const ok = await dialogs.confirm(`Trust the repository config at\n${repo.path}\n\nIt will be allowed to define apps and commands that the daemon runs.`, {
+        title: 'Trust repo config',
+        confirmLabel: 'Trust config'
+      });
+      if (!ok) return;
+      await ProjectService.trustRepoConfig(w.id, repo.path, repo.sha256);
+      toasts.ok('Repo config trusted');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      busyWs = '';
+    }
+  }
+
+  async function copyPath(path: string) {
+    await getPlatform().copyText(path);
+    toasts.info('Path copied');
+  }
+
+  $effect(() => {
+    if (palette.wantsOpenWorkspace) {
+      palette.wantsOpenWorkspace = false;
+      openOpenDialog();
+    }
+  });
+
+  onMount(() => void load(true));
 </script>
 
 <div class="page">
-  <div class="toolbar">
-    <form onsubmit={addPath}>
-      <input placeholder="Path to open or link…" bind:value={newPath} aria-label="Workspace path" />
-      <button type="submit" disabled={scope.resolving}>{scope.resolving ? 'Opening…' : 'Open'}</button>
-    </form>
-    <button class="ghost" onclick={gc}>Garbage collect missing workspaces</button>
+  <div class="page-header">
+    <div class="titles">
+      <h1>Projects</h1>
+      <p class="subtitle">Every project the daemon knows about, and the workspace folders linked to it.</p>
+    </div>
+    <div class="actions">
+      <Button variant="secondary" loading={gcRunning} onclick={() => void gc()} title="Flag workspaces whose folder no longer exists">
+        {#if !gcRunning}<Eraser size={14} />{/if}Clean up missing
+      </Button>
+      <Button variant="primary" onclick={openOpenDialog}><FolderPlus size={14} />Open workspace</Button>
+    </div>
   </div>
-  {#if gcResult}
-    <p class="hint">Removed {gcResult.length} missing workspace(s).</p>
+
+  {#if loadError}
+    <Banner tone="err" title="Couldn’t load projects" message={loadError}>
+      {#snippet actions()}<Button size="sm" onclick={() => void load(true)}>Retry</Button>{/snippet}
+    </Banner>
   {/if}
+
   {#if loading}
-    <p class="muted">Loading…</p>
-  {:else if projects.length === 0}
-    <p class="muted">No projects yet.</p>
-  {:else}
-    <ul class="projects">
-      {#each projects as p (p.id)}
-        <li>
-          <div class="row">
-            <button class="expand" onclick={() => toggle(p)}>{expanded[p.id] ? '▾' : '▸'}</button>
-            <span class="name">{p.name}</span>
-            <span class="meta">{p.workspaceCount ?? 0} workspace(s)</span>
-            <span class="meta mono">{p.configMode ?? ''}</span>
-            <button class="danger" onclick={() => forget(p)}>Forget</button>
+    <div class="list">
+      {#each [0, 1, 2] as i (i)}
+        <div class="card skel">
+          <Skeleton width="28px" height="28px" radius="8px" />
+          <div class="skel-text">
+            <Skeleton width={`${180 + i * 30}px`} height="14px" />
+            <Skeleton width="260px" height="11px" />
           </div>
-          {#if expanded[p.id]}
-            <ul class="workspaces">
-              {#each expanded[p.id] as w (w.id)}
-                <li>
-                  <span class="path mono">{w.path}</span>
-                  {#if !w.confirmed}<span class="badge">unconfirmed</span>{/if}
-                  <button onclick={() => useWorkspace(w)}>Use as scope</button>
-                  <button onclick={() => void trustRepo(w)}>Trust repo config</button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </li>
+        </div>
       {/each}
-    </ul>
+    </div>
+  {:else if projects.length === 0 && !loadError}
+    <div class="card">
+      <EmptyState icon={FolderKanban} title="No projects yet" body="Open a project folder to register it. The daemon creates a project and workspace for it, and your processes, logs and config are grouped under it.">
+        {#snippet action()}
+          <Button variant="primary" onclick={openOpenDialog}><FolderPlus size={14} />Open workspace</Button>
+        {/snippet}
+      </EmptyState>
+    </div>
+  {:else if projects.length > 0}
+    {#if projects.length > 3}
+      <div class="toolbar">
+        <div class="search"><SearchField bind:value={filter} placeholder="Filter projects or paths…" label="Filter projects" /></div>
+        <span class="muted count">{visible.length} of {projects.length}</span>
+      </div>
+    {/if}
+
+    <div class="list">
+      {#each visible as p (p.id)}
+        {@const wss = workspaces[p.id] ?? []}
+        {@const isOpen = !!expanded[p.id]}
+        <section class="card project" class:current={scopeState.projectId === p.id}>
+          <div class="head">
+            <button class="expander" type="button" aria-expanded={isOpen} aria-controls={`ws-${p.id}`} aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${p.name}`} onclick={() => toggle(p.id)}>
+              <span class="chev" class:open={isOpen}><ChevronRight size={16} /></span>
+            </button>
+            <span class="tile"><FolderKanban size={16} /></span>
+
+            <div class="ident">
+              {#if renamingId === p.id}
+                <form
+                  class="rename"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    void commitRename(p);
+                  }}
+                >
+                  <Input
+                    bind:value={renameValue}
+                    label="Project name"
+                    size="sm"
+                    autofocus
+                    onkeydown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation();
+                        cancelRename();
+                      }
+                    }}
+                  />
+                  <IconButton label="Save name" variant="secondary" onclick={() => void commitRename(p)} disabled={renameBusy || !renameValue.trim()}><Check size={14} /></IconButton>
+                  <IconButton label="Cancel rename" onclick={cancelRename}><X size={14} /></IconButton>
+                </form>
+              {:else}
+                <button class="name" type="button" onclick={() => toggle(p.id)}>{p.name}</button>
+                {#if scopeState.projectId === p.id}<Badge tone="accent" size="sm">Current scope</Badge>{/if}
+              {/if}
+              <div class="meta">
+                {#if p.configMode}<Badge tone="neutral" size="sm">{p.configMode} config</Badge>{/if}
+                <span>{p.workspaceCount} workspace{p.workspaceCount === 1 ? '' : 's'}</span>
+                <span class="dotsep">·</span>
+                <span>Last used <RelativeTime ts={p.lastUsedAt} empty="never" /></span>
+              </div>
+            </div>
+
+            {#if renamingId !== p.id}
+              <div class="row-actions">
+                <IconButton label={`Rename ${p.name}`} onclick={() => startRename(p)}><Pencil size={14} /></IconButton>
+                <IconButton label={`Forget ${p.name}`} variant="danger" onclick={() => void forget(p)}><Trash2 size={14} /></IconButton>
+              </div>
+            {/if}
+          </div>
+
+          {#if isOpen}
+            <div class="workspaces" id={`ws-${p.id}`}>
+              {#each wss as w (w.id)}
+                {@const active = scopeState.workspaceId === w.id}
+                {@const missing = w.missing || missingIds.has(w.id)}
+                <div class="ws" class:active>
+                  <span class="wico"><FolderOpen size={15} /></span>
+                  <div class="wbody">
+                    <div class="path mono truncate" title={w.path}>{w.path}</div>
+                    <div class="wmeta">
+                      {#if active}<Badge tone="accent" size="sm">In use</Badge>{/if}
+                      {#if missing}<Badge tone="warn" size="sm" dot>missing</Badge>{/if}
+                      {#if !w.confirmed}<Badge tone="info" size="sm">unconfirmed</Badge>{/if}
+                      <span class="muted">Last seen <RelativeTime ts={w.lastSeenAt} empty="never" /></span>
+                    </div>
+                  </div>
+                  <div class="wactions">
+                    <IconButton label="Copy path" size="sm" onclick={() => void copyPath(w.path)}><Copy size={13} /></IconButton>
+                    <Button size="sm" variant="ghost" loading={busyWs === w.id} onclick={() => void trustRepo(w)} title="Trust this workspace’s agent-runtime.yaml">
+                      {#if busyWs !== w.id}<ShieldCheck size={13} />{/if}Trust config
+                    </Button>
+                    <Button size="sm" variant={active ? 'secondary' : 'primary'} disabled={active} onclick={() => useWorkspace(w)}>
+                      {#if active}<Check size={13} />Selected{:else}Use this workspace{/if}
+                    </Button>
+                  </div>
+                </div>
+              {:else}
+                <div class="none"><CircleAlert size={14} />No workspaces linked to this project.</div>
+              {/each}
+              <div class="foot">
+                <Button size="sm" variant="ghost" onclick={() => openLinkDialog(p)}><Link size={13} />Link another folder</Button>
+              </div>
+            </div>
+          {/if}
+        </section>
+      {:else}
+        <div class="card">
+          <EmptyState compact icon={FolderKanban} title="No matching projects" body={`Nothing matches “${filter}”.`} />
+        </div>
+      {/each}
+    </div>
   {/if}
 </div>
 
+{#if openDialog}
+  <Dialog
+    title={linkTarget ? `Link a folder to ${linkTarget.name}` : 'Open workspace'}
+    description={linkTarget ? 'The folder becomes another workspace of this project.' : 'Register a project folder with the daemon and switch to it.'}
+    icon={linkTarget ? Link : FolderPlus}
+    width={500}
+    onClose={() => (openDialog = false)}
+  >
+    <form id="open-workspace-form" onsubmit={submitPath}>
+      <div class="form-field">
+        <label for="ws-path">Folder path</label>
+        <div class="path-row">
+          <Input
+            id="ws-path"
+            bind:value={openPath}
+            label="Workspace path"
+            placeholder="/home/you/code/my-project"
+            mono
+            autofocus
+            invalid={pathInvalid || !!openError}
+            oninput={() => (openError = '')}
+          />
+          {#if getPlatform().name === 'wails'}
+            <Button onclick={() => void browse()}><FolderOpen size={14} />Browse</Button>
+          {/if}
+        </div>
+        {#if pathInvalid}
+          <span class="hint bad">Enter an absolute path, e.g. /home/you/code/app or C:\code\app.</span>
+        {:else}
+          <span class="hint">The path is resolved on the machine running the daemon.</span>
+        {/if}
+      </div>
+      {#if openError}
+        <div class="dlg-error"><Banner tone="err" message={openError} /></div>
+      {/if}
+    </form>
+    {#snippet footer()}
+      <Button variant="secondary" onclick={() => (openDialog = false)}>Cancel</Button>
+      <Button variant="primary" loading={openBusy || scopeState.resolving} disabled={!openPath.trim() || pathInvalid} onclick={submitPath}>
+        {linkTarget ? 'Link folder' : 'Open'}
+      </Button>
+    {/snippet}
+  </Dialog>
+{/if}
+
 <style>
-  .page {
-    padding: var(--space-5);
-    overflow: auto;
-    height: 100%;
+  .actions {
+    align-self: center;
   }
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    margin-bottom: var(--space-5);
-  }
-  .toolbar form {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .toolbar input {
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-3);
-    color: var(--text-0);
+  .toolbar .search {
     width: 320px;
+    max-width: 100%;
   }
-  .toolbar button,
-  .ghost {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-4);
-    color: var(--text-0);
+  .count {
     font-size: var(--fs-sm);
   }
-  .hint {
-    color: var(--text-1);
-    font-size: var(--fs-sm);
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
   }
-  .muted {
-    color: var(--text-2);
-  }
-  .projects {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .projects > li {
-    border-bottom: 1px solid var(--border);
-    padding: var(--space-3) 0;
-  }
-  .row {
+  .card.skel {
     display: flex;
     align-items: center;
     gap: var(--space-4);
+    padding: var(--space-5);
   }
-  .expand {
-    background: transparent;
+  .skel-text {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .project {
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .project:hover {
+    border-color: var(--border-strong);
+  }
+  .project.current {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-3);
+  }
+  .expander {
+    width: 26px;
+    height: 26px;
+    padding: 0;
     border: none;
-    color: var(--text-1);
-    width: 20px;
+    background: transparent;
+    color: var(--text-2);
+    flex: none;
+  }
+  .expander:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border: none;
+    color: var(--text-0);
+  }
+  .chev {
+    display: inline-flex;
+    transition: transform var(--dur) var(--ease);
+  }
+  .chev.open {
+    transform: rotate(90deg);
+  }
+  .tile {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+  }
+  .ident {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+  }
+  .ident > :global(.badge),
+  .ident > .name {
+    align-self: flex-start;
+  }
+  .ident {
+    flex-flow: row wrap;
+    align-items: center;
+    column-gap: var(--space-3);
   }
   .name {
-    font-weight: 500;
+    height: auto;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-0);
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .name:hover:not(:disabled) {
+    background: transparent;
+    border: none;
+    color: var(--accent);
   }
   .meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-basis: 100%;
     color: var(--text-2);
     font-size: var(--fs-sm);
   }
-  .danger {
-    margin-left: auto;
-    background: transparent;
-    border: 1px solid var(--err);
-    color: var(--err);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--fs-xs);
+  .dotsep {
+    color: var(--border-strong);
   }
-  .workspaces {
-    list-style: none;
-    margin: var(--space-2) 0 0 var(--space-8);
-    padding: 0;
-  }
-  .workspaces li {
+  .rename {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-1) 0;
+    gap: var(--space-2);
+    width: min(420px, 100%);
+  }
+  .row-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+  }
+  .workspaces {
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-0) 40%, var(--bg-1));
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+  .ws {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4) var(--space-3) 62px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ws.active {
+    background: var(--accent-subtle);
+  }
+  .wico {
+    color: var(--text-2);
+    display: inline-flex;
+    flex: none;
+  }
+  .wbody {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .path {
     font-size: var(--fs-sm);
-  }
-  .workspaces button {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
     color: var(--text-0);
+  }
+  .wmeta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     font-size: var(--fs-xs);
   }
-  .badge {
-    background: color-mix(in srgb, var(--warn) 20%, transparent);
-    color: var(--warn);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--space-2);
-    font-size: var(--fs-xs);
+  .wactions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
   }
-  .mono {
-    font-family: var(--font-mono);
+  .none {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: var(--space-5) var(--space-5) var(--space-5) 62px;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    border-bottom: 1px solid var(--border);
+  }
+  .foot {
+    padding: var(--space-3) var(--space-4) var(--space-3) 54px;
+  }
+  .path-row {
+    display: flex;
+    gap: var(--space-3);
+  }
+  .hint.bad {
+    color: var(--err);
+  }
+  .dlg-error {
+    margin-top: var(--space-4);
+  }
+
+  @media (max-width: 900px) {
+    .ws {
+      flex-wrap: wrap;
+      padding-left: var(--space-5);
+    }
+    .wactions {
+      flex-wrap: wrap;
+      margin-left: 27px;
+    }
+    .none,
+    .foot {
+      padding-left: var(--space-5);
+    }
   }
 </style>

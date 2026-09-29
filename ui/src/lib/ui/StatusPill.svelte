@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { status }: { status?: string } = $props();
+  let { status, plain = false }: { status?: string; plain?: boolean } = $props();
 
   function toneOf(s?: string): 'ok' | 'off' | 'bad' | 'busy' {
     if (s === 'running' || s === 'ready') return 'ok';
@@ -11,34 +11,51 @@
   const tone = $derived(toneOf(status));
 </script>
 
-<span class="pill {tone}">
+<span class="pill {tone}" class:plain>
   <span class="dot"></span>
   {status ?? 'unknown'}
 </span>
 
 <style>
   .pill {
+    --c: var(--err);
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 6px;
+    padding: 1px 9px 1px 8px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--c) 30%, transparent);
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    color: var(--c);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .pill.plain {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-1);
     font-size: var(--fs-sm);
   }
+  .pill.ok {
+    --c: var(--ok);
+  }
+  .pill.off {
+    --c: var(--neutral);
+  }
+  .pill.busy {
+    --c: var(--info);
+  }
   .dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-  }
-  .pill.ok .dot {
-    background: var(--ok);
-  }
-  .pill.off .dot {
-    background: var(--neutral);
-  }
-  .pill.bad .dot {
-    background: var(--err);
+    background: var(--c);
+    flex: none;
   }
   .pill.busy .dot {
-    background: var(--warn);
     animation: pulse 1.2s infinite;
   }
   @keyframes pulse {

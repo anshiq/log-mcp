@@ -33,6 +33,8 @@ import (
 
 var version = "v0.4.0"
 
+var frontendBuildStamp = "unknown"
+
 //go:embed all:dist
 var embeddedDist embed.FS
 
@@ -94,8 +96,21 @@ func openGUI(logger *slog.Logger) error {
 	}
 	fmt.Printf("agent-runtime GUI: daemon %s api %s reachable at %s.\n",
 		v.DaemonVersion, v.APIVersion, sock)
+	fmt.Printf("agent-runtime GUI: frontend %s.\n", guiFrontendBuild())
 	fmt.Println("Run `agent-runtime-gui` (no args) to open the native window.")
 	return nil
+}
+
+func guiFrontendBuild() string {
+	sub, err := fs.Sub(embeddedDist, "dist")
+	if err != nil {
+		return "unknown"
+	}
+	b, err := fs.ReadFile(sub, ".build.json")
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // newProxy returns a reverse proxy from /api to the daemon UDS.
@@ -172,6 +187,8 @@ func runNative(logger *slog.Logger) error {
 	if err != nil || len(entries) == 0 {
 		return fmt.Errorf("gui: embedded frontend has no assets (run make build-gui to rebuild ui/)")
 	}
+	frontendBuildStamp = guiFrontendBuild()
+	logger.Info("agent-runtime-gui", "version", version, "frontend", frontendBuildStamp)
 	proxy := newProxy(sock, "gui/"+version)
 	app := &App{}
 	geometry := loadWindowState()

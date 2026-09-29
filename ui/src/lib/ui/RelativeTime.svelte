@@ -1,1 +1,30 @@
-<script lang="ts">import { onMount } from 'svelte';import { relativeTime } from '../format';let { ts = 0 }: { ts?: number } = $props();let now = $state(Date.now());let timer: ReturnType<typeof setInterval>;onMount(() => { timer = setInterval(() => (now = Date.now()), 10000); return () => clearInterval(timer); });</script><span title={new Date(ts).toLocaleString()}>{relativeTime(ts)}</span>
+<script lang="ts">
+  import { relativeTime } from '../format';
+  import { clock } from '../state/clock.svelte';
+
+  let { ts = 0, empty = '—' }: { ts?: number | null; empty?: string } = $props();
+
+  $effect(() => clock.retain());
+
+  const exact = $derived(ts ? new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' }) : '');
+  const label = $derived.by(() => {
+    void clock.now;
+    return ts ? relativeTime(ts) : empty;
+  });
+</script>
+
+{#if ts}
+  <time datetime={new Date(ts).toISOString()} title={exact}>{label}</time>
+{:else}
+  <span class="none">{empty}</span>
+{/if}
+
+<style>
+  time {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .none {
+    color: var(--text-2);
+  }
+</style>

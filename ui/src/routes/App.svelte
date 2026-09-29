@@ -13,21 +13,21 @@
   import OverviewPage from './pages/OverviewPage.svelte';
   import LogsPage from './pages/LogsPage.svelte';
   import { router } from '../lib/router.svelte';
-  import { scope } from '../lib/scope.svelte';
   import { scopeState } from '../lib/state/scope.svelte';
   import { connection } from '../lib/state/connection.svelte';
   import { events } from '../lib/state/events.svelte';
+  import { processes } from '../lib/state/processes.svelte';
   import { handleAlertEvent } from '../lib/state/alerts.svelte';
   import { installGlobalKeys } from '../lib/keys';
   import { SystemService, hasAuthToken, setUnauthorizedHandler } from '../lib/api';
   import ToastRegion from '../lib/ui/ToastRegion.svelte';
   import CommandPalette from '../lib/ui/CommandPalette.svelte';
+  import ConfirmHost from '../lib/ui/ConfirmHost.svelte';
   import Shell from '../app/Shell.svelte';
   import Splash from '../app/Splash.svelte';
   import DaemonUnreachable from '../app/DaemonUnreachable.svelte';
   import ShortcutsDialog from '../app/ShortcutsDialog.svelte';
 
-  let workspacePathInput = $state('');
   let authed = $state(__APP_TARGET__ !== 'web' || hasAuthToken());
   let booted = $state(false);
   let shortcutsOpen = $state(false);
@@ -60,21 +60,14 @@
     } catch {
       connection.reachable = false;
     }
-    scope.restoreLast();
     void scopeState.refresh();
+    processes.connect('', true);
     connection.start();
     events.connect('');
     events.onEvent('logs.alert', handleAlertEvent);
     events.onEvent('process.crashed', handleAlertEvent);
     events.onEvent('process.failed', handleAlertEvent);
     booted = true;
-  }
-
-  async function openWorkspace(e: Event) {
-    e.preventDefault();
-    if (!workspacePathInput.trim()) return;
-    await scope.resolve(workspacePathInput.trim());
-    workspacePathInput = '';
   }
 </script>
 
@@ -86,7 +79,7 @@
   <DaemonUnreachable onRetry={() => void boot()} />
   <ToastRegion />
 {:else}
-  <Shell bind:pathInput={workspacePathInput}>
+  <Shell>
     {#if router.match('/processes/:id?')}
       <ProcessesPage />
     {:else if router.match('/logs')}
@@ -116,4 +109,5 @@
   <ToastRegion />
   <CommandPalette />
   <ShortcutsDialog bind:open={shortcutsOpen} />
+  <ConfirmHost />
 {/if}

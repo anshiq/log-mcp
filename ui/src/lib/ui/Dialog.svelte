@@ -1,84 +1,73 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
-  import type { Snippet } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
+  import X from '@lucide/svelte/icons/x';
+  import { layer } from './overlay';
+  import { pop, fadeIn } from './motion';
 
   let {
     title,
+    description,
+    icon,
+    tone = 'default',
     width = 460,
+    flush = false,
+    dismissible = true,
     onClose,
     children,
     footer
   }: {
     title?: string;
+    description?: string;
+    icon?: Component<{ size?: number }>;
+    tone?: 'default' | 'danger' | 'warn';
     width?: number;
+    flush?: boolean;
+    dismissible?: boolean;
     onClose: () => void;
     children?: Snippet;
     footer?: Snippet;
   } = $props();
 
-  let dialogEl: HTMLDivElement | null = $state(null);
-  let previouslyFocused: HTMLElement | null = null;
-
-  function focusables(): HTMLElement[] {
-    if (!dialogEl) return [];
-    return [...dialogEl.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
-      (el) => !el.hasAttribute('disabled')
-    );
-  }
-
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    const els = focusables();
-    if (els.length === 0) return;
-    const first = els[0];
-    const last = els[els.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  onMount(() => {
-    previouslyFocused = document.activeElement as HTMLElement | null;
-    void tick().then(() => {
-      focusables()[0]?.focus();
-    });
-    window.addEventListener('keydown', onKeydown, true);
-  });
-
-  onDestroy(() => {
-    window.removeEventListener('keydown', onKeydown, true);
-    previouslyFocused?.focus();
-  });
+  const uid = `dlg-${Math.random().toString(36).slice(2, 9)}`;
 </script>
 
-<div class="overlay" onclick={onClose} role="presentation">
+<div
+  class="overlay"
+  in:fadeIn
+  out:fadeIn
+  onmousedown={(e) => {
+    if (dismissible && e.target === e.currentTarget) onClose();
+  }}
+  role="presentation"
+>
   <div
     class="dialog"
-    style="width: {width}px"
-    bind:this={dialogEl}
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()}
+    style={`width:${width}px`}
+    in:pop
+    out:pop
+    use:layer={{ onClose: () => dismissible && onClose(), trap: true, escape: dismissible }}
     role="dialog"
     aria-modal="true"
-    aria-label={title}
+    aria-labelledby={title ? `${uid}-t` : undefined}
+    aria-describedby={description ? `${uid}-d` : undefined}
     tabindex="-1"
   >
     {#if title}
       <div class="header">
-        <h2>{title}</h2>
-        <button class="close" onclick={onClose} aria-label="Close">✕</button>
+        {#if icon}
+          {@const Icon = icon}
+          <span class="badge {tone}"><Icon size={16} /></span>
+        {/if}
+        <div class="titles">
+          <h2 id={`${uid}-t`}>{title}</h2>
+          {#if description}<p id={`${uid}-d`}>{description}</p>{/if}
+        </div>
+        {#if dismissible}
+          <button class="close" type="button" onclick={onClose} aria-label="Close dialog"><X size={16} /></button>
+        {/if}
       </div>
     {/if}
-    <div class="body">
+    <div class="body" class:flush data-layer-body>
       {@render children?.()}
     </div>
     {#if footer}
@@ -93,45 +82,99 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    padding: var(--space-6);
+    background: color-mix(in srgb, #000 55%, transparent);
+    backdrop-filter: blur(2px);
+    z-index: var(--z-dialog, 500);
   }
   .dialog {
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-pop);
     display: flex;
     flex-direction: column;
-    max-height: 85vh;
+    max-width: 100%;
+    max-height: min(85vh, 100%);
+    background: var(--bg-1);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    outline: none;
   }
   .header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: var(--space-5) var(--space-6) 0;
+    gap: var(--space-4);
+    padding: var(--space-5) var(--space-5) var(--space-3) var(--space-6);
   }
-  .header h2 {
-    margin: 0;
+  .titles {
+    flex: 1;
+    min-width: 0;
+  }
+  .titles h2 {
     font-size: var(--fs-lg);
+    line-height: 1.35;
+  }
+  .titles p {
+    margin-top: 2px;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+  .badge {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+  }
+  .badge.danger {
+    background: color-mix(in srgb, var(--err) 14%, transparent);
+    color: var(--err);
+  }
+  .badge.warn {
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    color: var(--warn);
   }
   .close {
-    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
     border: none;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .close:hover {
+    background: var(--bg-hover);
+    color: var(--text-0);
+  }
+  .body {
+    padding: var(--space-3) var(--space-6) var(--space-6);
+    overflow: auto;
+    min-height: 0;
     color: var(--text-1);
     font-size: var(--fs-md);
   }
-  .body {
-    padding: var(--space-6);
-    overflow: auto;
+  .body.flush {
+    padding: 0;
   }
   .footer {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--space-3);
-    padding: 0 var(--space-6) var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-0) 45%, var(--bg-1));
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   }
 </style>

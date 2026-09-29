@@ -95,9 +95,30 @@ export const ConfigService = {
 };
 
 export const EventService = {
-  list: async (workspaceId: string, limit = 100, extra?: { types?: string[]; before?: string; processId?: string }): Promise<{ events: DaemonEvent[]; nextBefore: string }> => {
+  list: async (workspaceId: string, limit = 100, extra?: { types?: string[]; before?: string; since?: string; processId?: string }): Promise<{ events: DaemonEvent[]; nextBefore: string }> => {
     const r = await call<Record<string, unknown>, { events: Record<string, unknown>[]; nextBefore: string }>('EventService', 'ListEvents', { workspaceId, limit, ...extra });
     return { events: (r.events ?? []).map(toEvent), nextBefore: r.nextBefore ?? '' };
+  },
+  latestId: async (): Promise<number> => {
+    const has = async (since: number): Promise<boolean> => (await EventService.list('', 1, { since: String(since) })).events.length > 0;
+    if (!(await has(0))) return 0;
+    let lo = 0;
+    let hi = 1;
+    while (await has(hi)) {
+      lo = hi;
+      hi *= 2;
+    }
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (await has(mid)) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  },
+  window: async (workspaceId: string, upTo: number, size = 400): Promise<{ events: DaemonEvent[]; floor: number }> => {
+    const floor = Math.max(0, upTo - size);
+    const r = await EventService.list(workspaceId, size, { since: String(floor) });
+    return { events: r.events.filter((e) => e.id <= upTo), floor };
   },
   watch: (workspaceId: string, onMessage: (m: StreamMessage) => void, onState?: CB, extra?: { types?: string[]; processIds?: string[] }) =>
     openStream('EventService', 'WatchEvents', { workspaceId, ...extra }, { onMessage, onState }),
@@ -133,6 +154,8 @@ export const IntegrationService = {
   },
   installSkills: (skillNames: string[], scope: string) => call<{ skillNames: string[]; scope: string }, unknown>('IntegrationService', 'InstallSkills', { skillNames, scope }),
   removeSkills: (skillNames: string[]) => call<{ skillNames: string[] }, unknown>('IntegrationService', 'RemoveSkills', { skillNames }),
+  installSkillsFor: (harness: string, scope: string) => call<{ harness: string; scope: string }, { installed?: unknown; path?: string }>('IntegrationService', 'InstallSkills', { harness, scope }),
+  removeSkillsFor: (harness: string, scope: string) => call<{ harness: string; scope: string }, { removed?: boolean }>('IntegrationService', 'RemoveSkills', { harness, scope }),
   checkUpdates: () => call<Record<string, never>, { updates: Record<string, unknown>[] }>('IntegrationService', 'CheckUpdates', {})
 };
 

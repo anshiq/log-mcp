@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toAuditEntry, toEvent, toProcess, toResource } from './normalize';
+import { toSession, toAuditEntry, toEvent, toProcess, toResource } from './normalize';
 
 describe('toProcess', () => {
   it('normalises snake_case list rows', () => {
@@ -27,6 +27,26 @@ describe('toAuditEntry', () => {
   it('maps duration', () => {
     const a = toAuditEntry({ id: 1, ts: 100, action: 'ProcessService.Start', result: 'ok', durationMs: 5 } as unknown as Record<string, unknown>);
     expect(a.duration).toBe(5);
+  });
+});
+
+describe('epoch handling', () => {
+  it('converts audit ts seconds to milliseconds', () => {
+    const a = toAuditEntry({ id: 1, ts: 1790678310, action: 'x', result: 'ok' } as unknown as Record<string, unknown>);
+    expect(a.time).toBe(1790678310000);
+  });
+
+  it('maps session seconds, lastSeenAt and closedAt', () => {
+    const s = toSession({ id: 'sess_1', kind: 'mcp', harness: 'claude', clientPid: 42, workspaceId: 'ws', startedAt: 1790678000, lastSeenAt: 1790678300, closedAt: 1790678310 } as unknown as Record<string, unknown>);
+    expect(s.started).toBe(1790678000000);
+    expect(s.lastSeen).toBe(1790678300000);
+    expect(s.closed).toBe(true);
+    expect(s.clientPid).toBe(42);
+  });
+
+  it('treats a session without closedAt as open', () => {
+    const s = toSession({ id: 'sess_2', startedAt: 1790678000, lastSeenAt: 1790678000 } as unknown as Record<string, unknown>);
+    expect(s.closed).toBe(false);
   });
 });
 

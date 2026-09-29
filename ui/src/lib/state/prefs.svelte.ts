@@ -60,6 +60,7 @@ class PrefsStore {
     const t = this.data.theme;
     const resolved = t === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
     document.documentElement.dataset['theme'] = resolved;
+    document.documentElement.dataset['density'] = this.data.density;
   }
 
   set<K extends keyof Prefs>(k: K, v: Prefs[K]) {

@@ -30,6 +30,7 @@ export function relativeTime(ts: number): string {
   if (d < 60000) return `${Math.floor(d / 1000)}s ago`;
   if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
   if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
+  if (d < 7 * 86400000) return `${Math.floor(d / 86400000)}d ago`;
   return new Date(ts).toLocaleDateString();
 }
 

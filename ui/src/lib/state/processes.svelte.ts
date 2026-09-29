@@ -1,6 +1,23 @@
 import { ProcessService } from '../api';
 import { toProcess } from '../api/normalize';
 import type { Process } from '../api/types';
+import { scopeState } from './scope.svelte';
+
+const RANK: Record<string, number> = { failed: 0, crashed: 0, starting: 1, running: 2, ready: 2, exited: 3, stopped: 3 };
+
+function tally(list: Process[]): { running: number; failed: number; exited: number; starting: number } {
+  let running = 0;
+  let failed = 0;
+  let exited = 0;
+  let starting = 0;
+  for (const p of list) {
+    if (p.status === 'running' || p.status === 'ready') running++;
+    else if (p.status === 'failed' || p.status === 'crashed') failed++;
+    else if (p.status === 'starting') starting++;
+    else exited++;
+  }
+  return { running, failed, exited, starting };
+}
 
 class Processes {
   map = $state(new Map<string, Process>());
@@ -10,21 +27,26 @@ class Processes {
   private closer: (() => void) | null = null;
 
   get list(): Process[] {
-    return [...this.map.values()].sort((a, b) => a.command.localeCompare(b.command));
+    return [...this.map.values()].sort((a, b) => {
+      const ra = RANK[a.status] ?? 4;
+      const rb = RANK[b.status] ?? 4;
+      if (ra !== rb) return ra - rb;
+      return (b.startedAt ?? 0) - (a.startedAt ?? 0) || a.command.localeCompare(b.command);
+    });
+  }
+
+  get scoped(): Process[] {
+    if (scopeState.all) return this.list;
+    const ws = scopeState.workspaceId;
+    return this.list.filter((p) => p.workspaceId === ws);
   }
 
   get counts(): { running: number; failed: number; exited: number; starting: number } {
-    let running = 0;
-    let failed = 0;
-    let exited = 0;
-    let starting = 0;
-    for (const p of this.map.values()) {
-      if (p.status === 'running' || p.status === 'ready') running++;
-      else if (p.status === 'failed' || p.status === 'crashed') failed++;
-      else if (p.status === 'starting') starting++;
-      else exited++;
-    }
-    return { running, failed, exited, starting };
+    return tally(this.scoped);
+  }
+
+  get totals(): { running: number; failed: number; exited: number; starting: number } {
+    return tally(this.list);
   }
 
   byWorkspace(ws: string): Process[] {
@@ -93,7 +115,11 @@ class Processes {
     try {
       const arr = await ProcessService.list(workspaceId, all);
       const next = new Map<string, Process>();
-      for (const p of arr) next.set(p.id, p);
+      for (const p of arr) {
+        const prev = this.map.get(p.id);
+        const sparse = p.args.length === 0 && p.startedAt === null;
+        next.set(p.id, prev && sparse ? { ...prev, status: p.status, pid: p.pid || prev.pid, exitCode: p.exitCode ?? prev.exitCode, workspaceId: p.workspaceId || prev.workspaceId, projectId: p.projectId || prev.projectId } : p);
+      }
       this.map = next;
     } catch {
     }

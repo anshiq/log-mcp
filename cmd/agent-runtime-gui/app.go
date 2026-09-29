@@ -39,6 +39,10 @@ func (a *App) Version() string {
 	return version
 }
 
+func (a *App) FrontendBuild() string {
+	return frontendBuildStamp
+}
+
 func (a *App) SocketPath() string {
 	return socketPath()
 }

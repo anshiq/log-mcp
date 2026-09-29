@@ -106,10 +106,14 @@ export interface Revision {
 }
 
 export interface Harness {
+  id: string;
   name: string;
+  displayName: string;
   detected: boolean;
   version: string;
   mcpConfigured: boolean;
+  mcpGlobal: boolean;
+  skillsGlobal: string[];
 }
 
 export interface Skill {
@@ -123,10 +127,12 @@ export interface Session {
   id: string;
   kind: string;
   harness: string;
+  harnessVersion: string;
   clientPid: number;
   workspaceId: string;
   started: number;
   lastSeen: number;
+  closedAt: number;
   closed: boolean;
 }
 
@@ -139,6 +145,7 @@ export interface AuditEntry {
   session: string;
   harness: string;
   workspaceId: string;
+  projectId: string;
 }
 
 export interface Settings {

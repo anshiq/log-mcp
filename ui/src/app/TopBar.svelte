@@ -1,62 +1,142 @@
 <script lang="ts">
-  import { scope } from '../lib/scope.svelte';
-  import { scopeState } from '../lib/state/scope.svelte';
+  import Search from '@lucide/svelte/icons/search';
+  import Sun from '@lucide/svelte/icons/sun';
+  import Moon from '@lucide/svelte/icons/moon';
+  import Activity from '@lucide/svelte/icons/activity';
   import { palette } from '../lib/palette.svelte';
   import { connection } from '../lib/state/connection.svelte';
   import { prefs } from '../lib/state/prefs.svelte';
-  import Combobox from '../lib/ui/Combobox.svelte';
+  import ScopeSwitcher from './ScopeSwitcher.svelte';
 
-  let { pathInput = $bindable('') }: { pathInput?: string } = $props();
-  let opts = $derived([
-    { value: 'all', label: 'All workspaces' },
-    ...scopeState.workspaces.map((w) => ({ value: w.id, label: w.path, hint: w.id }))
-  ]);
-  let sel = $state('all');
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-  function applyScope(v: string) {
-    if (v === 'all') scopeState.set(scopeState.projectId, '', true);
-    else scopeState.set(scopeState.projectId, v, false);
-  }
+  const resolved = $derived(
+    prefs.data.theme === 'system'
+      ? typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark'
+      : prefs.data.theme
+  );
 
   function toggleTheme() {
-    prefs.set('theme', prefs.data.theme === 'dark' ? 'light' : 'dark');
+    prefs.set('theme', resolved === 'dark' ? 'light' : 'dark');
   }
 </script>
 
 <header class="topbar">
-  <span class="brand">agent-runtime</span>
-  <form class="scope" onsubmit={(e) => e.preventDefault()}>
-    <input placeholder="Workspace path…" bind:value={pathInput} aria-label="Workspace path" />
-    <button type="button" onclick={() => void scope.resolve(pathInput)}>{scope.resolving ? 'Opening…' : 'Open'}</button>
-  </form>
-  {#if scope.projectName}
-    <span class="scope-name">{scope.projectName}</span>
-  {/if}
-  {#if scope.error}
-    <span class="scope-error">{scope.error}</span>
-  {/if}
-  <div class="combo"><Combobox options={opts} bind:value={sel} placeholder="Scope…" /></div>
-  <button class="side" onclick={() => applyScope(sel)}>Set scope</button>
+  <div class="brand">
+    <span class="logo"><Activity size={15} strokeWidth={2.4} /></span>
+    <span class="name">agent-runtime</span>
+  </div>
+  <span class="divider"></span>
+  <ScopeSwitcher />
   <div class="spacer"></div>
-  <button class="palette-trigger" onclick={() => void palette.show()}><span>Search…</span><kbd>⌘K</kbd></button>
-  <button onclick={toggleTheme} aria-label="Toggle theme">{prefs.data.theme === 'dark' ? '☾' : '☀'}</button>
-  <span class="status" class:ok={connection.reachable} title={connection.socketPath}>
-    <span class="dot"></span>{connection.version ? `daemon ${connection.version}` : 'connecting…'}
+  <button class="search" onclick={() => void palette.show()} aria-label="Open command palette">
+    <Search size={14} />
+    <span>Search or jump to…</span>
+    <span class="keys"><span class="kbd">{mac ? '⌘' : 'Ctrl'}</span><span class="kbd">K</span></span>
+  </button>
+  <button class="btn ghost icon" onclick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">
+    {#if resolved === 'dark'}<Sun size={16} />{:else}<Moon size={16} />{/if}
+  </button>
+  <span class="status" class:ok={connection.reachable} title={connection.socketPath || 'daemon'}>
+    <span class="dot" class:ok={connection.reachable} class:warn={!connection.reachable}></span>
+    {connection.reachable ? (connection.version ? `daemon ${connection.version}` : 'connected') : 'daemon offline'}
   </span>
 </header>
 
 <style>
-  .topbar { height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4); border-bottom: 1px solid var(--border); background: var(--bg-1); }
-  .brand { font-weight: 600; }
-  .scope { display: flex; gap: var(--space-2); }
-  .scope input { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2); width: 200px; color: var(--text-0); }
-  .scope-name { color: var(--text-1); font-size: var(--fs-sm); }
-  .scope-error { color: var(--err); font-size: var(--fs-sm); }
-  .combo { min-width: 200px; }
-  .spacer { flex: 1; }
-  .palette-trigger { display: flex; gap: var(--space-2); background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); }
-  .status { display: flex; gap: var(--space-2); align-items: center; font-size: var(--fs-sm); color: var(--text-1); }
-  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
-  .status.ok .dot { background: var(--ok); }
-  .side, .topbar > button { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-0); padding: var(--space-2) var(--space-3); }
+  .topbar {
+    height: var(--topbar-h);
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 0 var(--space-5);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-1);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: calc(var(--sidebar-w) - var(--space-5) - var(--space-4));
+  }
+  .logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6));
+    color: #fff;
+  }
+  .name {
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    font-size: var(--fs-md);
+  }
+  .divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+  }
+  .spacer {
+    flex: 1;
+  }
+  .search {
+    min-width: 260px;
+    justify-content: flex-start;
+    gap: 8px;
+    color: var(--text-2);
+    background: var(--bg-2);
+    font-weight: 400;
+  }
+  .search span:first-of-type {
+    flex: 1;
+    text-align: left;
+  }
+  .keys {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .kbd {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-3);
+    color: var(--text-1);
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-sm);
+    color: var(--text-1);
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-2);
+    white-space: nowrap;
+  }
+  @media (max-width: 1100px) {
+    .brand {
+      min-width: 0;
+    }
+    .search {
+      min-width: 0;
+    }
+    .search span:not(.keys):not(.kbd) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .name,
+    .divider,
+    .keys {
+      display: none;
+    }
+  }
 </style>
