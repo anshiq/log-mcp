@@ -23,7 +23,7 @@
             src = ../..;
             # Real hash (no vendor/ dir): refresh after go.mod/go.sum changes with
             #   nix build ./packaging/nix#agent-runtime  # read expected hash from error
-            vendorHash = "sha256-4cNfrFOqa187gT3mR3j0REFRKUGB3zB6Owzb0pJguD8=";
+            vendorHash = "sha256-WxjHBHUdrYbfKtMUYYyejggzSb9mxObM8NFPvZZlvOg=";
             subPackages = [
               "cmd/agent-runtime"
               "cmd/agentd"
