@@ -65,16 +65,18 @@
   .logo {
     width: 26px;
     height: 26px;
-    border-radius: 8px;
+    border-radius: 3px;
     display: grid;
     place-items: center;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6));
+    background: var(--accent);
     color: #fff;
   }
   .name {
-    font-weight: 650;
-    letter-spacing: -0.015em;
-    font-size: var(--fs-md);
+    font-family: var(--font-display);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    font-size: 16px;
   }
   .divider {
     width: 1px;
@@ -117,7 +119,7 @@
     color: var(--text-1);
     padding: 4px 10px;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: 2px;
     background: var(--bg-2);
     white-space: nowrap;
   }

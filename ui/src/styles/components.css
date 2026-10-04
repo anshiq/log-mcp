@@ -27,8 +27,23 @@
 }
 
 .page-header h1 {
-  font-size: var(--fs-xl);
-  line-height: 1.25;
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.page-header h1::before {
+  content: '';
+  display: block;
+  width: 28px;
+  height: 2px;
+  background: var(--accent);
+  margin-bottom: 10px;
+}
+
+.page-header .kicker {
+  margin-bottom: 6px;
 }
 
 .page-header .subtitle {
@@ -132,10 +147,10 @@
 .form-field > label,
 .field-label {
   font-size: var(--fs-xs);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-1);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.14em;
 }
 
 .form-field .hint {
@@ -186,13 +201,15 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 2px 8px;
+  border-radius: 2px;
   border: 1px solid var(--border);
   background: var(--bg-3);
   color: var(--text-1);
-  font-size: var(--fs-xs);
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   line-height: 1.6;
   white-space: nowrap;
 }
@@ -276,12 +293,14 @@
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: 2px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-1);
-  font-size: var(--fs-sm);
-  font-weight: 500;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .chip:hover:not(:disabled) {
@@ -346,6 +365,7 @@
 .tabs > button.active {
   color: var(--text-0);
   border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 .table-wrap {
@@ -369,12 +389,12 @@ table.data th {
   background: var(--bg-1);
   text-align: left;
   padding: 10px var(--space-4);
-  font-size: var(--fs-xs);
+  font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.16em;
   color: var(--text-2);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong);
   white-space: nowrap;
 }
 
@@ -412,7 +432,7 @@ table.data th.num {
 .empty-state .icon-wrap {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: 4px;
   display: grid;
   place-items: center;
   background: var(--bg-3);
@@ -421,8 +441,10 @@ table.data th.num {
 }
 
 .empty-state h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
   color: var(--text-0);
-  font-size: var(--fs-lg);
+  font-size: 22px;
 }
 
 .empty-state p {
@@ -480,16 +502,16 @@ table.data th.num {
   font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.18em;
   color: var(--text-2);
 }
 
 .stat .stat-value {
+  font-family: var(--font-display);
   font-size: var(--fs-2xl);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 
 .stat .stat-sub {

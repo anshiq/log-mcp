@@ -119,10 +119,10 @@
     gap: 2px;
   }
   .title {
-    font-size: 10.5px;
-    font-weight: 650;
+    font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.24em;
     color: var(--text-2);
     padding: 0 10px 6px;
   }
@@ -165,7 +165,6 @@
     top: 7px;
     bottom: 7px;
     width: 3px;
-    border-radius: 0 3px 3px 0;
     background: var(--accent);
   }
   .ico {
@@ -181,7 +180,7 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     padding: 0 7px;
-    border-radius: 999px;
+    border-radius: 2px;
     background: var(--bg-3);
     color: var(--text-1);
     line-height: 1.7;

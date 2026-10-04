@@ -27,8 +27,28 @@ h2,
 h3,
 h4 {
   margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1.15;
+}
+
+.kicker {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-kicker);
+  color: var(--text-2);
+}
+
+.kicker .rule {
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  margin-right: 10px;
+  vertical-align: middle;
+  background: var(--accent);
 }
 
 p {
@@ -37,11 +57,13 @@ p {
 
 a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--accent-hover);
 }
 
 code,

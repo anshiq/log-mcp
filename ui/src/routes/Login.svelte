@@ -144,15 +144,18 @@
     place-items: center;
     width: 40px;
     height: 40px;
-    border-radius: 11px;
+    border-radius: 3px;
     background: var(--accent);
-    color: var(--accent-fg);
+    color: #fff;
     box-shadow: 0 0 0 5px var(--accent-subtle);
   }
   .name {
-    font-size: var(--fs-xl);
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+    text-indent: 0.26em;
   }
   .card {
     display: flex;

@@ -448,8 +448,8 @@
 <style>
   .pane {
     --tl: 68%;
-    --ansi-0: #5b6472;
-    --ansi-7: #c9d1d9;
+    --ansi-0: #6b675c;
+    --ansi-7: #d8d2c2;
     position: relative;
     flex: 1;
     min-height: 0;

@@ -25,17 +25,20 @@
     place-items: center;
     width: 56px;
     height: 56px;
-    border-radius: 16px;
+    border-radius: 4px;
     background: var(--accent);
-    color: var(--accent-fg);
+    color: #fff;
     box-shadow:
       0 0 0 6px var(--accent-subtle),
       var(--shadow-1);
   }
   .name {
-    font-size: var(--fs-xl);
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
   }
   .hint {
     display: inline-flex;
