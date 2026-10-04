@@ -2,8 +2,8 @@
 Type=Application
 Name=Agent Runtime
 Comment=Supervise development processes across all projects
-Exec=agent-runtime-gui
+Exec=agent-runtime
 Icon=agent-runtime
 Terminal=false
 Categories=Development;Utility;
-StartupWMClass=agent-runtime-gui
+StartupWMClass=agent-runtime

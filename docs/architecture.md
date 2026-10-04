@@ -34,10 +34,10 @@ agent-runtime v3 transforms the system from a per-project, session-scoped MCP su
             │
      ┌──────┼──────┐
      │      │      │
-     ▼      ▼      ▼
-   CLI    MCP    GUI     (all use pkg/client)
-  agent-  bridge agent-
-  runtime serve  runtime
+      ▼      ▼      ▼
+    CLI    MCP    GUI     (all use pkg/client, single agent-runtime binary)
+   agent-  bridge gui mode
+   runtime serve
 ```
 
 ## Key Design Decisions

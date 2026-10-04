@@ -61,12 +61,13 @@ func (s DaemonState) String() string {
 
 // Daemon manages the daemon lifecycle.
 type Daemon struct {
-	state      DaemonState
-	socketPath string
-	lockPath   string
-	pidPath    string
-	dataDir    string
-	startedAt  time.Time
+	state       DaemonState
+	socketPath  string
+	lockPath    string
+	pidPath     string
+	dataDir     string
+	tcpAddrFlag string
+	startedAt   time.Time
 }
 
 // New creates a daemon manager.
@@ -163,6 +164,40 @@ func pidAliveV3(pid int) bool {
 	return pidAlive(pid)
 }
 
+func (d *Daemon) WithTCP(addr string) *Daemon {
+	d.tcpAddrFlag = addr
+	return d
+}
+
+func (d *Daemon) TCPWantPath() string {
+	return filepath.Join(filepath.Dir(d.socketPath), "tcp.want")
+}
+
+func (d *Daemon) WriteTCPWant(addr string) error {
+	if addr == "" {
+		return os.Remove(d.TCPWantPath())
+	}
+	if err := os.MkdirAll(filepath.Dir(d.TCPWantPath()), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(d.TCPWantPath(), []byte(addr+"\n"), 0o600)
+}
+
+func (d *Daemon) wantedTCP() string {
+	if d.tcpAddrFlag != "" {
+		return d.tcpAddrFlag
+	}
+	if v := os.Getenv("AGENTD_TCP"); v != "" {
+		return v
+	}
+	if data, err := os.ReadFile(d.TCPWantPath()); err == nil {
+		if s := strings.TrimSpace(string(data)); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // Start ensures a daemon is running. If systemd is available,
 // it uses socket activation; otherwise it spawns on demand.
 func (d *Daemon) Start() error {
@@ -209,7 +244,13 @@ func (d *Daemon) spawn() error {
 		Files: []*os.File{nil, nil, nil},
 		Sys:   &syscall.SysProcAttr{Setsid: true},
 	}
-	proc, err := os.StartProcess(agentd, []string{agentd, "--foreground"}, attr)
+	proc, err := func() (*os.Process, error) {
+		argv := []string{agentd, "--foreground"}
+		if tcp := d.wantedTCP(); tcp != "" {
+			argv = append(argv, "--tcp", tcp)
+		}
+		return os.StartProcess(agentd, argv, attr)
+	}()
 	if err != nil {
 		return fmt.Errorf("spawn agentd: %w", err)
 	}

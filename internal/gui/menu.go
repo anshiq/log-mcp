@@ -1,4 +1,6 @@
-package main
+//go:build desktop
+
+package gui
 
 import (
 	"github.com/wailsapp/wails/v2/pkg/menu"

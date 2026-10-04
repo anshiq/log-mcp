@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"agent-runtime/internal/config"
+	"agent-runtime/internal/gui"
 	"agent-runtime/internal/integrate"
 	rtmcp "agent-runtime/internal/mcp"
 )
@@ -670,6 +671,14 @@ func (m *wizardModel) runStatus() {
 	lines = append(lines, skillLine("opencode (global)", filepath.Join(home, ".config", "opencode", "skills")))
 	lines = append(lines, skillLine("Claude Code (project)", filepath.Join(m.cwd, ".claude", "skills")))
 	lines = append(lines, skillLine("opencode (project)", filepath.Join(m.cwd, ".opencode", "skills")))
+	lines = append(lines, "")
+	lines = append(lines, titleStyle.Render("interfaces"))
+	lines = append(lines, "  web: run `agent-runtime web` for the primary web interface")
+	if gui.Available() {
+		lines = append(lines, "  gui: desktop build ready — run `agent-runtime` with a display")
+	} else {
+		lines = append(lines, "  gui: not in this build — `agent-runtime web` or `agent-runtime tui` instead")
+	}
 	m.resultLines = lines
 }
 
@@ -690,6 +699,10 @@ func (m *wizardModel) runHelp() {
 	m.screen = screenHelp
 	m.resultErr = nil
 	m.resultLines = []string{
+		"gui                Open the native GUI application window (desktop build).",
+		"web                Open the web UI: token URL + browser (primary interface).",
+		"tui                Open the terminal dashboard (daemon).",
+		"setup              Open the interactive setup wizard (this menu).",
 		"serve                Run the MCP stdio server (what coding agents launch).",
 		"repl                 Open the interactive process manager (start/logs/wait/stop).",
 		"run <cmd> [args...]  Start a process in the foreground and tail its output.",

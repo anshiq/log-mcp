@@ -12,9 +12,9 @@ ui/dist-web/
 /internal/webui/dist/*
 !/internal/webui/dist/index.html
 
-!/cmd/agent-runtime-gui/dist/
-/cmd/agent-runtime-gui/dist/*
-!/cmd/agent-runtime-gui/dist/index.html
+!/internal/gui/dist/
+/internal/gui/dist/*
+!/internal/gui/dist/index.html
 
 test-results/
 ui/test-results/

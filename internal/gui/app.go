@@ -1,4 +1,6 @@
-package main
+//go:build desktop
+
+package gui
 
 import (
 	"context"
@@ -15,9 +17,6 @@ import (
 	"agent-runtime/pkg/client"
 )
 
-// App is bound to the webview and implements the window.__wailsBinding
-// contract declared in ui/src/lib/platform.ts: notify, openInEditor,
-// saveDialog, writeFile.
 type App struct {
 	ctx context.Context
 }
@@ -29,14 +28,13 @@ func (a *App) startup(ctx context.Context) {
 	appCtx = ctx
 }
 
-// Notify shows a native desktop notification.
 func (a *App) Notify(title, body string, tag string) {
 	_ = beeep.Notify(title, body, "")
 	_ = tag
 }
 
 func (a *App) Version() string {
-	return version
+	return Version
 }
 
 func (a *App) FrontendBuild() string {
@@ -44,11 +42,11 @@ func (a *App) FrontendBuild() string {
 }
 
 func (a *App) SocketPath() string {
-	return socketPath()
+	return SocketPath()
 }
 
 func (a *App) EnsureDaemon() error {
-	_, err := client.EnsureDaemon(socketPath())
+	_, err := client.EnsureDaemon(SocketPath())
 	return err
 }
 
@@ -100,8 +98,6 @@ var terminalEmulatorFlags = []struct {
 	{"xterm", []string{"-e"}},
 }
 
-// OpenInEditor opens path in $VISUAL/$EDITOR, falling back to the
-// platform's default opener.
 func (a *App) OpenInEditor(path string, line int) error {
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
@@ -198,8 +194,6 @@ func openWithSystemDefault(path string) error {
 	}
 }
 
-// SaveDialog shows a native "save as" dialog and returns the chosen path,
-// or "" if the user cancelled.
 func (a *App) SaveDialog(suggested string) (string, error) {
 	if a.ctx == nil {
 		return "", errors.New("app: not started")
@@ -209,7 +203,6 @@ func (a *App) SaveDialog(suggested string) (string, error) {
 	})
 }
 
-// WriteFile writes content to path, used after SaveDialog resolves.
 func (a *App) WriteFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }

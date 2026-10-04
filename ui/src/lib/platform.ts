@@ -27,6 +27,9 @@ declare global {
       main?: {
         App?: Record<string, (...args: never[]) => unknown>;
       };
+      gui?: {
+        App?: Record<string, (...args: never[]) => unknown>;
+      };
     };
   }
 }
@@ -138,13 +141,13 @@ const wails = new WailsPlatform();
 const browser = new BrowserPlatform();
 
 export function getPlatform(): Platform {
-  if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App)) return wails;
+  if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App || window.go?.gui?.App)) return wails;
   return browser;
 }
 
 export function whenPlatformReady(): Promise<Platform> {
   if (__APP_TARGET__ !== 'wails') return Promise.resolve(browser);
-  if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App)) return Promise.resolve(wails);
+  if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App || window.go?.gui?.App)) return Promise.resolve(wails);
   return new Promise((resolve) => {
     const start = Date.now();
     const onReady = () => {
@@ -153,7 +156,7 @@ export function whenPlatformReady(): Promise<Platform> {
     };
     window.addEventListener('wails:ready', onReady);
     const poll = () => {
-      if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App)) {
+      if (typeof window !== 'undefined' && (window.__wailsBinding || window.go?.main?.App || window.go?.gui?.App)) {
         window.removeEventListener('wails:ready', onReady);
         resolve(wails);
         return;

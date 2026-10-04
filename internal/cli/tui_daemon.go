@@ -23,8 +23,9 @@ func newTuiCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Open the terminal dashboard (daemon)",
+		Long:  "Open the terminal dashboard over the per-user daemon (started on demand). The web UI (`agent-runtime web`) is the primary interface.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, err := daemonClient()
+			cl, err := ensureDaemonClient("")
 			if err != nil {
 				return err
 			}

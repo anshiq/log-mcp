@@ -1,4 +1,6 @@
-package main
+//go:build desktop
+
+package gui
 
 import (
 	"context"

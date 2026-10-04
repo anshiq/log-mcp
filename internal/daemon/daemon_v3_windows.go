@@ -37,7 +37,12 @@ func (d *Daemon) IsRunning() bool { return false }
 func (d *Daemon) WaitReady(_ interface{}) error {
 	return fmt.Errorf("agentd: not supported on Windows yet")
 }
-func (d *Daemon) Start() error     { return fmt.Errorf("agentd: not supported on Windows yet") }
+func (d *Daemon) Start() error             { return fmt.Errorf("agentd: not supported on Windows yet") }
+func (d *Daemon) WithTCP(_ string) *Daemon { return d }
+func (d *Daemon) TCPWantPath() string      { return "" }
+func (d *Daemon) WriteTCPWant(_ string) error {
+	return fmt.Errorf("agentd: not supported on Windows yet")
+}
 func (d *Daemon) Stop(bool) error  { return fmt.Errorf("agentd: not supported on Windows yet") }
 func (d *Daemon) Restart() error   { return fmt.Errorf("agentd: not supported on Windows yet") }
 func (d *Daemon) Install() error   { return fmt.Errorf("agentd: not supported on Windows yet") }

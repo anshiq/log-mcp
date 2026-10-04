@@ -39,9 +39,9 @@
           default = self.packages.${system}.agent-runtime;
         };
         devShells.default = pkgs.mkShell {
-          # cmd/agent-runtime-gui (Wails v2 + systray) needs cgo and native
-          # dev headers not present outside this shell. `make build` (no
-          # gui) doesn't need any of this; only `make build-gui` does:
+          # The desktop GUI build (internal/gui, Wails v2 + systray) needs cgo
+          # and native dev headers not present outside this shell. `make build`
+          # (no gui) doesn't need any of this; only `make build-gui` does:
           #   nix develop ./packaging/nix -c make build-gui
           packages = with pkgs; [
             go

@@ -8,10 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
 	"agent-runtime/internal/config"
+	"agent-runtime/internal/gui"
 	rtmcp "agent-runtime/internal/mcp"
 )
 
@@ -28,11 +31,36 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 	if len(args) == 0 {
-		return setupMain(loaded, logger)
+		return runBare(loaded, logger)
+	}
+	for _, a := range args {
+		if a == "--no-gui" || a == "--tui" || a == "-t" {
+			return setupMain(loaded, logger)
+		}
 	}
 	root := newRootCmd(nil, loaded, logger)
 	root.SetArgs(args)
 	return root.Execute()
+}
+
+func runBare(loaded *config.Loaded, logger *slog.Logger) error {
+	if gui.Available() && hasDisplay() {
+		return gui.Run(logger)
+	}
+	return setupMain(loaded, logger)
+}
+
+func hasDisplay() bool {
+	if os.Getenv("AGENT_RUNTIME_NO_GUI") != "" {
+		return false
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return true
+	}
+	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("MIR_SOCKET") != "" {
+		return true
+	}
+	return false
 }
 
 // newRootCmd builds the full command tree. s is nil for one-shot use; when
@@ -44,16 +72,21 @@ func newRootCmd(s *session, loaded *config.Loaded, logger *slog.Logger) *cobra.C
 		Short: "local async process supervisor for AI coding agents",
 		Long: `agent-runtime supervises development processes and exposes them over MCP.
 
-Run with no arguments for the interactive setup wizard (init agent-runtime.yaml,
+Run with no arguments to open the native GUI window (desktop build with a
+display), otherwise the interactive setup wizard (init agent-runtime.yaml,
 install or remove skills, connect or disconnect an AI coding agent).
 
 One-shot commands:
-  serve                Run the MCP stdio server (what coding agents launch).
-  repl                 Open the interactive process manager (start/logs/wait/stop).
-  run <cmd> [args...]  Start a process in the foreground and tail its output.
-  shell <app|proc>     Start an interactive shell in a process's environment.
-  integrate <agent>    Print, install (--write) or remove (--remove) MCP config.
-  integrate skill      Install (--write) or remove (--remove) embedded skills.`,
+   gui                Open the native GUI application window (desktop build).
+   web                Open the web UI (token URL + browser).
+   tui                Open the terminal dashboard (daemon).
+   setup              Open the interactive setup wizard.
+   serve                Run the MCP stdio server (what coding agents launch).
+   repl                 Open the interactive process manager (start/logs/wait/stop).
+   run <cmd> [args...]  Start a process in the foreground and tail its output.
+   shell <app|proc>     Start an interactive shell in a process's environment.
+   integrate <agent>    Print, install (--write) or remove (--remove) MCP config.
+   integrate skill      Install (--write) or remove (--remove) embedded skills.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -83,6 +116,8 @@ One-shot commands:
 		newDaemonConfigCmd(loaded, logger),
 		newDaemonSessionsCmd(loaded, logger),
 		newMigrateCmd(loaded, logger),
+		newGuiCmd(loaded, logger),
+		newSetupCmd(loaded, logger),
 		newTuiCmd(loaded, logger),
 		newDoctorCmd(loaded, logger),
 		newWebCmd(loaded, logger),

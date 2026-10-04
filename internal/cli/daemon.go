@@ -20,33 +20,49 @@ import (
 // the runtime's processes so they survive the MCP session; `serve` and `repl`
 // become thin clients when runtime.daemon is set.
 func newDaemonCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
+	var startTCP string
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Manage the long-lived daemon that owns managed processes",
 		Long:  "Manage the daemon that keeps managed processes alive across MCP sessions (runtime.daemon: true).",
 	}
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "start",
-			Short: "Start the daemon in the background",
-			RunE: func(c *cobra.Command, args []string) error {
-				p := paths.User()
-				d := daemon.New(p.SocketPath(), p.Data)
-				if d.IsRunning() {
-					fmt.Println("daemon is already running")
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start the daemon in the background",
+		RunE: func(c *cobra.Command, args []string) error {
+			p := paths.User()
+			d := daemon.New(p.SocketPath(), p.Data)
+			if startTCP != "" {
+				if err := d.WriteTCPWant(startTCP); err != nil {
+					return err
+				}
+				d = d.WithTCP(startTCP)
+			}
+			if d.IsRunning() {
+				if startTCP != "" {
+					if err := d.Restart(); err != nil {
+						return err
+					}
+					fmt.Printf("daemon restarted with TCP listener on %s\n", startTCP)
 					return nil
 				}
-				fmt.Println("starting daemon...")
-				if err := d.Start(); err != nil {
-					return err
-				}
-				if err := d.WaitReady(10 * time.Second); err != nil {
-					return err
-				}
-				fmt.Printf("daemon ready (socket %s)\n", p.SocketPath())
+				fmt.Println("daemon is already running")
 				return nil
-			},
+			}
+			fmt.Println("starting daemon...")
+			if err := d.Start(); err != nil {
+				return err
+			}
+			if err := d.WaitReady(10 * time.Second); err != nil {
+				return err
+			}
+			fmt.Printf("daemon ready (socket %s)\n", p.SocketPath())
+			return nil
 		},
+	}
+	startCmd.Flags().StringVar(&startTCP, "tcp", "", "also serve authenticated loopback TCP for the web UI (e.g. 127.0.0.1:7350)")
+	cmd.AddCommand(
+		startCmd,
 		&cobra.Command{
 			Use:   "stop",
 			Short: "Stop the daemon, gracefully shutting down its processes",
