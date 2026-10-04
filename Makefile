@@ -10,7 +10,7 @@ build:
 	go build -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
 	go build -o $(BIN_DIR)/agentd ./cmd/agentd
 	go build -o $(BIN_DIR)/agent-runtime-shim ./cmd/agent-runtime-shim
-	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 # ui builds the shared frontend: `build` (desktop, embedded by the GUI in
 # internal/gui/dist) and `build:web` (web, embedded by agentd in internal/webui/dist).
@@ -42,7 +42,7 @@ ui-build:
 # `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
 build-gui: ui ui-build ui-web-embed
 	go build -ldflags "-X agent-runtime/internal/gui.Version=$$(git describe --tags --always --dirty 2>/dev/null || echo v0.4.0-dev)" -tags "$(GUI_TAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
-	go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 ui-check:
 	cd ui && npm run check && npm test && npm run build && npm run build:web
@@ -73,6 +73,7 @@ install:
 	go install ./cmd/agent-runtime
 	go install ./cmd/agentd
 	go install ./cmd/agent-runtime-shim
+	CGO_ENABLED=0 go install ./cmd/agent-runtime-gui
 
 install-gui: build-gui
 	install -Dm755 $(BIN_DIR)/$(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)

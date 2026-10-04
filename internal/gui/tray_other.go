@@ -1,17 +1,16 @@
-//go:build desktop
+//go:build desktop && !linux
 
 package gui
 
 import (
 	"context"
 	"log/slog"
-	"runtime"
 
 	"github.com/getlantern/systray"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var hasTray = runtime.GOOS != "linux"
+var hasTray = true
 
 func runTray(ctx context.Context, logger *slog.Logger) {
 	systray.Run(func() {
