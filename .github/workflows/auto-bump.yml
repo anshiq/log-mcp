@@ -1,0 +1,85 @@
+name: auto-bump
+
+# Patch-bump automation: every push to master that does not itself touch a
+# version file gets its patch digit incremented across all version sources
+# and committed back as "chore: bump version to X.Y.Z [skip ci]".
+#
+# [skip ci] makes GitHub skip all workflows for the bump commit, so this can
+# never loop. Pushes that DO touch version files are manual assignments and
+# are left alone (tagging them as vX.Y.Z runs the full tests + release via
+# release.yml).
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Bump patch unless manually assigned
+        run: |
+          set -euo pipefail
+
+          FILES="internal/mcp/server.go internal/gui/gui.go cmd/agentd/main.go Makefile packaging/nix/flake.nix ui/package.json ui/package-lock.json ui/vite.config.ts"
+
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE=$(git rev-parse HEAD~1)
+          fi
+
+          # Manual version assignment (any digit): respect it, tag flow takes over.
+          # shellcheck disable=SC2086
+          if ! git diff --quiet "$BASE" "${{ github.sha }}" -- $FILES; then
+            echo "version files assigned manually; skipping auto-bump"
+            exit 0
+          fi
+
+          CUR=$(grep -oP 'var Version = "\K[0-9]+\.[0-9]+\.[0-9]+' internal/mcp/server.go)
+          IFS=. read -r MAJ MIN PAT <<<"$CUR"
+          NEW="$MAJ.$MIN.$((PAT + 1))"
+          echo "bumping $CUR -> $NEW"
+
+          sed -i -E "s/var Version = \"[0-9]+\.[0-9]+\.[0-9]+\"/var Version = \"$NEW\"/" internal/mcp/server.go
+          sed -i -E "s/var Version = \"v[0-9]+\.[0-9]+\.[0-9]+\"/var Version = \"v$NEW\"/" internal/gui/gui.go
+          sed -i -E "s/var version = \"v[0-9]+\.[0-9]+\.[0-9]+\"/var version = \"v$NEW\"/" cmd/agentd/main.go
+          sed -i -E "s/echo v[0-9]+\.[0-9]+\.[0-9]+-dev/echo v$NEW-dev/" Makefile
+          sed -i -E "s/^([[:space:]]*version = \")[0-9]+\.[0-9]+\.[0-9]+(\";)/\1$NEW\2/" packaging/nix/flake.nix
+          sed -i -E "s/let version = '[0-9]+\.[0-9]+\.[0-9]+'/let version = '$NEW'/" ui/vite.config.ts
+          npm --prefix ui version "$NEW" --no-git-tag-version --allow-same-version >/dev/null
+
+          # Verify everything agrees and nothing got mangled.
+          for got in \
+            "$(grep -oP 'var Version = \"\K[0-9]+\.[0-9]+\.[0-9]+' internal/mcp/server.go)" \
+            "$(grep -oP 'var Version = \"v\K[0-9]+\.[0-9]+\.[0-9]+' internal/gui/gui.go)" \
+            "$(grep -oP 'var version = \"v\K[0-9]+\.[0-9]+\.[0-9]+' cmd/agentd/main.go)" \
+            "$(grep -oP 'echo v\K[0-9]+\.[0-9]+\.[0-9]+' Makefile)" \
+            "$(grep -oP 'version = \"\K[0-9]+\.[0-9]+\.[0-9]+' packaging/nix/flake.nix)" \
+            "$(grep -oP '\"version\": \"\K[0-9]+\.[0-9]+\.[0-9]+' ui/package.json | head -n1)" \
+            "$(grep -oP "let version = '\K[0-9]+\.[0-9]+\.[0-9]+" ui/vite.config.ts)"; do
+            [ "$got" = "$NEW" ] || { echo "mismatch after bump: $got != $NEW"; exit 1; }
+          done
+          test -z "$(gofmt -l internal/mcp/server.go internal/gui/gui.go cmd/agentd/main.go)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # shellcheck disable=SC2086
+          git add $FILES
+          git commit -m "chore: bump version to $NEW [skip ci]"
+          git push origin HEAD:master

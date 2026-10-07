@@ -6,7 +6,37 @@ on:
   pull_request:
 
 jobs:
+  # Version gate: heavy jobs only run for PRs or pushes that assign a
+  # version (any version-file change). Plain master pushes get their patch
+  # bump from auto-bump.yml and skip everything else.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run_tests: ${{ steps.g.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: g
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "$base" "${{ github.sha }}" -- internal/mcp/server.go internal/gui/gui.go cmd/agentd/main.go Makefile packaging/nix/flake.nix ui/package.json ui/package-lock.json ui/vite.config.ts; then
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-test:
+    needs: [gate]
+    if: needs.gate.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +53,8 @@ jobs:
       - name: Tests
         run: go test ./internal/cli/... ./internal/mcp/... ./internal/server/... ./internal/shim/... ./internal/core/... ./internal/migrate/... ./internal/integrate/... ./pkg/...
   proto:
+    needs: [gate]
+    if: needs.gate.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +82,8 @@ jobs:
         run: make proto
   cross-compile:
     # §10: Linux is implemented now; darwin/windows stay compiling.
+    needs: [gate]
+    if: needs.gate.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -67,6 +101,8 @@ jobs:
       - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
         run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
   ui:
+    needs: [gate]
+    if: needs.gate.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +122,8 @@ jobs:
       - name: Build web
         run: npm --prefix ui run build:web
   e2e:
+    needs: [gate]
+    if: needs.gate.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

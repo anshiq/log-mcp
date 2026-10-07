@@ -32,6 +32,7 @@ func (d *Daemon) AcquireLock() (*os.File, error) {
 	return nil, fmt.Errorf("agentd: not supported on Windows yet")
 }
 func (d *Daemon) WritePid() error { return fmt.Errorf("agentd: not supported on Windows yet") }
+func (d *Daemon) PidPath() string { return "" }
 func (d *Daemon) ReadPid() int    { return 0 }
 func (d *Daemon) IsRunning() bool { return false }
 func (d *Daemon) WaitReady(_ interface{}) error {
