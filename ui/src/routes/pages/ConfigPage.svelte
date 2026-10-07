@@ -137,6 +137,27 @@
       </div>
     </div>
 
+    {#if session.pendingProposal}
+      <div class="banner info proposal" role="alert">
+        <FileCog size={16} />
+        <span class="grow">
+          <strong>Auto-detect proposes {session.pendingProposal.summary.length} change{session.pendingProposal.summary.length === 1 ? '' : 's'}</strong>
+          {#each session.pendingProposal.summary as item}
+            <span class="mono pill">{item.app}: {item.action}</span>
+          {/each}
+          <span class="muted">Review the diff, then approve or dismiss. Approving writes the proposed YAML as a new revision.</span>
+        </span>
+        <button class="btn sm primary" disabled={session.proposalBusy} onclick={() => void session.approveProposal()}>Approve</button>
+        <button class="btn sm" disabled={session.proposalBusy} onclick={() => void session.dismissProposal()}>Dismiss</button>
+      </div>
+      <div class="proposal-diff">
+        {#await import('../../components/config/PlanPanel.svelte') then _}
+          {#await import('../../lib/ui/DiffView.svelte') then { default: DiffView }}
+            <DiffView old={session.saved[session.layer]} next={session.pendingProposal.yaml} context={4} emptyText="No differences" />
+          {/await}
+        {/await}
+      </div>
+    {/if}
     {#if session.external}
       <div class="banner warn" role="alert">
         <TriangleAlert size={16} />
@@ -283,6 +304,28 @@
   }
   .banner {
     flex: none;
+  }
+  .banner.proposal {
+    align-items: flex-start;
+    border-color: color-mix(in srgb, var(--info) 40%, var(--border));
+    background: color-mix(in srgb, var(--info) 8%, var(--bg-1));
+  }
+  .pill {
+    display: inline-block;
+    margin: 0 4px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    font-size: var(--fs-xs);
+  }
+  .proposal-diff {
+    flex: none;
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-1);
+    padding: var(--space-3);
   }
   .banner :global(svg) {
     flex: none;

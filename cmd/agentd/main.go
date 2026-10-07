@@ -24,7 +24,7 @@ import (
 	"agent-runtime/internal/store"
 )
 
-var version = "v0.4.0"
+var version = "v0.4.1"
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -83,6 +83,10 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("open state.db: %w", err)
 	}
 	defer db.Close()
+
+	if n, _ := db.ImportLegacyConfigs(p.Data); n > 0 {
+		logger.Info("imported legacy configs", "count", n)
+	}
 
 	engine := core.NewWithOptions(db, core.Options{
 		DataDir: p.Data, Logger: logger, Version: version,

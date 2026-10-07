@@ -414,10 +414,9 @@ func TestIntegrateSkillPrintsHint(t *testing.T) {
 	}
 	for _, want := range []string{
 		"# To install: agent-runtime integrate skill --write",
-		"SKILL.md",
-		"reference/logging.md",
-		"reference/agent-runtime-yaml.md",
-		"reference/agent-workflow.md",
+		"agent-runtime-logging/SKILL.md",
+		"agent-runtime-project-config/SKILL.md",
+		"agent-runtime-ready/SKILL.md",
 		".claude/skills/agent-runtime-ready",
 		".config/opencode/skills/agent-runtime-ready",
 	} {

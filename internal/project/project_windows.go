@@ -133,9 +133,7 @@ func NewResolver(store Store) *Resolver {
 	}
 }
 
-// WorkspaceRoot determines the workspace root for a cwd, per §4.3.1:
-// explicit override → nearest legacy agent-runtime.yaml → git toplevel →
-// registered marker ancestor → cwd itself. Always canonicalised.
+// WorkspaceRoot determines the workspace root for a cwd: explicit override → git toplevel → cwd itself. Always canonicalised.
 func WorkspaceRoot(cwd string) string {
 	if v := os.Getenv("AGENT_RUNTIME_PROJECT"); v != "" {
 		if abs, err := filepath.Abs(v); err == nil {
@@ -155,39 +153,11 @@ func WorkspaceRoot(cwd string) string {
 	}
 	canonical = filepath.Clean(canonical)
 
-	// Nearest ancestor with a legacy or checked-in agent-runtime.yaml.
-	if dir := nearestFile(canonical, "agent-runtime.yaml"); dir != "" {
-		return dir
-	}
 	// Git toplevel (worktree-aware via .git file handling).
 	if top := gitToplevel(canonical); top != "" {
 		return top
 	}
 	return canonical
-}
-
-func nearestFile(start, name string) string {
-	dir := start
-	for {
-		// If start is a file path itself, check its directory first.
-		for _, cand := range []string{filepath.Join(dir, name)} {
-			if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-				return dir
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-		// Stop at filesystem root or home to bound the walk.
-		if dir == "/" {
-			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-				return dir
-			}
-			return ""
-		}
-	}
 }
 
 func gitToplevel(start string) string {

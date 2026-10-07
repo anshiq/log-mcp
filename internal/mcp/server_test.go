@@ -129,6 +129,63 @@ func TestStartProcess(t *testing.T) {
 	}
 }
 
+func TestStartProcessTimeoutWaitsForExit(t *testing.T) {
+	_, session := connect(t)
+	args := startArgs("once")
+	args["timeout_ms"] = 10000
+	res, ok := call[api.StartResult](t, session, "start_process", args)
+	if !ok {
+		t.Fatal("start_process failed")
+	}
+	if res.Wait == nil || res.Wait.Ready || !res.Wait.Exited || res.Wait.Timeout {
+		t.Fatalf("expected exit outcome, got %+v", res.Wait)
+	}
+	if res.Wait.ExitCode == nil || *res.Wait.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %+v", res.Wait)
+	}
+}
+
+func TestStartProcessTimeoutElapses(t *testing.T) {
+	_, session := connect(t)
+	args := startArgs("ignore-term")
+	args["timeout_ms"] = 300
+	start := time.Now()
+	res, ok := call[api.StartResult](t, session, "start_process", args)
+	if !ok {
+		t.Fatal("start_process failed")
+	}
+	if res.Wait == nil || !res.Wait.Timeout || res.Wait.Exited {
+		t.Fatalf("expected timeout wait, got %+v", res.Wait)
+	}
+	if res.Status != "running" {
+		t.Fatalf("process should still be running, got %q", res.Status)
+	}
+	if time.Since(start) < 250*time.Millisecond {
+		t.Fatalf("returned after %v, expected to block", time.Since(start))
+	}
+}
+
+func TestStartProcessWithoutTimeoutHasNoWait(t *testing.T) {
+	_, session := connect(t)
+	res, _ := call[api.StartResult](t, session, "start_process", startArgs("once"))
+	if res.Wait != nil {
+		t.Fatalf("unexpected wait: %+v", res.Wait)
+	}
+}
+
+func TestStartProcessTimeoutTooLarge(t *testing.T) {
+	rt, session := connect(t)
+	args := startArgs("once")
+	args["timeout_ms"] = 600001
+	if _, ok := call[api.StartResult](t, session, "start_process", args); ok {
+		t.Fatal("expected error for oversized timeout_ms")
+	}
+	list, _ := rt.List()
+	if len(list.Processes) != 0 {
+		t.Fatalf("process must not start when timeout is invalid, got %d", len(list.Processes))
+	}
+}
+
 func TestStartProcessErrors(t *testing.T) {
 	_, session := connect(t)
 	if _, ok := call[api.StartResult](t, session, "start_process", map[string]any{}); ok {
@@ -400,7 +457,7 @@ func TestToolsRegistered(t *testing.T) {
 	for _, tool := range res.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"signal_process", "get_process_env", "open_shell"} {
+	for _, want := range []string{"signal_process", "get_process_env", "open_shell", "resolve_config_proposal", "get_project_info"} {
 		if !names[want] {
 			t.Fatalf("tool %q not registered; have %v", want, names)
 		}

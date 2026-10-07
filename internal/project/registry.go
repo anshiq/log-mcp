@@ -13,13 +13,18 @@ func NewRegistry(store Store) *Registry {
 
 // Resolve maps a working directory path to a project ID and workspace ID.
 func (r *Registry) Resolve(path string) (ID, WorkspaceID, error) {
-	// Delegates to the resolver.
 	resolver := NewResolver(r.store)
 	resolution, err := resolver.Resolve(path)
 	if err != nil {
 		return "", "", err
 	}
 	return resolution.ProjectID, resolution.WorkspaceID, nil
+}
+
+// ResolveFull maps a path to the full resolution including NewlyCreated.
+func (r *Registry) ResolveFull(path string) (*Resolution, error) {
+	resolver := NewResolver(r.store)
+	return resolver.Resolve(path)
 }
 
 // GetProject returns a project by ID.

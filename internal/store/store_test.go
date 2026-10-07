@@ -21,8 +21,8 @@ func TestOpen(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatalf("schema_migrations query: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("expected 1 migration, got %d", count)
+	if count != 2 {
+		t.Fatalf("expected 2 migrations, got %d", count)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestOpen_Idempotent(t *testing.T) {
 	if err := db2.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatalf("migrations: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("expected 1 migration after reopen, got %d", count)
+	if count != 2 {
+		t.Fatalf("expected 2 migrations after reopen, got %d", count)
 	}
 	got, err := db2.GetProject(p.ID)
 	if err != nil {

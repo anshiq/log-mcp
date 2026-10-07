@@ -7,7 +7,7 @@ import (
 	"agent-runtime/internal/platform/paths"
 )
 
-var Version = "v0.4.0"
+var Version = "v0.4.1"
 
 func SocketPath() string {
 	if s := os.Getenv("AGENTD_SOCKET"); s != "" {

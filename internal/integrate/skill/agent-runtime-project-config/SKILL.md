@@ -1,10 +1,12 @@
+---
+version: 2
+name: agent-runtime-project-config
+description: Project config reference declaring how runnable apps are started, supervised, and env-configured (apps, runtime env layers, health checks, restart, security).
+---
+
 # project config reference
 
-The project config declares how runnable apps are started, supervised, and
-env-configured. It lives in the central store (`projects/<id>/agent-runtime.yaml`,
-plus per-workspace overlays) and is edited via the web Config page or
-`get_project_info` / `validate_config` / `plan_config` / `apply_config` — never
-via files in the repository.
+The project config declares how runnable apps are started, supervised, and env-configured. It is stored in the daemon database (state.db), edited via the web Config page, `apply_config` or `agent-runtime config edit` — never via files in the repository. Use `agent-runtime config export` to print the current YAML.
 
 ## Full annotated template
 
@@ -264,3 +266,11 @@ maps to `start_process(app="api", env=["PORT=3003"], env_file="./services/api/.e
 the `--env-file` becomes layer 3, `--env` becomes layer 5 (above the app's
 `env:` block, above `runtime.env`). In `run` mode the process lifetime is tied
 to the invocation; in MCP `serve` mode it outlives the call.
+
+## Auto-generated apps
+
+On project load and every start the daemon scans run-defining files (package.json scripts, go.mod, manage.py, pyproject, pom.xml, Procfile, Makefile, docker-compose) plus depth-1 subdirs and generates missing apps automatically. Generated apps are marked auto in the Apps page and revisions have source auto. Raw starts that reach readiness are learned as auto apps with source learned.
+
+## Ownership and proposals
+
+Ownership is per app without a YAML flag: an app is auto-owned while its block hash matches the last generated hash. Any edit converts it to yours. When detection differs for your apps the daemon leaves them untouched and records a pending proposal with the full proposed YAML and a per-app summary. Approve via the Config page banner, `resolve_config_proposal` or CLI; dismiss stores the current signature so it is not re-proposed until files change. Never approve on the user behalf, always surface proposals first.

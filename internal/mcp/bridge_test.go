@@ -136,7 +136,7 @@ func TestBridge_FacadeParity(t *testing.T) {
 
 	// v3 tools.
 	info, err := b.ProjectInfo(ctx)
-	if err != nil || info["configPath"] == nil {
+	if err != nil || info["configSource"] == nil {
 		t.Fatalf("ProjectInfo = %v, %v", info, err)
 	}
 	if _, err := b.ValidateConfig(ctx, "apps:\n  a:\n    command: [x]\n"); err != nil {

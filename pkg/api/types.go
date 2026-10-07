@@ -28,7 +28,17 @@ type StartResult struct {
 	WorkDir    string   `json:"workdir"`
 	// Readiness lists the armed readiness regex patterns for this process
 	// (empty when the process has no readiness gating).
-	Readiness []string `json:"readiness,omitempty"`
+	Readiness []string   `json:"readiness,omitempty"`
+	Wait      *StartWait `json:"wait,omitempty"`
+}
+
+type StartWait struct {
+	Mode     string `json:"mode"`
+	Ready    bool   `json:"ready,omitempty"`
+	Exited   bool   `json:"exited,omitempty"`
+	Timeout  bool   `json:"timeout,omitempty"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Line     string `json:"line,omitempty"`
 }
 
 // StatusResult is a snapshot of a process for process_status.

@@ -32,10 +32,11 @@ func (s *Server) projResolve(w http.ResponseWriter, r *http.Request) (any, error
 		return nil, fmt.Errorf("path required")
 	}
 	root := project.WorkspaceRoot(req.Path)
-	pid, wid, err := s.engine.ResolveWorkspace(root)
+	res, err := s.engine.ResolveWorkspaceFull(root)
 	if err != nil {
 		return nil, err
 	}
+	pid, wid := res.ProjectID, res.WorkspaceID
 	p, _ := s.engine.Store().GetProject(string(pid))
 	name := ""
 	if p != nil {
@@ -43,7 +44,7 @@ func (s *Server) projResolve(w http.ResponseWriter, r *http.Request) (any, error
 	}
 	return map[string]any{
 		"projectId": string(pid), "workspaceId": string(wid),
-		"projectName": name, "newlyCreated": false,
+		"projectName": name, "newlyCreated": res.NewlyCreated,
 	}, nil
 }
 

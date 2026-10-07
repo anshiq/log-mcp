@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,6 +18,41 @@ import (
 	"agent-runtime/internal/platform/paths"
 	"agent-runtime/pkg/client"
 )
+
+func editInEditor(cur string) (string, error) {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	f, err := os.CreateTemp("", "agent-runtime-config-*.yaml")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if _, err := f.WriteString(cur); err != nil {
+		f.Close()
+		os.Remove(name)
+		return "", err
+	}
+	f.Close()
+	defer os.Remove(name)
+	parts := strings.Fields(editor)
+	ecmd := exec.Command(parts[0], append(parts[1:], name)...)
+	ecmd.Stdin = os.Stdin
+	ecmd.Stdout = os.Stdout
+	ecmd.Stderr = os.Stderr
+	if err := ecmd.Run(); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
 
 func daemonClient() (*client.Client, error) {
 	p := paths.User()
@@ -251,7 +288,7 @@ func newDaemonConfigCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Comma
 			if err != nil {
 				return err
 			}
-			fmt.Printf("config: %v\n", res["configPath"])
+			fmt.Printf("config: %v (rev %v)\n", res["configSource"], res["configRevision"])
 			if apps, ok := res["apps"].(map[string]any); ok {
 				for name := range apps {
 					prov := ""
@@ -261,9 +298,99 @@ func newDaemonConfigCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Comma
 					fmt.Printf("  %s (from %s)\n", name, prov)
 				}
 			}
+			if pp, ok := res["pendingProposal"].(map[string]any); ok && pp != nil {
+				fmt.Printf("proposal %v pending\n", pp["id"])
+			}
 			return nil
 		},
 	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "export",
+		Short: "Print project YAML from the daemon database",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, err := daemonClient()
+			if err != nil {
+				return err
+			}
+			_, ws, err := resolveWorkspace(cl, project)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := ctxWithTimeout(10 * time.Second)
+			defer cancel()
+			res, err := cl.ConfigService().Get(ctx, ws)
+			if err != nil {
+				return err
+			}
+			raw, _ := res["raw"].(map[string]any)
+			if raw == nil {
+				fmt.Println("")
+				return nil
+			}
+			if yml, ok := raw["project"].(string); ok {
+				fmt.Println(yml)
+				return nil
+			}
+			fmt.Println("")
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "edit",
+		Short: "Edit project YAML in $EDITOR with validation",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, err := daemonClient()
+			if err != nil {
+				return err
+			}
+			pid, ws, err := resolveWorkspace(cl, project)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := ctxWithTimeout(30 * time.Second)
+			defer cancel()
+			res, err := cl.ConfigService().Get(ctx, ws)
+			if err != nil {
+				return err
+			}
+			raw, _ := res["raw"].(map[string]any)
+			cur := ""
+			if raw != nil {
+				cur, _ = raw["project"].(string)
+			}
+			rev := int64(0)
+			if rv, ok := res["configRevision"].(float64); ok {
+				rev = int64(rv)
+			} else if rv, ok := res["revision"].(float64); ok {
+				rev = int64(rv)
+			}
+			edited, err := editInEditor(cur)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(edited) == strings.TrimSpace(cur) {
+				fmt.Println("no changes")
+				return nil
+			}
+			vres, err := cl.ConfigService().Validate(ctx, edited)
+			if err != nil {
+				return err
+			}
+			if valid, _ := vres["valid"].(bool); !valid {
+				return fmt.Errorf("validation failed: %v", vres["errors"])
+			}
+			applied, err := cl.ConfigService().Apply(ctx, map[string]any{
+				"projectId": pid, "workspaceId": ws, "layer": "project",
+				"yaml": edited, "baseRevision": rev, "message": "edited via config edit",
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("applied revision %v\n", applied["revision"])
+			return nil
+		},
+	})
+	cmd.PersistentFlags().StringVar(&project, "project", "", "workspace path or id")
 	return cmd
 }
 

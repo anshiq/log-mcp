@@ -17,8 +17,6 @@ package config
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -461,36 +459,69 @@ func DeprecationWarnings(data []byte) []string {
 	return out
 }
 
-// EffectivePaths records which files feed a workspace's config.
-type EffectivePaths struct {
-	Project string
-	Overlay string
+type ConfigSource interface {
+	Project(projectID string) ([]byte, error)
+	Overlay(projectID, workspaceID string) ([]byte, error)
 }
 
-func DiscoverEffective(dataDir, projectID, workspaceID, workspacePath string) EffectivePaths {
-	ep := EffectivePaths{
-		Project: filepath.Join(dataDir, "projects", projectID, "agent-runtime.yaml"),
-		Overlay: filepath.Join(dataDir, "projects", projectID, "workspaces", workspaceID+".yaml"),
+type EffectiveSources struct {
+	ProjectRev int64 `json:"projectRev"`
+	OverlayRev int64 `json:"overlayRev"`
+}
+
+type MemorySource struct {
+	ProjectYAML []byte
+	ProjectRev  int64
+	Overlays    map[string][]byte
+	OverlayRevs map[string]int64
+}
+
+func (m *MemorySource) Project(projectID string) ([]byte, error) {
+	if len(m.ProjectYAML) == 0 {
+		return nil, nil
 	}
-	if _, err := os.Stat(ep.Overlay); err != nil {
-		ep.Overlay = ""
+	return m.ProjectYAML, nil
+}
+
+func (m *MemorySource) Overlay(projectID, workspaceID string) ([]byte, error) {
+	if m.Overlays == nil {
+		return nil, nil
 	}
-	return ep
+	return m.Overlays[workspaceID], nil
+}
+
+func DiscoverEffective(src ConfigSource, projectID, workspaceID string) EffectiveSources {
+	var out EffectiveSources
+	if rs, ok := src.(interface {
+		ProjectRev(string) int64
+		OverlayRev(string, string) int64
+	}); ok {
+		out.ProjectRev = rs.ProjectRev(projectID)
+		out.OverlayRev = rs.OverlayRev(projectID, workspaceID)
+		return out
+	}
+	if m, ok := src.(*MemorySource); ok {
+		out.ProjectRev = m.ProjectRev
+		if m.OverlayRevs != nil {
+			out.OverlayRev = m.OverlayRevs[workspaceID]
+		}
+		return out
+	}
+	return out
 }
 
 // Resolved is the merged effective config for a workspace.
 type Resolved struct {
 	Apps       map[string]V3App `json:"apps"`
 	Provenance Provenance       `json:"provenance"`
-	Paths      EffectivePaths   `json:"paths"`
+	Sources    EffectiveSources `json:"sources"`
 	Warnings   []string         `json:"warnings"`
-	// Redact unions logging.redact across layers; Alerts likewise.
 	Redact []string    `json:"redact"`
 	Alerts []AlertRule `json:"alerts"`
 }
 
-func Resolve(dataDir, projectID, workspaceID, workspacePath string, daemonDefaults map[string]string) (*Resolved, []*ValidationError) {
-	ep := DiscoverEffective(dataDir, projectID, workspaceID, workspacePath)
+func Resolve(src ConfigSource, projectID, workspaceID, workspacePath string, daemonDefaults map[string]string) (*Resolved, []*ValidationError) {
+	ep := DiscoverEffective(src, projectID, workspaceID)
 	merged := map[string]V3App{}
 	prov := Provenance{}
 	var warnings []string
@@ -520,22 +551,18 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, daemonDefaul
 		return nil
 	}
 
-	// Project layer.
-	if data, err := os.ReadFile(ep.Project); err == nil {
+	if data, err := src.Project(projectID); err == nil && len(data) > 0 {
 		if errs := apply(data, LayerProject, workspacePath); len(errs) > 0 {
 			return nil, errs
 		}
 	}
-	// Workspace overlay.
-	if ep.Overlay != "" {
-		if data, err := os.ReadFile(ep.Overlay); err == nil {
-			if errs := apply(data, LayerWorkspace, workspacePath); len(errs) > 0 {
-				return nil, errs
-			}
+	if data, err := src.Overlay(projectID, workspaceID); err == nil && len(data) > 0 {
+		if errs := apply(data, LayerWorkspace, workspacePath); len(errs) > 0 {
+			return nil, errs
 		}
 	}
 	_ = daemonDefaults
-	return &Resolved{Apps: merged, Provenance: prov, Paths: ep, Warnings: warnings, Redact: redact, Alerts: alerts}, nil
+	return &Resolved{Apps: merged, Provenance: prov, Sources: ep, Warnings: warnings, Redact: redact, Alerts: alerts}, nil
 }
 
 func mergeApp(dst *V3App, src V3App, base, workspacePath string) {

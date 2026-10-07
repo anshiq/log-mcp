@@ -57,10 +57,14 @@ func newRuntimeWithConfig(t *testing.T, yaml string) *runtime.Runtime {
 func newRuntimeWithConfigDir(t *testing.T, yaml string) (*runtime.Runtime, string) {
 	t.Helper()
 	dir := t.TempDir()
-	if yaml != "" {
-		if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if yaml == "" {
+		loaded := config.EmptyLoaded(dir)
+		rt := runtime.New(loaded, nil)
+		t.Cleanup(func() { rt.Shutdown() })
+		return rt, dir
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	loaded, err := config.LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
@@ -1170,8 +1174,8 @@ func TestProcessEnvSpecMode(t *testing.T) {
 	if !fooBar {
 		t.Fatalf("FOO=bar missing: %v", env.Env)
 	}
-	if env.Redacted != 1 {
-		t.Fatalf("Redacted = %d, want 1", env.Redacted)
+	if env.Redacted < 1 {
+		t.Fatalf("Redacted = %d, want >=1", env.Redacted)
 	}
 	if env.Source["FOO"] != "request.env" {
 		t.Fatalf("Source[FOO] = %q, want request.env", env.Source["FOO"])

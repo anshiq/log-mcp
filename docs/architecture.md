@@ -47,17 +47,15 @@ agent-runtime v3 transforms the system from a per-project, session-scoped MCP su
 3. **Locator chain** — workspace resolution via path, dev/inode, git
 4. **Connect-RPC** — versioned API over Unix sockets
 5. **Central storage** — state.db under `~/.local/share/agent-runtime`
-6. **Config layering** — built-in → daemon defaults → project → workspace
+6. **Config layering** — built-in → daemon defaults → project → workspace (YAML text in state.db project_configs, auto-generated, self-syncing)
 
 ## Directory Layout
 
 ```
 ~/.local/share/agent-runtime/
 ├── state.db              SQLite (WAL)
-├── projects/<proj_*/>
-│   ├── agent-runtime.yaml
-│   ├── workspaces/<ws_*/>
-│   └── env/
+├── trash/
+│   └── projects/<legacy yaml imports>
 ├── logs/<ws_*/>
 │   ├── index.db          SQLite FTS5
 │   └── segments/
@@ -78,7 +76,7 @@ $XDG_RUNTIME_DIR/agent-runtime/
 |---------|------|---------|
 | SystemService | GetVersion, Health, GetStats, Shutdown | Daemon info |
 | ProjectService | Resolve, ListProjects, LinkWorkspace, ForgetProject, GC | Project identity |
-| ConfigService | GetConfig, Plan, Apply, ListRevisions, Rollback, WatchConfig | Config management |
+| ConfigService | GetConfig, Plan, Apply, ListRevisions, Rollback, ResolveProposal, WatchConfig | DB-backed config with auto-sync |
 | ProcessService | Start, Stop, Restart, Signal, List, WatchProcesses, Attach | Process lifecycle |
 | LogService | GetLogs, SearchLogs, TailLogs, ExportLogs | Log access |
 | EventService | WatchEvents, ListEvents | Event streaming |

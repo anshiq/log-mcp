@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -15,12 +16,44 @@ import (
 // MaxSubsPerClient across the session.
 const mcpClient = "mcp"
 
+const maxStartWaitMS = 600000
+
+func (h *handlers) waitAfterStart(ctx context.Context, res *api.StartResult, timeoutMS int) {
+	wait := &api.StartWait{Mode: "ready"}
+	lr, err := h.rt.WaitForLog(ctx, api.WaitForLogRequest{ProcessID: res.ProcessID, Ready: true, TimeoutMS: timeoutMS})
+	switch {
+	case err != nil:
+		wait.Mode = "exit"
+		er, eerr := h.rt.WaitForExit(ctx, api.WaitForExitParams{ProcessID: res.ProcessID, TimeoutMS: timeoutMS})
+		if eerr == nil {
+			wait.Exited, wait.Timeout, wait.ExitCode = er.Exited, er.Timeout, er.ExitCode
+		}
+	case lr.Matched:
+		wait.Ready = true
+		if lr.Entry != nil {
+			wait.Line = lr.Entry.Line
+		}
+	default:
+		wait.Exited, wait.Timeout = lr.Exited, lr.Timeout
+		if lr.Exited {
+			if er, eerr := h.rt.WaitForExit(ctx, api.WaitForExitParams{ProcessID: res.ProcessID, TimeoutMS: 1000}); eerr == nil {
+				wait.ExitCode = er.ExitCode
+			}
+		}
+	}
+	res.Wait = wait
+	if st, serr := h.rt.Status(res.ProcessID); serr == nil {
+		res.Status = st.Status
+	}
+}
+
 type startIn struct {
-	App     string   `json:"app,omitempty" jsonschema:"Name of an app declared in the project config. Mutually exclusive with command."`
-	Command string   `json:"command,omitempty" jsonschema:"Executable to launch (npm, go, python, java, ...). Mutually exclusive with app."`
-	Args    []string `json:"args,omitempty" jsonschema:"Arguments passed to the command."`
-	WorkDir string   `json:"workdir,omitempty" jsonschema:"Working directory, absolute or relative to the project root."`
-	Env     []string `json:"env,omitempty" jsonschema:"Extra KEY=VALUE environment pairs for the process."`
+	App       string   `json:"app,omitempty" jsonschema:"Name of an app declared in the project config. Mutually exclusive with command."`
+	Command   string   `json:"command,omitempty" jsonschema:"Executable to launch (npm, go, python, java, ...). Mutually exclusive with app."`
+	Args      []string `json:"args,omitempty" jsonschema:"Arguments passed to the command."`
+	WorkDir   string   `json:"workdir,omitempty" jsonschema:"Working directory, absolute or relative to the project root."`
+	Env       []string `json:"env,omitempty" jsonschema:"Extra KEY=VALUE environment pairs for the process."`
+	TimeoutMS *int     `json:"timeout_ms,omitempty" jsonschema:"Optional. Omit to return immediately (non-blocking). When set, block up to this many milliseconds (0 means 30000, max 600000): servers with a readiness line wait until ready, one-shot commands wait until exit. The result's wait field says which happened."`
 }
 
 type procIDIn struct {
@@ -108,14 +141,20 @@ type getAuditLogIn struct {
 
 func registerTools(server *mcp.Server, h *handlers) {
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from the project config). Returns immediately with a process_id; the process keeps running in the background."},
+		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from the project config). Returns immediately with a process_id unless timeout_ms is set; the process keeps running in the background. With timeout_ms it blocks until the app is ready (servers) or exits (one-shot commands), or the timeout elapses."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, *api.StartResult, error) {
 			h.log(ctx, "start_process", in)
+			if in.TimeoutMS != nil && (*in.TimeoutMS < 0 || *in.TimeoutMS > maxStartWaitMS) {
+				return nil, nil, fmt.Errorf("timeout_ms must be between 0 and %d", maxStartWaitMS)
+			}
 			res, err := h.rt.Start(ctx, api.StartRequest{
 				App: in.App, Command: in.Command, Args: in.Args, WorkDir: in.WorkDir, Env: in.Env,
 			})
 			if err != nil {
 				return nil, nil, err
+			}
+			if in.TimeoutMS != nil {
+				h.waitAfterStart(ctx, res, *in.TimeoutMS)
 			}
 			return nil, res, nil
 		})

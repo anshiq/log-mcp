@@ -195,6 +195,7 @@ func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error)
 		lastUsed:  time.Now(),
 		stale:     map[string]bool{},
 		allocPort: e.AllocatePort,
+		store:     e.store,
 	}
 	e.runtimes.Store(workspaceID, rt)
 	_ = e.store.TouchProject(ws.ProjectID)
@@ -321,6 +322,11 @@ func (e *Engine) LoadedRuntimes() []*ProjectRuntime {
 // ResolveWorkspace resolves a path to a project and workspace.
 func (e *Engine) ResolveWorkspace(path string) (project.ID, project.WorkspaceID, error) {
 	return e.projects.Resolve(path)
+}
+
+// ResolveWorkspaceFull resolves a path including newly-created flag.
+func (e *Engine) ResolveWorkspaceFull(path string) (*project.Resolution, error) {
+	return e.projects.ResolveFull(path)
 }
 
 // RuntimeFor returns the hosted process runtime for a workspace, loading

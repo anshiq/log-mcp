@@ -930,7 +930,7 @@ func (r *Runtime) resolveStart(req api.StartRequest) (process.StartSpec, *profil
 			cmd = prof.Command(workDir)
 		}
 		if len(cmd) == 0 {
-			return spec, nil, nil, fmt.Errorf("app %q has no start command; set one in agent-runtime.yaml", req.App)
+			return spec, nil, nil, fmt.Errorf("app %q has no start command; set one in the Config page or via apply_config", req.App)
 		}
 		layers := []config.EnvLayer{{Name: r.baseEnvName, Vars: r.baseEnv}}
 		if len(r.getCfg().Config.Runtime.Env) > 0 {

@@ -17,6 +17,7 @@ export interface ConfigApp {
   ports: { name: string; port: number }[];
   envCount: number;
   provenance: string;
+  auto: boolean;
 }
 
 type Rec = Record<string, unknown>;
@@ -34,7 +35,7 @@ function rec(v: unknown): Rec {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Rec) : {};
 }
 
-export function toConfigApp(name: string, raw: unknown, provenance = ''): ConfigApp {
+export function toConfigApp(name: string, raw: unknown, provenance = '', auto = false): ConfigApp {
   const o = rec(raw);
   const health = rec(pick(o, 'HealthCheck', 'health_check'));
   const restart = rec(pick(o, 'Restart', 'restart'));
@@ -58,13 +59,15 @@ export function toConfigApp(name: string, raw: unknown, provenance = ''): Config
     restartPolicy: String(pick(restart, 'Policy', 'policy') ?? ''),
     ports,
     envCount: strs(pick(o, 'Env', 'env')).length,
-    provenance
+    provenance,
+    auto
   };
 }
 
-export function toConfigApps(apps: unknown, provenance: Record<string, unknown> = {}): ConfigApp[] {
+export function toConfigApps(apps: unknown, provenance: Record<string, unknown> = {}, autoApps: unknown = []): ConfigApp[] {
+  const autoSet = new Set(Array.isArray(autoApps) ? autoApps.map(String) : []);
   return Object.entries(rec(apps))
-    .map(([name, a]) => toConfigApp(name, a, String(provenance[`apps.${name}`] ?? '')))
+    .map(([name, a]) => toConfigApp(name, a, String(provenance[`apps.${name}`] ?? ''), autoSet.has(name)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

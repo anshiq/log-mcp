@@ -294,10 +294,11 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 	if req.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspaceId required")
 	}
-	_, rt, err := s.engine.RuntimeFor(req.WorkspaceID)
+	pr, rt, err := s.engine.RuntimeFor(req.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
+	core.EnsureConfig(pr)
 	env := parseEnvField(req.Env)
 	// Request-time ${port:name} templates allocate without a default
 	// (app-layer templates were already expanded at config load).
@@ -332,6 +333,17 @@ func (s *Server) handleProcStart(w http.ResponseWriter, r *http.Request) (any, e
 		if prow != nil {
 			_, _ = s.engine.Store().CreateInstance(prow.ID, int64(pid), 0, "", string(st.Status))
 		}
+	}
+	if req.App == "" && len(req.Command) > 0 {
+		wsID := req.WorkspaceID
+		cmd := append([]string(nil), req.Command...)
+		wd := req.Workdir
+		sess := req.SessionID
+		eng := s.engine
+		go func() {
+			time.Sleep(10 * time.Second)
+			core.LearnFromRawStart(eng, wsID, cmd, wd, sess)
+		}()
 	}
 	return map[string]any{
 		"processId": res.ProcessID, "instanceId": res.InstanceID,

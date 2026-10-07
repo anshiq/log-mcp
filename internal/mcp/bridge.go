@@ -450,9 +450,10 @@ func (b *Bridge) ProjectInfo(ctx context.Context) (map[string]any, error) {
 	sessions, _ := b.client.SessionService().List(ctx, b.workspaceID)
 	return map[string]any{
 		"projectId": b.projectID, "workspaceId": b.workspaceID,
-		"project": proj, "configPath": cfg["configPath"],
-		"overlayPath": cfg["overlayPath"],
-		"sessions":    sessions,
+		"project": proj, "configSource": cfg["configSource"],
+		"configRevision": cfg["configRevision"], "revision": cfg["revision"],
+		"pendingProposal": cfg["pendingProposal"],
+		"sessions":        sessions,
 	}, nil
 }
 
@@ -474,6 +475,16 @@ func (b *Bridge) ApplyConfig(ctx context.Context, yaml string, baseRevision int6
 		"yaml": yaml, "baseRevision": baseRevision,
 		"message": message, "sessionId": b.sessionID,
 	})
+}
+
+func (b *Bridge) ResolveProposal(ctx context.Context, proposalID, action string) (map[string]any, error) {
+	var out map[string]any
+	if err := b.client.Call(ctx, "ConfigService", "ResolveProposal", map[string]any{
+		"projectId": b.projectID, "proposalId": proposalID, "action": action,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SearchLogs runs a bounded FTS/regex search with cursor.

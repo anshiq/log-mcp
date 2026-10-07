@@ -317,6 +317,21 @@ type ProjectInfo struct {
 	WorkspaceCount int    `json:"workspaceCount"`
 }
 
+func (c *ProjectServiceClient) ListWorkspaces(ctx context.Context, projectID string) ([]*WorkspaceInfo, error) {
+	var out struct {
+		Workspaces []*WorkspaceInfo `json:"workspaces"`
+	}
+	if err := c.client.call(ctx, "ProjectService", "ListWorkspaces", map[string]any{"projectId": projectID}, &out); err != nil {
+		return nil, err
+	}
+	return out.Workspaces, nil
+}
+
+type WorkspaceInfo struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+}
+
 // ProcessServiceClient is a typed client for ProcessService.
 type ProcessServiceClient struct {
 	client *Client

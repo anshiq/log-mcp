@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Config and state currently live at `<project>/agent-runtime.yaml` and `<project>/.agent-runtime/`. Moving to `~/.local/share/agent-runtime` requires a stable way to map a working directory to a project that handles moves, re-clones, and worktrees.
+Config lives as YAML text in state.db project_configs (see ADR-004) and state in state.db. Mapping a working directory to a project that handles moves, re-clones, and worktrees requires a stable way to map a working directory to a project that handles moves, re-clones, and worktrees.
 
 ## Decision
 Use a **two-level model** plus a **locator chain**:

@@ -16,7 +16,7 @@ import (
 // var so release builds can stamp the git tag via -ldflags
 // (-X agent-runtime/internal/mcp.Version={{.Version}}); local builds keep the
 // default.
-var Version = "0.4.0"
+var Version = "0.4.1"
 
 // Instructions is surfaced to every connected agent (Claude Code, Codex,
 // Gemini CLI, ...). It is deliberately imperative: it is the agent's authority
@@ -30,15 +30,16 @@ RULES (mandatory):
    - process_status(process_id) for lifecycle state, pid, exit code, and supervision health (healthy/unhealthy) + restart policy.
    - get_logs(process_id, stream="stderr", lines=100) for error output; use stream and contains to stay small.
    - wait_for_log(process_id, ready=true) to confirm the app actually came up.
-4. Prefer named apps when available: start_process(app="...") for apps in the project config. list_apps shows them; list_processes recovers every process_id this runtime holds, including exited ones.
-5. On failure, get the tail from get_logs, fix the cause, then restart_process(process_id) and wait_for_log(process_id, ready=true) again. Never rebuild the process by hand.
-6. If you ever lose a process_id, recover it with list_processes instead of restarting the app yourself.
+ 4. Prefer named apps when available: start_process(app="...") for apps in the project config. list_apps shows them (auto-generated apps are marked auto); list_processes recovers every process_id this runtime holds, including exited ones.
+ 5. On failure, get the tail from get_logs, fix the cause, then restart_process(process_id) and wait_for_log(process_id, ready=true) again. Never rebuild the process by hand.
+ 6. If you ever lose a process_id, recover it with list_processes instead of restarting the app yourself.
+ 7. Config proposals: get_project_info may return a pendingProposal when auto-detection differs from your edited apps. Surface pending proposals to the user, never approve on the user's behalf. Edit config only through apply_config; use resolve_config_proposal to approve or dismiss.
 
 PERSISTENCE (v3 daemon):
 - Processes OUTLIVE your session. When you connect, list_processes shows what earlier sessions started — re-attach (get_logs, process_status) instead of re-starting. Starting a duplicate dev server on the same port helps nobody.
 - list_processes defaults to your workspace; scope=all spans the machine.
 - list_sessions shows which other agents/UIs are attached here.
-- get_project_info tells you where the project YAML lives now (central store, not the repo) and who else is watching. Config edits hot-reload; validate_config/plan_config/apply_config edit it safely, or edit the file at the returned configPath directly.
+- get_project_info tells you where the project config lives now (daemon database, configSource db) and who else is watching. Config edits hot-reload; validate_config/plan_config/apply_config edit it safely.
 
 SUPERVISION (continuous, not request-driven):
 - Apps declared in the project config can configure readiness overrides, a health_check (HTTP/TCP probe), and a restart policy (never|on-failure|always) with exponential backoff. agent-runtime notices crashes and health failures on its own — you do not need to poll.

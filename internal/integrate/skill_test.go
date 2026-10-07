@@ -9,7 +9,7 @@ import (
 
 func TestSkillNames(t *testing.T) {
 	got := SkillNames()
-	want := []string{"agent-runtime-logging", "agent-runtime-ready"}
+	want := []string{"agent-runtime-logging", "agent-runtime-project-config", "agent-runtime-ready"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("SkillNames() = %v, want %v", got, want)
 	}
@@ -19,13 +19,8 @@ func TestSkillFiles(t *testing.T) {
 	got := SkillFiles()
 	for _, want := range []string{
 		"agent-runtime-ready/SKILL.md",
-		"agent-runtime-ready/reference/agent-runtime-yaml.md",
-		"agent-runtime-ready/reference/agent-workflow.md",
-		"agent-runtime-ready/reference/logging.md",
 		"agent-runtime-logging/SKILL.md",
-		"agent-runtime-logging/reference/logging.md",
-		"agent-runtime-logging/templates/logging_config.py",
-		"agent-runtime-logging/templates/log_event.py",
+		"agent-runtime-project-config/SKILL.md",
 	} {
 		if !containsStr(got, want) {
 			t.Fatalf("SkillFiles() missing %q: %v", want, got)
@@ -45,25 +40,33 @@ func containsStr(list []string, s string) bool {
 func TestInstallSkillTree(t *testing.T) {
 	ready := filepath.Join(t.TempDir(), "agent-runtime-ready")
 	logging := filepath.Join(t.TempDir(), "agent-runtime-logging")
+	config := filepath.Join(t.TempDir(), "agent-runtime-project-config")
 
 	// First install of each skill: every file is created.
 	created, updated, unchanged, err := InstallSkillTree(ready)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 4 || updated != 0 || unchanged != 0 {
-		t.Fatalf("ready first install: created=%d updated=%d unchanged=%d, want 4/0/0", created, updated, unchanged)
+	if created != 1 || updated != 0 || unchanged != 0 {
+		t.Fatalf("ready first install: created=%d updated=%d unchanged=%d, want 1/0/0", created, updated, unchanged)
 	}
 	created, updated, unchanged, err = InstallSkillTree(logging)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 4 || updated != 0 || unchanged != 0 {
-		t.Fatalf("logging first install: created=%d updated=%d unchanged=%d, want 4/0/0", created, updated, unchanged)
+	if created != 1 || updated != 0 || unchanged != 0 {
+		t.Fatalf("logging first install: created=%d updated=%d unchanged=%d, want 1/0/0", created, updated, unchanged)
+	}
+	created, updated, unchanged, err = InstallSkillTree(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != 1 || updated != 0 || unchanged != 0 {
+		t.Fatalf("config first install: created=%d updated=%d unchanged=%d, want 1/0/0", created, updated, unchanged)
 	}
 
 	// Files landed at the expected relative paths with content.
-	for _, f := range []string{"SKILL.md", "reference/logging.md"} {
+	for _, f := range []string{"SKILL.md"} {
 		data, err := os.ReadFile(filepath.Join(logging, f))
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
@@ -78,8 +81,8 @@ func TestInstallSkillTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 0 || updated != 0 || unchanged != 4 {
-		t.Fatalf("ready second install: created=%d updated=%d unchanged=%d, want 0/0/4", created, updated, unchanged)
+	if created != 0 || updated != 0 || unchanged != 1 {
+		t.Fatalf("ready second install: created=%d updated=%d unchanged=%d, want 0/0/1", created, updated, unchanged)
 	}
 
 	// Modify one file; the third install must report exactly one update.
@@ -95,8 +98,8 @@ func TestInstallSkillTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 0 || updated != 1 || unchanged != 3 {
-		t.Fatalf("ready third install: created=%d updated=%d unchanged=%d, want 0/1/3", created, updated, unchanged)
+	if created != 0 || updated != 1 || unchanged != 0 {
+		t.Fatalf("ready third install: created=%d updated=%d unchanged=%d, want 0/1/0", created, updated, unchanged)
 	}
 
 	// Unknown skill name is an error.
@@ -161,6 +164,8 @@ func TestSkillTargetDirs(t *testing.T) {
 	wantProject := []string{
 		filepath.Join(base, ".claude", "skills", "agent-runtime-logging"),
 		filepath.Join(base, ".opencode", "skills", "agent-runtime-logging"),
+		filepath.Join(base, ".claude", "skills", "agent-runtime-project-config"),
+		filepath.Join(base, ".opencode", "skills", "agent-runtime-project-config"),
 		filepath.Join(base, ".claude", "skills", "agent-runtime-ready"),
 		filepath.Join(base, ".opencode", "skills", "agent-runtime-ready"),
 	}
@@ -174,6 +179,8 @@ func TestSkillTargetDirs(t *testing.T) {
 	wantGlobal := []string{
 		filepath.Join(home, ".claude", "skills", "agent-runtime-logging"),
 		filepath.Join(home, ".config", "opencode", "skills", "agent-runtime-logging"),
+		filepath.Join(home, ".claude", "skills", "agent-runtime-project-config"),
+		filepath.Join(home, ".config", "opencode", "skills", "agent-runtime-project-config"),
 		filepath.Join(home, ".claude", "skills", "agent-runtime-ready"),
 		filepath.Join(home, ".config", "opencode", "skills", "agent-runtime-ready"),
 	}

@@ -6,6 +6,10 @@
   import Bot from '@lucide/svelte/icons/bot';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Terminal from '@lucide/svelte/icons/terminal';
+  import Zap from '@lucide/svelte/icons/zap';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import GitCompare from '@lucide/svelte/icons/git-compare';
+  import Download from '@lucide/svelte/icons/download';
   import Copy from '@lucide/svelte/icons/copy';
   import FileCode from '@lucide/svelte/icons/file-code';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -137,7 +141,7 @@
                 </span>
                 <span class="msg truncate">{rev.message || 'No message'}</span>
                 <span class="src">
-                  {#if rev.source === 'rollback'}<Undo2 size={11} />{:else if rev.source === 'gui'}<Monitor size={11} />{:else if rev.source === 'api'}<Terminal size={11} />{:else}<Bot size={11} />{/if}
+                  {#if rev.source === 'rollback'}<Undo2 size={11} />{:else if rev.source === 'gui'}<Monitor size={11} />{:else if rev.source === 'api'}<Terminal size={11} />{:else if rev.source === 'auto'}<Zap size={11} />{:else if rev.source === 'learned'}<Sparkles size={11} />{:else if rev.source === 'proposal'}<GitCompare size={11} />{:else if rev.source === 'import'}<Download size={11} />{:else}<Bot size={11} />{/if}
                   {rev.source || 'unknown'}
                   {#if rev.session}<span class="mono sess">{shortSession(rev.session)}</span>{/if}
                 </span>

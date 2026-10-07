@@ -100,6 +100,13 @@ function changesOf(raw: unknown): PlanChange[] {
   });
 }
 
+export interface PendingProposal {
+  id: string;
+  yaml: string;
+  summary: { app: string; action: string; reason: string }[];
+  createdAt: number;
+}
+
 export class ConfigSession {
   workspaceId = $state('');
   projectId = $state('');
@@ -110,6 +117,9 @@ export class ConfigSession {
   warnings = $state<string[]>([]);
   apps = $state<ConfigApp[]>([]);
   revision = $state(0);
+  configSource = $state('db');
+  pendingProposal = $state<PendingProposal | null>(null);
+  proposalBusy = $state(false);
   layer = $state<LayerName>('project');
   saved = $state<Record<LayerName, string>>(emptyTexts());
   drafts = $state<Record<LayerName, string>>(emptyTexts());
@@ -229,7 +239,9 @@ export class ConfigSession {
       }
       this.workspaceId = workspaceId;
       this.projectId = String(cfg.projectId ?? '');
-      this.revision = Number(cfg.revision ?? 0);
+      this.revision = Number((cfg as unknown as { configRevision?: number }).configRevision ?? cfg.revision ?? 0);
+      this.configSource = String((cfg as unknown as { configSource?: string }).configSource ?? 'db');
+      this.pendingProposal = (cfg as unknown as { pendingProposal?: PendingProposal | null }).pendingProposal ?? null;
       this.warnings = ((cfg as unknown as { warnings?: string[] | null }).warnings ?? []).map(String);
       this.layers = LAYERS.map((name) => {
         const l = rawLayers.find((x) => x['name'] === name) ?? {};
@@ -244,7 +256,7 @@ export class ConfigSession {
       });
       const prov = (cfg as unknown as { provenance?: Record<string, unknown> }).provenance ?? {};
       this.provenance = Object.fromEntries(Object.entries(prov).map(([k, v]) => [k, String(v)]));
-      this.apps = toConfigApps(cfg.apps, prov);
+      this.apps = toConfigApps(cfg.apps, prov, (cfg as unknown as { autoApps?: unknown }).autoApps ?? []);
       const next = emptyTexts();
       for (const l of LAYERS) next[l] = typeof raw[l] === 'string' ? (raw[l] as string) : '';
       this.saved = { ...next };
@@ -516,9 +528,45 @@ export class ConfigSession {
       const cfg = await ConfigService.get(this.workspaceId);
       const prov = (cfg as unknown as { provenance?: Record<string, unknown> }).provenance ?? {};
       this.provenance = Object.fromEntries(Object.entries(prov).map(([k, v]) => [k, String(v)]));
-      this.apps = toConfigApps(cfg.apps, prov);
+      this.apps = toConfigApps(cfg.apps, prov, (cfg as unknown as { autoApps?: unknown }).autoApps ?? []);
+      this.pendingProposal = (cfg as unknown as { pendingProposal?: PendingProposal | null }).pendingProposal ?? null;
+      this.revision = Number((cfg as unknown as { configRevision?: number }).configRevision ?? cfg.revision ?? this.revision);
     } catch {
       return;
+    }
+  }
+
+  async approveProposal(): Promise<boolean> {
+    if (!this.pendingProposal || this.proposalBusy) return false;
+    this.proposalBusy = true;
+    try {
+      await ConfigService.resolveProposal(this.projectId, this.pendingProposal.id, 'approve');
+      toasts.ok('Proposal applied');
+      this.pendingProposal = null;
+      await this.load(this.workspaceId, { keepLayer: true });
+      return true;
+    } catch (err) {
+      toastError(err);
+      return false;
+    } finally {
+      this.proposalBusy = false;
+    }
+  }
+
+  async dismissProposal(): Promise<boolean> {
+    if (!this.pendingProposal || this.proposalBusy) return false;
+    this.proposalBusy = true;
+    try {
+      await ConfigService.resolveProposal(this.projectId, this.pendingProposal.id, 'dismiss');
+      toasts.ok('Proposal dismissed');
+      this.pendingProposal = null;
+      await this.refreshApps();
+      return true;
+    } catch (err) {
+      toastError(err);
+      return false;
+    } finally {
+      this.proposalBusy = false;
     }
   }
 

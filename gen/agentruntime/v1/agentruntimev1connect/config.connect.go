@@ -53,6 +53,9 @@ const (
 	ConfigServiceGetRevisionProcedure = "/agentruntime.v1.ConfigService/GetRevision"
 	// ConfigServiceRollbackProcedure is the fully-qualified name of the ConfigService's Rollback RPC.
 	ConfigServiceRollbackProcedure = "/agentruntime.v1.ConfigService/Rollback"
+	// ConfigServiceResolveProposalProcedure is the fully-qualified name of the ConfigService's
+	// ResolveProposal RPC.
+	ConfigServiceResolveProposalProcedure = "/agentruntime.v1.ConfigService/ResolveProposal"
 	// ConfigServiceWatchConfigProcedure is the fully-qualified name of the ConfigService's WatchConfig
 	// RPC.
 	ConfigServiceWatchConfigProcedure = "/agentruntime.v1.ConfigService/WatchConfig"
@@ -68,6 +71,7 @@ type ConfigServiceClient interface {
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	GetRevision(context.Context, *connect.Request[v1.GetRevisionRequest]) (*connect.Response[v1.GetRevisionResponse], error)
 	Rollback(context.Context, *connect.Request[v1.RollbackRequest]) (*connect.Response[v1.RollbackResponse], error)
+	ResolveProposal(context.Context, *connect.Request[v1.ResolveProposalRequest]) (*connect.Response[v1.ResolveProposalResponse], error)
 	WatchConfig(context.Context, *connect.Request[v1.WatchConfigRequest]) (*connect.ServerStreamForClient[v1.ConfigEvent], error)
 }
 
@@ -130,6 +134,12 @@ func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(configServiceMethods.ByName("Rollback")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveProposal: connect.NewClient[v1.ResolveProposalRequest, v1.ResolveProposalResponse](
+			httpClient,
+			baseURL+ConfigServiceResolveProposalProcedure,
+			connect.WithSchema(configServiceMethods.ByName("ResolveProposal")),
+			connect.WithClientOptions(opts...),
+		),
 		watchConfig: connect.NewClient[v1.WatchConfigRequest, v1.ConfigEvent](
 			httpClient,
 			baseURL+ConfigServiceWatchConfigProcedure,
@@ -141,15 +151,16 @@ func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // configServiceClient implements ConfigServiceClient.
 type configServiceClient struct {
-	getConfig     *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	getSchema     *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
-	validate      *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
-	plan          *connect.Client[v1.PlanRequest, v1.PlanResponse]
-	apply         *connect.Client[v1.ApplyRequest, v1.ApplyResponse]
-	listRevisions *connect.Client[v1.ListRevisionsRequest, v1.ListRevisionsResponse]
-	getRevision   *connect.Client[v1.GetRevisionRequest, v1.GetRevisionResponse]
-	rollback      *connect.Client[v1.RollbackRequest, v1.RollbackResponse]
-	watchConfig   *connect.Client[v1.WatchConfigRequest, v1.ConfigEvent]
+	getConfig       *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	getSchema       *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
+	validate        *connect.Client[v1.ValidateRequest, v1.ValidateResponse]
+	plan            *connect.Client[v1.PlanRequest, v1.PlanResponse]
+	apply           *connect.Client[v1.ApplyRequest, v1.ApplyResponse]
+	listRevisions   *connect.Client[v1.ListRevisionsRequest, v1.ListRevisionsResponse]
+	getRevision     *connect.Client[v1.GetRevisionRequest, v1.GetRevisionResponse]
+	rollback        *connect.Client[v1.RollbackRequest, v1.RollbackResponse]
+	resolveProposal *connect.Client[v1.ResolveProposalRequest, v1.ResolveProposalResponse]
+	watchConfig     *connect.Client[v1.WatchConfigRequest, v1.ConfigEvent]
 }
 
 // GetConfig calls agentruntime.v1.ConfigService.GetConfig.
@@ -192,6 +203,11 @@ func (c *configServiceClient) Rollback(ctx context.Context, req *connect.Request
 	return c.rollback.CallUnary(ctx, req)
 }
 
+// ResolveProposal calls agentruntime.v1.ConfigService.ResolveProposal.
+func (c *configServiceClient) ResolveProposal(ctx context.Context, req *connect.Request[v1.ResolveProposalRequest]) (*connect.Response[v1.ResolveProposalResponse], error) {
+	return c.resolveProposal.CallUnary(ctx, req)
+}
+
 // WatchConfig calls agentruntime.v1.ConfigService.WatchConfig.
 func (c *configServiceClient) WatchConfig(ctx context.Context, req *connect.Request[v1.WatchConfigRequest]) (*connect.ServerStreamForClient[v1.ConfigEvent], error) {
 	return c.watchConfig.CallServerStream(ctx, req)
@@ -207,6 +223,7 @@ type ConfigServiceHandler interface {
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	GetRevision(context.Context, *connect.Request[v1.GetRevisionRequest]) (*connect.Response[v1.GetRevisionResponse], error)
 	Rollback(context.Context, *connect.Request[v1.RollbackRequest]) (*connect.Response[v1.RollbackResponse], error)
+	ResolveProposal(context.Context, *connect.Request[v1.ResolveProposalRequest]) (*connect.Response[v1.ResolveProposalResponse], error)
 	WatchConfig(context.Context, *connect.Request[v1.WatchConfigRequest], *connect.ServerStream[v1.ConfigEvent]) error
 }
 
@@ -265,6 +282,12 @@ func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(configServiceMethods.ByName("Rollback")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configServiceResolveProposalHandler := connect.NewUnaryHandler(
+		ConfigServiceResolveProposalProcedure,
+		svc.ResolveProposal,
+		connect.WithSchema(configServiceMethods.ByName("ResolveProposal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configServiceWatchConfigHandler := connect.NewServerStreamHandler(
 		ConfigServiceWatchConfigProcedure,
 		svc.WatchConfig,
@@ -289,6 +312,8 @@ func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOp
 			configServiceGetRevisionHandler.ServeHTTP(w, r)
 		case ConfigServiceRollbackProcedure:
 			configServiceRollbackHandler.ServeHTTP(w, r)
+		case ConfigServiceResolveProposalProcedure:
+			configServiceResolveProposalHandler.ServeHTTP(w, r)
 		case ConfigServiceWatchConfigProcedure:
 			configServiceWatchConfigHandler.ServeHTTP(w, r)
 		default:
@@ -330,6 +355,10 @@ func (UnimplementedConfigServiceHandler) GetRevision(context.Context, *connect.R
 
 func (UnimplementedConfigServiceHandler) Rollback(context.Context, *connect.Request[v1.RollbackRequest]) (*connect.Response[v1.RollbackResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentruntime.v1.ConfigService.Rollback is not implemented"))
+}
+
+func (UnimplementedConfigServiceHandler) ResolveProposal(context.Context, *connect.Request[v1.ResolveProposalRequest]) (*connect.Response[v1.ResolveProposalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentruntime.v1.ConfigService.ResolveProposal is not implemented"))
 }
 
 func (UnimplementedConfigServiceHandler) WatchConfig(context.Context, *connect.Request[v1.WatchConfigRequest], *connect.ServerStream[v1.ConfigEvent]) error {

@@ -15,6 +15,7 @@ import (
 	"agent-runtime/internal/config"
 	"agent-runtime/internal/events"
 	iruntime "agent-runtime/internal/runtime"
+	"agent-runtime/internal/store"
 	"agent-runtime/pkg/api"
 )
 
@@ -26,6 +27,7 @@ type ProjectRuntime struct {
 	dataDir   string
 	logger    *slog.Logger
 	allocPort func(workspaceID, name string, def int) (int, error)
+	store     *store.DB
 
 	mu       sync.RWMutex
 	loadedAt time.Time
@@ -34,8 +36,13 @@ type ProjectRuntime struct {
 
 	rt       *iruntime.Runtime
 	resolved *config.Resolved
-	watcher  *config.Watcher
-	stale    map[string]bool // app -> needs restart
+	stale    map[string]bool
+}
+
+func (p *ProjectRuntime) Store() *store.DB { return p.store }
+
+func (p *ProjectRuntime) ConfigSource() config.ConfigSource {
+	return &dbConfigSource{db: p.store}
 }
 
 // Runtime returns the hosted process runtime, loading it on first use.
@@ -114,7 +121,8 @@ func startRequestFor(app string) api.StartRequest {
 
 // loadLocked resolves config and hosts a runtime.Runtime. Callers hold p.mu.
 func (p *ProjectRuntime) loadLocked() error {
-	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, nil)
+	EnsureConfig(p)
+	resolved, errs := config.Resolve(p.ConfigSource(), p.projectID, p.wsID, p.wsPath, nil)
 	if errs != nil {
 		// Invalid config: keep last good if we have one, else fail with
 		// the first validation error (file/line/col included).
@@ -133,7 +141,6 @@ func (p *ProjectRuntime) loadLocked() error {
 	if p.stale == nil {
 		p.stale = map[string]bool{}
 	}
-	p.startWatcher()
 	p.autostart()
 	// Re-resolve the hosted config so starts see expanded ports.
 	if p.rt != nil {
@@ -193,76 +200,38 @@ func (p *ProjectRuntime) autostart() {
 	}()
 }
 
-func (p *ProjectRuntime) startWatcher() {
-	ep := config.DiscoverEffective(p.dataDir, p.projectID, p.wsID, p.wsPath)
-	paths := []string{ep.Project}
-	if ep.Overlay != "" {
-		paths = append(paths, ep.Overlay)
-	}
-	w, err := config.NewWatcher(paths,
-		func(ch config.Change) { p.onValidConfig(ch) },
-		func(ch config.Change) { p.onInvalidConfig(ch) },
-	)
-	if err != nil {
-		p.logger.Warn("config watcher unavailable; hot reload disabled", "error", err)
-		return
-	}
-	p.watcher = w
-}
-
-func (p *ProjectRuntime) onValidConfig(ch config.Change) {
+func (p *ProjectRuntime) reloadFromDB() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	oldApps := map[string]config.V3App{}
 	if p.resolved != nil {
 		oldApps = p.resolved.Apps
 	}
-	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, nil)
+	resolved, errs := config.Resolve(p.ConfigSource(), p.projectID, p.wsID, p.wsPath, nil)
 	if errs != nil {
-		return // lost race with another save; watcher will fire again
+		return
 	}
-	running := map[string][]string{}
-	_ = running
-	changes := config.Plan(oldApps, resolved.Apps, running)
+	changes := config.Plan(oldApps, resolved.Apps, map[string][]string{})
 	for _, c := range changes {
-		switch c.Kind {
-		case config.ChangeRestartRequired:
-			p.stale[c.App] = true
-			if app, ok := resolved.Apps[c.App]; ok && app.Reload == "restart" {
-				// Restart is executed by the server layer where the
-				// session attribution lives; the flag here is the marker.
-				_ = app
+		if c.Kind == config.ChangeRestartRequired {
+			if p.stale == nil {
+				p.stale = map[string]bool{}
 			}
-		case config.ChangeRemoved:
-			// Running processes stay, marked orphaned-config in the UI.
+			p.stale[c.App] = true
 		}
 	}
 	p.resolved = resolved
 	p.lastUsed = time.Now()
 	p.expandPortsLocked()
-	// Hot-swap the hosted runtime's config: new starts resolve against
-	// the new revision while running processes are untouched (stale
-	// marking above tells the UI/CLI what needs a restart).
 	if p.rt != nil {
 		p.rt.ReloadConfig(resolved.ToLoaded(p.wsPath))
 	}
 }
 
-// onInvalidConfig keeps the last good revision active and records the
-// rejection for WatchConfig streams and the GUI banner.
-func (p *ProjectRuntime) onInvalidConfig(ch config.Change) {
-	p.logger.Warn("invalid config save; keeping last good revision",
-		"path", ch.Path, "errors", len(ch.Errors))
-}
-
-// shutdown stops the watcher and the hosted runtime.
+// shutdown stops the hosted runtime.
 func (p *ProjectRuntime) shutdown() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.watcher != nil {
-		_ = p.watcher.Close()
-		p.watcher = nil
-	}
 	if p.rt != nil {
 		_ = p.rt.Shutdown()
 		p.rt = nil

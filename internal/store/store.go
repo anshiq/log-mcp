@@ -10,6 +10,7 @@ package store
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -21,8 +22,7 @@ import (
 )
 
 const (
-	// schemaMigration is the current schema version.
-	schemaMigration = 1
+	schemaMigration = 2
 )
 
 // DB is the state database handle.
@@ -150,6 +150,8 @@ func migrationSQL(v int) string {
 	switch v {
 	case 1:
 		return initialSchema
+	case 2:
+		return migration2
 	default:
 		return ""
 	}
@@ -299,6 +301,30 @@ CREATE TABLE IF NOT EXISTS integrations (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `
 
+const migration2 = `
+CREATE TABLE IF NOT EXISTS project_configs (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  layer TEXT NOT NULL,
+  workspace_id TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  active_rev INTEGER,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, layer, workspace_id)
+);
+
+CREATE TABLE IF NOT EXISTS project_config_sync (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  run_signature TEXT NOT NULL DEFAULT '',
+  auto_apps_json TEXT NOT NULL DEFAULT '{}',
+  proposal_json TEXT,
+  proposal_created_at INTEGER,
+  updated_at INTEGER NOT NULL
+);
+
+DROP TABLE IF EXISTS repo_trust;
+`
+
 // BeginTx starts a transaction on the state database.
 func (d *DB) BeginTx() (*sql.Tx, error) {
 	return d.db.Begin()
@@ -349,6 +375,11 @@ func escapePath(p string) string {
 		}
 	}
 	return string(out)
+}
+
+func shaHex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum)
 }
 
 // --- Project/Workspace methods ---
@@ -1108,6 +1139,199 @@ func (d *DB) GetRevision(id int64) (*ConfigRevision, error) {
 func (d *DB) SetActiveRevision(projectID string, rev int64) error {
 	_, err := d.db.Exec("UPDATE projects SET active_rev=?, updated_at=? WHERE id=?", rev, time.Now().Unix(), projectID)
 	return err
+}
+
+type ConfigSync struct {
+	ProjectID         string
+	RunSignature      string
+	AutoAppsJSON      string
+	ProposalJSON      string
+	ProposalCreatedAt int64
+	UpdatedAt         int64
+}
+
+func (d *DB) GetConfig(projectID, layer, workspaceID string) ([]byte, int64, error) {
+	var content sql.NullString
+	var rev sql.NullInt64
+	err := d.db.QueryRow(`SELECT content, active_rev FROM project_configs WHERE project_id=? AND layer=? AND workspace_id=?`,
+		projectID, layer, workspaceID).Scan(&content, &rev)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	if !content.Valid {
+		return nil, 0, nil
+	}
+	var r int64
+	if rev.Valid {
+		r = rev.Int64
+	}
+	return []byte(content.String), r, nil
+}
+
+func (d *DB) PutConfigTx(projectID, layer, workspaceID, content, sha string, valid bool, errors, source, session, message string) (int64, error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	v := 0
+	if valid {
+		v = 1
+	}
+	now := time.Now().Unix()
+	res, err := tx.Exec(`INSERT INTO config_revisions
+		(project_id, layer, content, sha256, valid, errors_json, source, session_id, message, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		projectID, layer, content, sha, v, nullStr(errors), source, nullStr(session), nullStr(message), now)
+	if err != nil {
+		return 0, err
+	}
+	rev, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`INSERT INTO project_configs (project_id, layer, workspace_id, content, sha256, active_rev, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id, layer, workspace_id) DO UPDATE SET content=excluded.content, sha256=excluded.sha256, active_rev=excluded.active_rev, updated_at=excluded.updated_at`,
+		projectID, layer, workspaceID, content, sha, rev, now); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec("UPDATE projects SET active_rev=?, updated_at=? WHERE id=?", rev, now, projectID); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return rev, nil
+}
+
+func (d *DB) GetConfigSync(projectID string) (*ConfigSync, error) {
+	var s ConfigSync
+	var prop sql.NullString
+	var propAt sql.NullInt64
+	var autoJSON sql.NullString
+	var sig sql.NullString
+	var updated sql.NullInt64
+	err := d.db.QueryRow(`SELECT project_id, run_signature, auto_apps_json, proposal_json, proposal_created_at, updated_at FROM project_config_sync WHERE project_id=?`, projectID).Scan(
+		&s.ProjectID, &sig, &autoJSON, &prop, &propAt, &updated)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &ConfigSync{ProjectID: projectID, AutoAppsJSON: "{}"}, nil
+		}
+		return nil, err
+	}
+	s.RunSignature = sig.String
+	s.AutoAppsJSON = autoJSON.String
+	if s.AutoAppsJSON == "" {
+		s.AutoAppsJSON = "{}"
+	}
+	s.ProposalJSON = prop.String
+	if propAt.Valid {
+		s.ProposalCreatedAt = propAt.Int64
+	}
+	if updated.Valid {
+		s.UpdatedAt = updated.Int64
+	}
+	return &s, nil
+}
+
+func (d *DB) PutConfigSync(projectID, runSignature, autoAppsJSON string) error {
+	now := time.Now().Unix()
+	if autoAppsJSON == "" {
+		autoAppsJSON = "{}"
+	}
+	_, err := d.db.Exec(`INSERT INTO project_config_sync (project_id, run_signature, auto_apps_json, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET run_signature=excluded.run_signature, auto_apps_json=excluded.auto_apps_json, updated_at=excluded.updated_at`,
+		projectID, runSignature, autoAppsJSON, now)
+	return err
+}
+
+func (d *DB) SetProposal(projectID, proposalJSON string) error {
+	now := time.Now().Unix()
+	_, err := d.db.Exec(`INSERT INTO project_config_sync (project_id, run_signature, auto_apps_json, proposal_json, proposal_created_at, updated_at)
+		VALUES (?, '', '{}', ?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET proposal_json=excluded.proposal_json, proposal_created_at=excluded.proposal_created_at, updated_at=excluded.updated_at`,
+		projectID, proposalJSON, now, now)
+	return err
+}
+
+func (d *DB) ClearProposal(projectID string) error {
+	_, err := d.db.Exec(`UPDATE project_config_sync SET proposal_json=NULL, proposal_created_at=NULL, updated_at=? WHERE project_id=?`, time.Now().Unix(), projectID)
+	return err
+}
+
+func (d *DB) ImportLegacyConfigs(dataDir string) (int, error) {
+	projectsDir := filepath.Join(dataDir, "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	imported := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid := e.Name()
+		legacyFile := filepath.Join(projectsDir, pid, "agent-runtime.yaml")
+		if data, err := os.ReadFile(legacyFile); err == nil {
+			existing, _, _ := d.GetConfig(pid, "project", "")
+			if len(existing) == 0 {
+				if _, err := d.GetProject(pid); err == nil {
+					sha := shaHex(data)
+					if _, err := d.PutConfigTx(pid, "project", "", string(data), sha, true, "", "import", "", "import legacy file"); err == nil {
+						imported++
+					}
+					_ = moveToTrash(dataDir, legacyFile, filepath.Join("projects", pid, "agent-runtime.yaml"))
+				}
+			}
+		}
+		wsDir := filepath.Join(projectsDir, pid, "workspaces")
+		wsEntries, err := os.ReadDir(wsDir)
+		if err != nil {
+			continue
+		}
+		for _, we := range wsEntries {
+			if we.IsDir() {
+				continue
+			}
+			name := we.Name()
+			if len(name) < 6 || name[len(name)-5:] != ".yaml" {
+				continue
+			}
+			wsID := name[:len(name)-5]
+			full := filepath.Join(wsDir, name)
+			data, err := os.ReadFile(full)
+			if err != nil {
+				continue
+			}
+			existing, _, _ := d.GetConfig(pid, "workspace", wsID)
+			if len(existing) == 0 {
+				if _, err := d.GetProject(pid); err == nil {
+					sha := shaHex(data)
+					if _, err := d.PutConfigTx(pid, "workspace", wsID, string(data), sha, true, "", "import", "", "import legacy overlay"); err == nil {
+						imported++
+					}
+					_ = moveToTrash(dataDir, full, filepath.Join("projects", pid, "workspaces", name))
+				}
+			}
+		}
+	}
+	return imported, nil
+}
+
+func moveToTrash(dataDir, src, rel string) error {
+	dest := filepath.Join(dataDir, "trash", rel)
+	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+		return err
+	}
+	return os.Rename(src, dest)
 }
 
 // SetSetting / GetSetting persist daemon settings (SystemService).

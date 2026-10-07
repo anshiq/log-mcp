@@ -72,21 +72,6 @@ func (p *Paths) TokenPath() string {
 	return filepath.Join(p.Config, "token")
 }
 
-// ProjectDir returns the directory for a specific project's config.
-func (p *Paths) ProjectDir(projectID string) string {
-	return filepath.Join(p.Data, "projects", projectID)
-}
-
-// ProjectConfigPath returns the editable config file for a project.
-func (p *Paths) ProjectConfigPath(projectID string) string {
-	return filepath.Join(p.ProjectDir(projectID), "agent-runtime.yaml")
-}
-
-// WorkspaceOverlayPath returns the optional per-workspace overlay path.
-func (p *Paths) WorkspaceOverlayPath(projectID, workspaceID string) string {
-	return filepath.Join(p.ProjectDir(projectID), "workspaces", workspaceID+".yaml")
-}
-
 // WorkspaceDir returns the directory for a specific workspace's logs.
 func (p *Paths) WorkspaceDir(workspaceID string) string {
 	return filepath.Join(p.Data, "logs", workspaceID)

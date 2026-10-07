@@ -2,8 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -61,25 +59,14 @@ func TestPlanRestartVsLive(t *testing.T) {
 }
 
 func TestResolveLayering(t *testing.T) {
-	dir := t.TempDir()
 	ws := t.TempDir()
-	projDir := filepath.Join(dir, "projects", "proj_1")
-	if err := os.MkdirAll(projDir, 0o755); err != nil {
-		t.Fatal(err)
+	src := &MemorySource{
+		ProjectYAML: []byte("apps:\n  api:\n    command: [proj-cmd]\n"),
+		Overlays: map[string][]byte{
+			"ws_1": []byte("apps:\n  api:\n    command: [ws-cmd]\n"),
+		},
 	}
-	if err := os.WriteFile(filepath.Join(projDir, "agent-runtime.yaml"),
-		[]byte("apps:\n  api:\n    command: [proj-cmd]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	wsDir := filepath.Join(dir, "projects", "proj_1", "workspaces")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wsDir, "ws_1.yaml"),
-		[]byte("apps:\n  api:\n    command: [ws-cmd]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	res, errs := Resolve(dir, "proj_1", "ws_1", ws, nil)
+	res, errs := Resolve(src, "proj_1", "ws_1", ws, nil)
 	if len(errs) != 0 {
 		t.Fatalf("errs = %v", errs)
 	}

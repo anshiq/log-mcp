@@ -242,6 +242,13 @@ func (c *ConfigServiceClient) Rollback(ctx context.Context, projectID string, re
 	return out, err
 }
 
+func (c *ConfigServiceClient) ResolveProposal(ctx context.Context, projectID, proposalID, action string) (map[string]any, error) {
+	var out map[string]any
+	err := c.client.call(ctx, "ConfigService", "ResolveProposal",
+		map[string]any{"projectId": projectID, "proposalId": proposalID, "action": action}, &out)
+	return out, err
+}
+
 // --- Audit ---
 
 type AuditServiceClient struct {

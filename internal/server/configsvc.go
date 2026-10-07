@@ -1,19 +1,17 @@
-// ConfigService: GetConfig (raw + resolved + provenance), GetSchema,
-// Validate, Plan, Apply (optimistic concurrency), ListRevisions,
-// GetRevision, Rollback, WatchConfig (stream).
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"agent-runtime/internal/config"
+	"agent-runtime/internal/core"
+	"agent-runtime/internal/detect"
 )
 
 func (s *Server) routeConfig(mux *http.ServeMux) {
@@ -26,6 +24,7 @@ func (s *Server) routeConfig(mux *http.ServeMux) {
 	mux.HandleFunc(p+"ListRevisions", s.wrap(s.cfgRevisions))
 	mux.HandleFunc(p+"GetRevision", s.wrap(s.cfgRevision))
 	mux.HandleFunc(p+"Rollback", s.wrap(s.cfgRollback))
+	mux.HandleFunc(p+"ResolveProposal", s.wrap(s.cfgResolveProposal))
 	mux.HandleFunc(p+"WatchConfig", s.cfgWatch)
 }
 
@@ -40,6 +39,7 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	core.EnsureConfig(pr)
 	resolved := pr.ResolvedConfig()
 	if resolved == nil {
 		if _, _, err := s.engine.RuntimeFor(wsID); err != nil {
@@ -49,6 +49,7 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	apps := map[string]any{}
 	prov := map[string]any{}
+	autoApps := []string{}
 	if resolved != nil {
 		for name, app := range resolved.Apps {
 			apps[name] = app
@@ -56,41 +57,82 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 		for k, v := range resolved.Provenance {
 			prov[k] = string(v)
 		}
+		autoApps = s.autoOwned(pr.ProjectID(), resolved.Apps)
 	}
-	// Raw layers for the editor.
 	raw := map[string]any{}
-	ep := config.DiscoverEffective(s.engine.DataDir(), pr.ProjectID(), wsID, pr.WorkspacePath())
-	if data, err := os.ReadFile(ep.Project); err == nil {
-		raw["project"] = string(data)
+	projData, projRev, _ := s.engine.Store().GetConfig(pr.ProjectID(), "project", "")
+	if len(projData) > 0 {
+		raw["project"] = string(projData)
 	}
-	if ep.Overlay != "" {
-		if data, err := os.ReadFile(ep.Overlay); err == nil {
-			raw["workspace"] = string(data)
-		}
+	wsData, _, _ := s.engine.Store().GetConfig(pr.ProjectID(), "workspace", wsID)
+	if len(wsData) > 0 {
+		raw["workspace"] = string(wsData)
 	}
 	var latestRevision int64
 	if revs, err := s.engine.Store().ListRevisions(pr.ProjectID(), "project", 1); err == nil && len(revs) > 0 {
 		latestRevision = revs[0].ID
 	}
-	layers := []any{
-		map[string]any{"name": "project", "path": ep.Project, "exists": fileExists(ep.Project), "writable": true},
-		map[string]any{"name": "workspace", "path": ep.Overlay, "exists": fileExists(ep.Overlay), "writable": true},
+	if projRev != 0 {
+		latestRevision = projRev
 	}
+	layers := []any{
+		map[string]any{"name": "project", "path": "", "exists": len(projData) > 0, "writable": true},
+		map[string]any{"name": "workspace", "path": "", "exists": len(wsData) > 0, "writable": true},
+	}
+	pending := s.pendingProposal(pr.ProjectID())
 	return map[string]any{
 		"projectId": pr.ProjectID(), "workspaceId": wsID,
-		"apps": apps, "provenance": prov, "raw": raw,
-		"configPath": ep.Project, "overlayPath": ep.Overlay,
-		"warnings": resolvedWarnings(resolved),
-		"revision": latestRevision, "layers": layers,
+		"apps": apps, "provenance": prov, "autoApps": autoApps, "raw": raw,
+		"configSource": "db", "configRevision": latestRevision, "revision": latestRevision, "layers": layers,
+		"pendingProposal": pending,
+		"warnings":        resolvedWarnings(resolved),
 	}, nil
 }
 
-func fileExists(p string) bool {
-	if p == "" {
-		return false
+func (s *Server) autoOwned(projectID string, apps map[string]config.V3App) []string {
+	syncRow, err := s.engine.Store().GetConfigSync(projectID)
+	if err != nil || syncRow.AutoAppsJSON == "" {
+		return []string{}
 	}
-	_, err := os.Stat(p)
-	return err == nil
+	var m map[string]string
+	if err := json.Unmarshal([]byte(syncRow.AutoAppsJSON), &m); err != nil {
+		return []string{}
+	}
+	var out []string
+	for name, app := range apps {
+		h, ok := m[name]
+		if !ok {
+			continue
+		}
+		norm := config.V3App{}
+		norm.Type = app.Type
+		norm.WorkDir = app.WorkDir
+		if norm.WorkDir == "." {
+			norm.WorkDir = ""
+		}
+		norm.Command = append([]string(nil), app.Command...)
+		norm.Readiness = append([]string(nil), app.Readiness...)
+		b, err := yaml.Marshal(norm)
+		if err != nil {
+			continue
+		}
+		if config.SHA256(b) == h {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func (s *Server) pendingProposal(projectID string) any {
+	syncRow, err := s.engine.Store().GetConfigSync(projectID)
+	if err != nil || syncRow == nil || syncRow.ProposalJSON == "" {
+		return nil
+	}
+	var prop map[string]any
+	if err := json.Unmarshal([]byte(syncRow.ProposalJSON), &prop); err != nil {
+		return nil
+	}
+	return prop
 }
 
 func resolvedWarnings(resolved *config.Resolved) []string {
@@ -157,6 +199,7 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	core.EnsureConfig(pr)
 	oldApps := map[string]config.V3App{}
 	if res := pr.ResolvedConfig(); res != nil {
 		oldApps = res.Apps
@@ -165,16 +208,8 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 	if errs != nil {
 		return map[string]any{"errors": validationJSON(errs)}, nil
 	}
-	// Running processes per app for affected_process_ids.
 	running := map[string][]string{}
 	if _, rt, err := s.engine.RuntimeFor(wsID); err == nil {
-		if l, err := rt.List(); err == nil {
-			for _, p := range l.Processes {
-				// Match by command prefix is best-effort; exact app
-				// attribution lands with store process rows.
-				_ = p
-			}
-		}
 		if rows, err := s.engine.Store().ListProcesses(wsID); err == nil {
 			for _, row := range rows {
 				if row.App != "" {
@@ -182,6 +217,7 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 				}
 			}
 		}
+		_ = rt
 	}
 	changes := config.Plan(oldApps, newCfg.Apps, running)
 	var latestRevision int64
@@ -190,8 +226,7 @@ func (s *Server) cfgPlan(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	stale := req.BaseRevision != 0 && latestRevision != 0 && req.BaseRevision != latestRevision
 	oldYAML := ""
-	ep := config.DiscoverEffective(s.engine.DataDir(), pr.ProjectID(), wsID, pr.WorkspacePath())
-	if data, err := os.ReadFile(ep.Project); err == nil {
+	if data, _, _ := s.engine.Store().GetConfig(pr.ProjectID(), "project", ""); len(data) > 0 {
 		oldYAML = string(data)
 	}
 	return map[string]any{"changes": changes, "latestRevision": latestRevision, "stale": stale, "diff": unifiedDiff(oldYAML, req.YAML)}, nil
@@ -269,89 +304,23 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 	if layer == "" {
 		layer = "project"
 	}
-	// Optimistic concurrency: base_revision must match the latest known
-	// revision for this layer.
+	if layer != "project" && layer != "workspace" {
+		return nil, fmt.Errorf("unknown layer %q (want project|workspace)", req.Layer)
+	}
+	if layer == "workspace" && req.WorkspaceID == "" {
+		return nil, fmt.Errorf("workspaceId required for layer=workspace")
+	}
 	revs, _ := s.engine.Store().ListRevisions(req.ProjectID, layer, 1)
 	if len(revs) > 0 && req.BaseRevision != 0 && revs[0].ID != req.BaseRevision {
 		return nil, fmt.Errorf("%w: base %d, latest %d", ErrStaleRevision, req.BaseRevision, revs[0].ID)
-	}
-	var target string
-	switch layer {
-	case "project":
-		target = filepath.Join(s.engine.DataDir(), "projects", req.ProjectID, "agent-runtime.yaml")
-	case "workspace":
-		if req.WorkspaceID == "" {
-			return nil, fmt.Errorf("workspaceId required for layer=workspace")
-		}
-		target = filepath.Join(s.engine.DataDir(), "projects", req.ProjectID, "workspaces", req.WorkspaceID+".yaml")
-	default:
-		return nil, fmt.Errorf("unknown layer %q (want project|workspace)", req.Layer)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return nil, err
-	}
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, []byte(req.YAML), 0o600); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(tmp, target); err != nil {
-		return nil, err
 	}
 	sess, _ := s.sessionOf(r)
 	if req.SessionID != "" {
 		sess = req.SessionID
 	}
-	rev, err := s.engine.Store().AddRevision(req.ProjectID, layer, req.YAML,
-		config.SHA256([]byte(req.YAML)), true, "", "api", sess, req.Message)
+	rev, restarted, err := s.engine.ApplyProjectYAML(req.ProjectID, layer, req.WorkspaceID, req.YAML, "api", sess, req.Message, req.RestartAffected)
 	if err != nil {
 		return nil, err
-	}
-	_ = s.engine.Store().SetActiveRevision(req.ProjectID, rev)
-	// Synchronously reload every loaded workspace of this project so the
-	// next Start sees the new revision without waiting for the ~300ms
-	// file-watcher debounce (the watcher still reconciles stale flags).
-	var restarted []string
-	for _, ws := range mustWorkspacesByProject(s, req.ProjectID) {
-		pr, err := s.engine.GetOrCreateRuntime(ws)
-		if err != nil {
-			continue
-		}
-		oldApps := map[string]config.V3App{}
-		if res := pr.ResolvedConfig(); res != nil {
-			oldApps = res.Apps
-		}
-		res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), nil)
-		if errs != nil {
-			continue
-		}
-		rt, err := pr.Runtime()
-		if err != nil {
-			continue
-		}
-		rt.ReloadConfig(res.ToLoaded(pr.WorkspacePath()))
-		if !req.RestartAffected {
-			continue
-		}
-		running := map[string][]string{}
-		if rows, err := s.engine.Store().ListProcesses(ws); err == nil {
-			for _, row := range rows {
-				if row.App != "" {
-					running[row.App] = append(running[row.App], row.ID)
-				}
-			}
-		}
-		for _, change := range config.Plan(oldApps, res.Apps, running) {
-			if change.Kind != config.ChangeRestartRequired {
-				continue
-			}
-			for _, pid := range change.AffectedProcIDs {
-				ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-				if err := rt.Restart(ctx, pid); err == nil {
-					restarted = append(restarted, pid)
-				}
-				cancel()
-			}
-		}
 	}
 	return map[string]any{"applied": true, "revision": rev, "restarted": restarted}, nil
 }
@@ -395,9 +364,11 @@ func (s *Server) cfgRevision(w http.ResponseWriter, r *http.Request) (any, error
 
 func (s *Server) cfgRollback(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
-		ProjectID string `json:"projectId"`
-		Revision  int64  `json:"revision"`
-		Message   string `json:"message"`
+		ProjectID    string `json:"projectId"`
+		WorkspaceID  string `json:"workspaceId"`
+		Revision     int64  `json:"revision"`
+		BaseRevision int64  `json:"baseRevision"`
+		Message      string `json:"message"`
 	}
 	_ = decode(r, &req)
 	rev, err := s.engine.Store().GetRevision(req.Revision)
@@ -407,21 +378,86 @@ func (s *Server) cfgRollback(w http.ResponseWriter, r *http.Request) (any, error
 	if rev.ProjectID != req.ProjectID {
 		return nil, fmt.Errorf("revision %d belongs to another project", req.Revision)
 	}
-	target := filepath.Join(s.engine.DataDir(), "projects", req.ProjectID, "agent-runtime.yaml")
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return nil, err
+	layer := rev.Layer
+	if layer == "" {
+		layer = "project"
 	}
-	if err := os.WriteFile(target, []byte(rev.Content), 0o600); err != nil {
-		return nil, err
+	wsID := req.WorkspaceID
+	if layer == "workspace" && wsID == "" {
+		wss, _ := s.engine.Store().ListWorkspaces(req.ProjectID)
+		if len(wss) > 0 {
+			wsID = wss[0].ID
+		} else {
+			return nil, fmt.Errorf("workspaceId required for layer=workspace")
+		}
+	}
+	revs, _ := s.engine.Store().ListRevisions(req.ProjectID, layer, 1)
+	if len(revs) > 0 && req.BaseRevision != 0 && revs[0].ID != req.BaseRevision {
+		return nil, fmt.Errorf("%w: base %d, latest %d", ErrStaleRevision, req.BaseRevision, revs[0].ID)
 	}
 	sess, _ := s.sessionOf(r)
-	newRev, err := s.engine.Store().AddRevision(req.ProjectID, rev.Layer, rev.Content,
-		rev.SHA256, true, "", "rollback", sess, req.Message)
+	newRev, restarted, err := s.engine.ApplyProjectYAML(req.ProjectID, layer, wsID, rev.Content, "rollback", sess, req.Message, false)
 	if err != nil {
 		return nil, err
 	}
-	_ = s.engine.Store().SetActiveRevision(req.ProjectID, newRev)
+	_ = restarted
 	return map[string]any{"applied": true, "revision": newRev}, nil
+}
+
+func (s *Server) cfgResolveProposal(w http.ResponseWriter, r *http.Request) (any, error) {
+	var req struct {
+		ProjectID  string `json:"projectId"`
+		ProposalID string `json:"proposalId"`
+		Action     string `json:"action"`
+		Message    string `json:"message"`
+	}
+	_ = decode(r, &req)
+	if req.ProjectID == "" || req.Action == "" {
+		return nil, fmt.Errorf("projectId and action required")
+	}
+	if req.Action != "approve" && req.Action != "dismiss" {
+		return nil, fmt.Errorf("unknown action %q (want approve|dismiss)", req.Action)
+	}
+	syncRow, err := s.engine.Store().GetConfigSync(req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if syncRow.ProposalJSON == "" {
+		return nil, fmt.Errorf("no pending proposal for project %q", req.ProjectID)
+	}
+	var prop struct {
+		ID   string `json:"id"`
+		YAML string `json:"yaml"`
+	}
+	if err := json.Unmarshal([]byte(syncRow.ProposalJSON), &prop); err != nil {
+		return nil, err
+	}
+	if req.ProposalID != "" && prop.ID != req.ProposalID {
+		return nil, fmt.Errorf("proposal %q no longer current", req.ProposalID)
+	}
+	sess, _ := s.sessionOf(r)
+	if req.Action == "dismiss" {
+		_ = s.engine.Store().ClearProposal(req.ProjectID)
+		wss, _ := s.engine.Store().ListWorkspaces(req.ProjectID)
+		sig := ""
+		if len(wss) > 0 {
+			if pr, err := s.engine.GetOrCreateRuntime(wss[0].ID); err == nil {
+				sig = detect.Signature(pr.WorkspacePath())
+			}
+		}
+		autoJSON := syncRow.AutoAppsJSON
+		if autoJSON == "" {
+			autoJSON = "{}"
+		}
+		_ = s.engine.Store().PutConfigSync(req.ProjectID, sig, autoJSON)
+		return map[string]any{"dismissed": true, "proposalId": prop.ID}, nil
+	}
+	rev, restarted, err := s.engine.ApplyProjectYAML(req.ProjectID, "project", "", prop.YAML, "proposal", sess, req.Message, false)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.engine.Store().ClearProposal(req.ProjectID)
+	return map[string]any{"applied": true, "revision": rev, "restarted": restarted, "proposalId": prop.ID}, nil
 }
 
 func (s *Server) cfgWatch(w http.ResponseWriter, r *http.Request) {

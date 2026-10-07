@@ -15,6 +15,7 @@ service ConfigService {
   rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
   rpc GetRevision(GetRevisionRequest) returns (GetRevisionResponse);
   rpc Rollback(RollbackRequest) returns (RollbackResponse);
+  rpc ResolveProposal(ResolveProposalRequest) returns (ResolveProposalResponse);
   rpc WatchConfig(WatchConfigRequest) returns (stream ConfigEvent);
 }
 
@@ -108,6 +109,29 @@ message RollbackRequest {
   int32 revision = 2;
 }
 message RollbackResponse {}
+
+message ResolveProposalRequest {
+  string project_id = 1;
+  string proposal_id = 2;
+  string action = 3;
+  string message = 4;
+}
+message ResolveProposalResponse {
+  bool applied = 1;
+  int32 revision = 2;
+}
+
+message ProposalItem {
+  string app = 1;
+  string action = 2;
+  string reason = 3;
+}
+message PendingProposal {
+  string id = 1;
+  string yaml = 2;
+  repeated ProposalItem summary = 3;
+  int64 created_at = 4;
+}
 
 message WatchConfigRequest {
   string workspace_id = 1;

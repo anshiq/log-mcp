@@ -103,7 +103,7 @@ func TestWorkspaceRoot(t *testing.T) {
 			t.Errorf("WorkspaceRoot(sub) = %q want %q", got, dir)
 		}
 	}
-	// Legacy yaml pins the root.
+	// Legacy yaml no longer pins the root; git toplevel wins.
 	yamlDir := filepath.Join(dir, "legacy")
 	if err := os.MkdirAll(yamlDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -111,12 +111,10 @@ func TestWorkspaceRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(yamlDir, "agent-runtime.yaml"), []byte("version: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := WorkspaceRoot(filepath.Join(yamlDir, "sub")); got != yamlDir {
-		// sub doesn't exist; EvalSymlinks falls back — accept dir itself
-		_ = got
-	}
-	if got := WorkspaceRoot(yamlDir); got != yamlDir {
-		t.Errorf("WorkspaceRoot(yaml) = %q want %q", got, yamlDir)
+	if _, err := exec.LookPath("git"); err == nil {
+		if got := WorkspaceRoot(yamlDir); got != dir {
+			t.Errorf("WorkspaceRoot(yaml) = %q want git top %q", got, dir)
+		}
 	}
 	t.Setenv("AGENT_RUNTIME_PROJECT", dir)
 	if got := WorkspaceRoot(sub); got != dir {

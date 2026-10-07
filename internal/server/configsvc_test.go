@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -72,10 +70,9 @@ func TestConfigApply_WorkspaceLayerWritesOverlay(t *testing.T) {
 		t.Fatalf("apply not applied: %v", applied)
 	}
 
-	overlay := filepath.Join(eng.DataDir(), "projects", res.ProjectID, "workspaces", res.WorkspaceID+".yaml")
-	data, err := os.ReadFile(overlay)
+	data, _, err := eng.Store().GetConfig(res.ProjectID, "workspace", res.WorkspaceID)
 	if err != nil {
-		t.Fatalf("overlay file not written: %v", err)
+		t.Fatalf("overlay not in db: %v", err)
 	}
 	if !strings.Contains(string(data), "worker") {
 		t.Fatalf("overlay content = %q", data)

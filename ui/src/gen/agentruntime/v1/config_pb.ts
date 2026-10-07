@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file agentruntime/v1/config.proto.
  */
 export const file_agentruntime_v1_config: GenFile = /*@__PURE__*/
-  fileDesc("ChxhZ2VudHJ1bnRpbWUvdjEvY29uZmlnLnByb3RvEg9hZ2VudHJ1bnRpbWUudjEiNwoQR2V0Q29uZmlnUmVxdWVzdBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDQoFbGF5ZXIYAiABKAkitwEKEUdldENvbmZpZ1Jlc3BvbnNlEhAKCHJhd195YW1sGAEgASgMEhUKDXJlc29sdmVkX3lhbWwYAiABKAwSRgoKcHJvdmVuYW5jZRgDIAMoCzIyLmFnZW50cnVudGltZS52MS5HZXRDb25maWdSZXNwb25zZS5Qcm92ZW5hbmNlRW50cnkaMQoPUHJvdmVuYW5jZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiEgoQR2V0U2NoZW1hUmVxdWVzdCIoChFHZXRTY2hlbWFSZXNwb25zZRITCgtqc29uX3NjaGVtYRgBIAEoDCI1Cg9WYWxpZGF0ZVJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEgwKBHlhbWwYAiABKAwiMQoQVmFsaWRhdGVSZXNwb25zZRINCgV2YWxpZBgBIAEoCBIOCgZlcnJvcnMYAiADKAkiSAoLUGxhblJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEgwKBHlhbWwYAiABKAwSFQoNYmFzZV9yZXZpc2lvbhgDIAEoBSKgAQoMUGxhblJlc3BvbnNlEjIKDHJlc3RhcnRfYXBwcxgBIAMoCzIcLmFnZW50cnVudGltZS52MS5SZXN0YXJ0UGxhbhIsCglsaXZlX2FwcHMYAiADKAsyGS5hZ2VudHJ1bnRpbWUudjEuTGl2ZVBsYW4SLgoKc3RhbGVfYXBwcxgDIAMoCzIaLmFnZW50cnVudGltZS52MS5TdGFsZVBsYW4iGgoLUmVzdGFydFBsYW4SCwoDYXBwGAEgASgJIhcKCExpdmVQbGFuEgsKA2FwcBgBIAEoCSIYCglTdGFsZVBsYW4SCwoDYXBwGAEgASgJIloKDEFwcGx5UmVxdWVzdBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDAoEeWFtbBgCIAEoDBIVCg1iYXNlX3JldmlzaW9uGAMgASgFEg8KB21lc3NhZ2UYBCABKAkiWQoNQXBwbHlSZXNwb25zZRIUCgxuZXdfcmV2aXNpb24YASABKAUSMgoMcmVzdGFydF9hcHBzGAIgAygLMhwuYWdlbnRydW50aW1lLnYxLlJlc3RhcnRQbGFuIlsKFExpc3RSZXZpc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSLwoKcGFnaW5hdGlvbhgCIAEoCzIbLmFnZW50cnVudGltZS52MS5QYWdpbmF0aW9uIn0KFUxpc3RSZXZpc2lvbnNSZXNwb25zZRIyCglyZXZpc2lvbnMYASADKAsyHy5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnUmV2aXNpb24SMAoPbmV4dF9wYWdlX3Rva2VuGAIgASgLMhcuYWdlbnRydW50aW1lLnYxLkN1cnNvciKTAQoOQ29uZmlnUmV2aXNpb24SCgoCaWQYASABKAUSDQoFbGF5ZXIYAiABKAkSDgoGc2hhMjU2GAMgASgJEg0KBXZhbGlkGAQgASgIEg4KBnNvdXJjZRgFIAEoCRISCgpzZXNzaW9uX2lkGAYgASgJEg8KB21lc3NhZ2UYByABKAkSEgoKY3JlYXRlZF9hdBgIIAEoAyI0ChJHZXRSZXZpc2lvblJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIKCgJpZBgCIAEoBSJZChNHZXRSZXZpc2lvblJlc3BvbnNlEjEKCHJldmlzaW9uGAEgASgLMh8uYWdlbnRydW50aW1lLnYxLkNvbmZpZ1JldmlzaW9uEg8KB2NvbnRlbnQYAiABKAwiNwoPUm9sbGJhY2tSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAUiEgoQUm9sbGJhY2tSZXNwb25zZSJTChJXYXRjaENvbmZpZ1JlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEicKBmN1cnNvchgCIAEoCzIXLmFnZW50cnVudGltZS52MS5DdXJzb3Ii3wEKC0NvbmZpZ0V2ZW50EjEKB2NoYW5nZWQYASABKAsyHi5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnQ2hhbmdlZEgAEjEKB2ludmFsaWQYAiABKAsyHi5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnSW52YWxpZEgAEjgKC3JvbGxlZF9iYWNrGAMgASgLMiEuYWdlbnRydW50aW1lLnYxLkNvbmZpZ1JvbGxlZEJhY2tIABInCgZjdXJzb3IYBCABKAsyFy5hZ2VudHJ1bnRpbWUudjEuQ3Vyc29yQgcKBWV2ZW50Ii4KDUNvbmZpZ0NoYW5nZWQSDQoFbGF5ZXIYASABKAkSDgoGc2hhMjU2GAIgASgJIi4KDUNvbmZpZ0ludmFsaWQSDQoFbGF5ZXIYASABKAkSDgoGZXJyb3JzGAIgASgJIiQKEENvbmZpZ1JvbGxlZEJhY2sSEAoIcmV2aXNpb24YASABKAUy9AUKDUNvbmZpZ1NlcnZpY2USUgoJR2V0Q29uZmlnEiEuYWdlbnRydW50aW1lLnYxLkdldENvbmZpZ1JlcXVlc3QaIi5hZ2VudHJ1bnRpbWUudjEuR2V0Q29uZmlnUmVzcG9uc2USUgoJR2V0U2NoZW1hEiEuYWdlbnRydW50aW1lLnYxLkdldFNjaGVtYVJlcXVlc3QaIi5hZ2VudHJ1bnRpbWUudjEuR2V0U2NoZW1hUmVzcG9uc2USTwoIVmFsaWRhdGUSIC5hZ2VudHJ1bnRpbWUudjEuVmFsaWRhdGVSZXF1ZXN0GiEuYWdlbnRydW50aW1lLnYxLlZhbGlkYXRlUmVzcG9uc2USQwoEUGxhbhIcLmFnZW50cnVudGltZS52MS5QbGFuUmVxdWVzdBodLmFnZW50cnVudGltZS52MS5QbGFuUmVzcG9uc2USRgoFQXBwbHkSHS5hZ2VudHJ1bnRpbWUudjEuQXBwbHlSZXF1ZXN0Gh4uYWdlbnRydW50aW1lLnYxLkFwcGx5UmVzcG9uc2USXgoNTGlzdFJldmlzaW9ucxIlLmFnZW50cnVudGltZS52MS5MaXN0UmV2aXNpb25zUmVxdWVzdBomLmFnZW50cnVudGltZS52MS5MaXN0UmV2aXNpb25zUmVzcG9uc2USWAoLR2V0UmV2aXNpb24SIy5hZ2VudHJ1bnRpbWUudjEuR2V0UmV2aXNpb25SZXF1ZXN0GiQuYWdlbnRydW50aW1lLnYxLkdldFJldmlzaW9uUmVzcG9uc2USTwoIUm9sbGJhY2sSIC5hZ2VudHJ1bnRpbWUudjEuUm9sbGJhY2tSZXF1ZXN0GiEuYWdlbnRydW50aW1lLnYxLlJvbGxiYWNrUmVzcG9uc2USUgoLV2F0Y2hDb25maWcSIy5hZ2VudHJ1bnRpbWUudjEuV2F0Y2hDb25maWdSZXF1ZXN0GhwuYWdlbnRydW50aW1lLnYxLkNvbmZpZ0V2ZW50MAFCMlowYWdlbnQtcnVudGltZS9nZW4vYWdlbnRydW50aW1lL3YxO2FnZW50cnVudGltZXYxYgZwcm90bzM", [file_agentruntime_v1_common]);
+  fileDesc("ChxhZ2VudHJ1bnRpbWUvdjEvY29uZmlnLnByb3RvEg9hZ2VudHJ1bnRpbWUudjEiNwoQR2V0Q29uZmlnUmVxdWVzdBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDQoFbGF5ZXIYAiABKAkitwEKEUdldENvbmZpZ1Jlc3BvbnNlEhAKCHJhd195YW1sGAEgASgMEhUKDXJlc29sdmVkX3lhbWwYAiABKAwSRgoKcHJvdmVuYW5jZRgDIAMoCzIyLmFnZW50cnVudGltZS52MS5HZXRDb25maWdSZXNwb25zZS5Qcm92ZW5hbmNlRW50cnkaMQoPUHJvdmVuYW5jZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiEgoQR2V0U2NoZW1hUmVxdWVzdCIoChFHZXRTY2hlbWFSZXNwb25zZRITCgtqc29uX3NjaGVtYRgBIAEoDCI1Cg9WYWxpZGF0ZVJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEgwKBHlhbWwYAiABKAwiMQoQVmFsaWRhdGVSZXNwb25zZRINCgV2YWxpZBgBIAEoCBIOCgZlcnJvcnMYAiADKAkiSAoLUGxhblJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEgwKBHlhbWwYAiABKAwSFQoNYmFzZV9yZXZpc2lvbhgDIAEoBSKgAQoMUGxhblJlc3BvbnNlEjIKDHJlc3RhcnRfYXBwcxgBIAMoCzIcLmFnZW50cnVudGltZS52MS5SZXN0YXJ0UGxhbhIsCglsaXZlX2FwcHMYAiADKAsyGS5hZ2VudHJ1bnRpbWUudjEuTGl2ZVBsYW4SLgoKc3RhbGVfYXBwcxgDIAMoCzIaLmFnZW50cnVudGltZS52MS5TdGFsZVBsYW4iGgoLUmVzdGFydFBsYW4SCwoDYXBwGAEgASgJIhcKCExpdmVQbGFuEgsKA2FwcBgBIAEoCSIYCglTdGFsZVBsYW4SCwoDYXBwGAEgASgJIloKDEFwcGx5UmVxdWVzdBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDAoEeWFtbBgCIAEoDBIVCg1iYXNlX3JldmlzaW9uGAMgASgFEg8KB21lc3NhZ2UYBCABKAkiWQoNQXBwbHlSZXNwb25zZRIUCgxuZXdfcmV2aXNpb24YASABKAUSMgoMcmVzdGFydF9hcHBzGAIgAygLMhwuYWdlbnRydW50aW1lLnYxLlJlc3RhcnRQbGFuIlsKFExpc3RSZXZpc2lvbnNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSLwoKcGFnaW5hdGlvbhgCIAEoCzIbLmFnZW50cnVudGltZS52MS5QYWdpbmF0aW9uIn0KFUxpc3RSZXZpc2lvbnNSZXNwb25zZRIyCglyZXZpc2lvbnMYASADKAsyHy5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnUmV2aXNpb24SMAoPbmV4dF9wYWdlX3Rva2VuGAIgASgLMhcuYWdlbnRydW50aW1lLnYxLkN1cnNvciKTAQoOQ29uZmlnUmV2aXNpb24SCgoCaWQYASABKAUSDQoFbGF5ZXIYAiABKAkSDgoGc2hhMjU2GAMgASgJEg0KBXZhbGlkGAQgASgIEg4KBnNvdXJjZRgFIAEoCRISCgpzZXNzaW9uX2lkGAYgASgJEg8KB21lc3NhZ2UYByABKAkSEgoKY3JlYXRlZF9hdBgIIAEoAyI0ChJHZXRSZXZpc2lvblJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIKCgJpZBgCIAEoBSJZChNHZXRSZXZpc2lvblJlc3BvbnNlEjEKCHJldmlzaW9uGAEgASgLMh8uYWdlbnRydW50aW1lLnYxLkNvbmZpZ1JldmlzaW9uEg8KB2NvbnRlbnQYAiABKAwiNwoPUm9sbGJhY2tSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAUiEgoQUm9sbGJhY2tSZXNwb25zZSJiChZSZXNvbHZlUHJvcG9zYWxSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEwoLcHJvcG9zYWxfaWQYAiABKAkSDgoGYWN0aW9uGAMgASgJEg8KB21lc3NhZ2UYBCABKAkiPAoXUmVzb2x2ZVByb3Bvc2FsUmVzcG9uc2USDwoHYXBwbGllZBgBIAEoCBIQCghyZXZpc2lvbhgCIAEoBSI7CgxQcm9wb3NhbEl0ZW0SCwoDYXBwGAEgASgJEg4KBmFjdGlvbhgCIAEoCRIOCgZyZWFzb24YAyABKAkibwoPUGVuZGluZ1Byb3Bvc2FsEgoKAmlkGAEgASgJEgwKBHlhbWwYAiABKAkSLgoHc3VtbWFyeRgDIAMoCzIdLmFnZW50cnVudGltZS52MS5Qcm9wb3NhbEl0ZW0SEgoKY3JlYXRlZF9hdBgEIAEoAyJTChJXYXRjaENvbmZpZ1JlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEicKBmN1cnNvchgCIAEoCzIXLmFnZW50cnVudGltZS52MS5DdXJzb3Ii3wEKC0NvbmZpZ0V2ZW50EjEKB2NoYW5nZWQYASABKAsyHi5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnQ2hhbmdlZEgAEjEKB2ludmFsaWQYAiABKAsyHi5hZ2VudHJ1bnRpbWUudjEuQ29uZmlnSW52YWxpZEgAEjgKC3JvbGxlZF9iYWNrGAMgASgLMiEuYWdlbnRydW50aW1lLnYxLkNvbmZpZ1JvbGxlZEJhY2tIABInCgZjdXJzb3IYBCABKAsyFy5hZ2VudHJ1bnRpbWUudjEuQ3Vyc29yQgcKBWV2ZW50Ii4KDUNvbmZpZ0NoYW5nZWQSDQoFbGF5ZXIYASABKAkSDgoGc2hhMjU2GAIgASgJIi4KDUNvbmZpZ0ludmFsaWQSDQoFbGF5ZXIYASABKAkSDgoGZXJyb3JzGAIgASgJIiQKEENvbmZpZ1JvbGxlZEJhY2sSEAoIcmV2aXNpb24YASABKAUy2gYKDUNvbmZpZ1NlcnZpY2USUgoJR2V0Q29uZmlnEiEuYWdlbnRydW50aW1lLnYxLkdldENvbmZpZ1JlcXVlc3QaIi5hZ2VudHJ1bnRpbWUudjEuR2V0Q29uZmlnUmVzcG9uc2USUgoJR2V0U2NoZW1hEiEuYWdlbnRydW50aW1lLnYxLkdldFNjaGVtYVJlcXVlc3QaIi5hZ2VudHJ1bnRpbWUudjEuR2V0U2NoZW1hUmVzcG9uc2USTwoIVmFsaWRhdGUSIC5hZ2VudHJ1bnRpbWUudjEuVmFsaWRhdGVSZXF1ZXN0GiEuYWdlbnRydW50aW1lLnYxLlZhbGlkYXRlUmVzcG9uc2USQwoEUGxhbhIcLmFnZW50cnVudGltZS52MS5QbGFuUmVxdWVzdBodLmFnZW50cnVudGltZS52MS5QbGFuUmVzcG9uc2USRgoFQXBwbHkSHS5hZ2VudHJ1bnRpbWUudjEuQXBwbHlSZXF1ZXN0Gh4uYWdlbnRydW50aW1lLnYxLkFwcGx5UmVzcG9uc2USXgoNTGlzdFJldmlzaW9ucxIlLmFnZW50cnVudGltZS52MS5MaXN0UmV2aXNpb25zUmVxdWVzdBomLmFnZW50cnVudGltZS52MS5MaXN0UmV2aXNpb25zUmVzcG9uc2USWAoLR2V0UmV2aXNpb24SIy5hZ2VudHJ1bnRpbWUudjEuR2V0UmV2aXNpb25SZXF1ZXN0GiQuYWdlbnRydW50aW1lLnYxLkdldFJldmlzaW9uUmVzcG9uc2USTwoIUm9sbGJhY2sSIC5hZ2VudHJ1bnRpbWUudjEuUm9sbGJhY2tSZXF1ZXN0GiEuYWdlbnRydW50aW1lLnYxLlJvbGxiYWNrUmVzcG9uc2USZAoPUmVzb2x2ZVByb3Bvc2FsEicuYWdlbnRydW50aW1lLnYxLlJlc29sdmVQcm9wb3NhbFJlcXVlc3QaKC5hZ2VudHJ1bnRpbWUudjEuUmVzb2x2ZVByb3Bvc2FsUmVzcG9uc2USUgoLV2F0Y2hDb25maWcSIy5hZ2VudHJ1bnRpbWUudjEuV2F0Y2hDb25maWdSZXF1ZXN0GhwuYWdlbnRydW50aW1lLnYxLkNvbmZpZ0V2ZW50MAFCMlowYWdlbnQtcnVudGltZS9nZW4vYWdlbnRydW50aW1lL3YxO2FnZW50cnVudGltZXYxYgZwcm90bzM", [file_agentruntime_v1_common]);
 
 /**
  * @generated from message agentruntime.v1.GetConfigRequest
@@ -476,6 +476,119 @@ export const RollbackResponseSchema: GenMessage<RollbackResponse> = /*@__PURE__*
   messageDesc(file_agentruntime_v1_config, 19);
 
 /**
+ * @generated from message agentruntime.v1.ResolveProposalRequest
+ */
+export type ResolveProposalRequest = Message<"agentruntime.v1.ResolveProposalRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string proposal_id = 2;
+   */
+  proposalId: string;
+
+  /**
+   * @generated from field: string action = 3;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message agentruntime.v1.ResolveProposalRequest.
+ * Use `create(ResolveProposalRequestSchema)` to create a new message.
+ */
+export const ResolveProposalRequestSchema: GenMessage<ResolveProposalRequest> = /*@__PURE__*/
+  messageDesc(file_agentruntime_v1_config, 20);
+
+/**
+ * @generated from message agentruntime.v1.ResolveProposalResponse
+ */
+export type ResolveProposalResponse = Message<"agentruntime.v1.ResolveProposalResponse"> & {
+  /**
+   * @generated from field: bool applied = 1;
+   */
+  applied: boolean;
+
+  /**
+   * @generated from field: int32 revision = 2;
+   */
+  revision: number;
+};
+
+/**
+ * Describes the message agentruntime.v1.ResolveProposalResponse.
+ * Use `create(ResolveProposalResponseSchema)` to create a new message.
+ */
+export const ResolveProposalResponseSchema: GenMessage<ResolveProposalResponse> = /*@__PURE__*/
+  messageDesc(file_agentruntime_v1_config, 21);
+
+/**
+ * @generated from message agentruntime.v1.ProposalItem
+ */
+export type ProposalItem = Message<"agentruntime.v1.ProposalItem"> & {
+  /**
+   * @generated from field: string app = 1;
+   */
+  app: string;
+
+  /**
+   * @generated from field: string action = 2;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message agentruntime.v1.ProposalItem.
+ * Use `create(ProposalItemSchema)` to create a new message.
+ */
+export const ProposalItemSchema: GenMessage<ProposalItem> = /*@__PURE__*/
+  messageDesc(file_agentruntime_v1_config, 22);
+
+/**
+ * @generated from message agentruntime.v1.PendingProposal
+ */
+export type PendingProposal = Message<"agentruntime.v1.PendingProposal"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string yaml = 2;
+   */
+  yaml: string;
+
+  /**
+   * @generated from field: repeated agentruntime.v1.ProposalItem summary = 3;
+   */
+  summary: ProposalItem[];
+
+  /**
+   * @generated from field: int64 created_at = 4;
+   */
+  createdAt: bigint;
+};
+
+/**
+ * Describes the message agentruntime.v1.PendingProposal.
+ * Use `create(PendingProposalSchema)` to create a new message.
+ */
+export const PendingProposalSchema: GenMessage<PendingProposal> = /*@__PURE__*/
+  messageDesc(file_agentruntime_v1_config, 23);
+
+/**
  * @generated from message agentruntime.v1.WatchConfigRequest
  */
 export type WatchConfigRequest = Message<"agentruntime.v1.WatchConfigRequest"> & {
@@ -495,7 +608,7 @@ export type WatchConfigRequest = Message<"agentruntime.v1.WatchConfigRequest"> &
  * Use `create(WatchConfigRequestSchema)` to create a new message.
  */
 export const WatchConfigRequestSchema: GenMessage<WatchConfigRequest> = /*@__PURE__*/
-  messageDesc(file_agentruntime_v1_config, 20);
+  messageDesc(file_agentruntime_v1_config, 24);
 
 /**
  * @generated from message agentruntime.v1.ConfigEvent
@@ -535,7 +648,7 @@ export type ConfigEvent = Message<"agentruntime.v1.ConfigEvent"> & {
  * Use `create(ConfigEventSchema)` to create a new message.
  */
 export const ConfigEventSchema: GenMessage<ConfigEvent> = /*@__PURE__*/
-  messageDesc(file_agentruntime_v1_config, 21);
+  messageDesc(file_agentruntime_v1_config, 25);
 
 /**
  * @generated from message agentruntime.v1.ConfigChanged
@@ -557,7 +670,7 @@ export type ConfigChanged = Message<"agentruntime.v1.ConfigChanged"> & {
  * Use `create(ConfigChangedSchema)` to create a new message.
  */
 export const ConfigChangedSchema: GenMessage<ConfigChanged> = /*@__PURE__*/
-  messageDesc(file_agentruntime_v1_config, 22);
+  messageDesc(file_agentruntime_v1_config, 26);
 
 /**
  * @generated from message agentruntime.v1.ConfigInvalid
@@ -579,7 +692,7 @@ export type ConfigInvalid = Message<"agentruntime.v1.ConfigInvalid"> & {
  * Use `create(ConfigInvalidSchema)` to create a new message.
  */
 export const ConfigInvalidSchema: GenMessage<ConfigInvalid> = /*@__PURE__*/
-  messageDesc(file_agentruntime_v1_config, 23);
+  messageDesc(file_agentruntime_v1_config, 27);
 
 /**
  * @generated from message agentruntime.v1.ConfigRolledBack
@@ -596,7 +709,7 @@ export type ConfigRolledBack = Message<"agentruntime.v1.ConfigRolledBack"> & {
  * Use `create(ConfigRolledBackSchema)` to create a new message.
  */
 export const ConfigRolledBackSchema: GenMessage<ConfigRolledBack> = /*@__PURE__*/
-  messageDesc(file_agentruntime_v1_config, 24);
+  messageDesc(file_agentruntime_v1_config, 28);
 
 /**
  * @generated from service agentruntime.v1.ConfigService
@@ -665,6 +778,14 @@ export const ConfigService: GenService<{
     methodKind: "unary";
     input: typeof RollbackRequestSchema;
     output: typeof RollbackResponseSchema;
+  },
+  /**
+   * @generated from rpc agentruntime.v1.ConfigService.ResolveProposal
+   */
+  resolveProposal: {
+    methodKind: "unary";
+    input: typeof ResolveProposalRequestSchema;
+    output: typeof ResolveProposalResponseSchema;
   },
   /**
    * @generated from rpc agentruntime.v1.ConfigService.WatchConfig

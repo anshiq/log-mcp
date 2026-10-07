@@ -134,7 +134,7 @@
       const cfg = await ConfigService.get(id);
       if (token !== loadToken) return;
       const c = cfg as unknown as { provenance?: Record<string, unknown>; revision?: number; projectId?: string };
-      apps = toConfigApps(cfg.apps, c.provenance ?? {});
+      apps = toConfigApps(cfg.apps, c.provenance ?? {}, (c as unknown as { autoApps?: unknown }).autoApps ?? []);
       loadedFor = id;
       const raw = (cfg.raw ?? {}) as Record<string, string>;
       const checks = await Promise.all(
@@ -431,6 +431,7 @@
 
               <div class="tags">
                 {#if r.app.type}<span class="badge">{r.app.type}</span>{/if}
+                {#if r.app.auto}<span class="badge info" title="Auto-generated from detected run files; editing converts it to yours">auto</span>{/if}
                 {#each r.app.ports as p (p.name)}
                   <span class="badge info" title={`port ${p.name}`}><Network size={11} />:{p.port}{p.name ? ` ${p.name}` : ''}</span>
                 {/each}

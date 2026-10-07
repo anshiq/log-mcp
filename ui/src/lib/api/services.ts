@@ -77,7 +77,7 @@ export const LogService = {
 };
 
 export const ConfigService = {
-  get: (workspaceId: string) => call<{ workspaceId: string }, { projectId: string; workspaceId: string; revision: number; raw: Record<string, string>; layers: { name: string; path: string; exists: boolean; writable: boolean }[]; apps: Record<string, unknown> }>('ConfigService', 'GetConfig', { workspaceId }),
+  get: (workspaceId: string) => call<{ workspaceId: string }, { projectId: string; workspaceId: string; revision: number; configRevision: number; configSource: string; pendingProposal: { id: string; yaml: string; summary: { app: string; action: string; reason: string }[]; createdAt: number } | null; raw: Record<string, string>; layers: { name: string; path: string; exists: boolean; writable: boolean }[]; apps: Record<string, unknown> }>('ConfigService', 'GetConfig', { workspaceId }),
   schema: () => call<Record<string, never>, { schema: unknown }>('ConfigService', 'GetSchema', {}),
   validate: (yaml: string) => call<{ yaml: string }, { valid: boolean; errors: { line: number; column: number; path: string; message: string }[]; warnings?: string[] }>('ConfigService', 'Validate', { yaml }),
   plan: (workspaceId: string, yaml: string, baseRevision?: number) => call<{ workspaceId: string; yaml: string; baseRevision?: number }, PlanResult>('ConfigService', 'Plan', { workspaceId, yaml, baseRevision }),
@@ -89,6 +89,8 @@ export const ConfigService = {
   },
   revision: (projectId: string, id: number) => call<{ projectId: string; revision: number }, { revision: Record<string, unknown>; content: string; previousContent: string }>('ConfigService', 'GetRevision', { projectId, revision: id }),
   rollback: (projectId: string, revision: number) => call<{ projectId: string; revision: number }, { applied: boolean; revision: number }>('ConfigService', 'Rollback', { projectId, revision }),
+  resolveProposal: (projectId: string, proposalId: string, action: 'approve' | 'dismiss') =>
+    call<{ projectId: string; proposalId: string; action: string }, { applied?: boolean; dismissed?: boolean; revision?: number }>('ConfigService', 'ResolveProposal', { projectId, proposalId, action }),
   watch: (projectId: string, onMessage: (m: StreamMessage) => void, onState?: CB) =>
     openStream('ConfigService', 'WatchConfig', { projectId }, { onMessage, onState })
 };

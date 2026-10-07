@@ -1087,6 +1087,254 @@ func (*RollbackResponse) Descriptor() ([]byte, []int) {
 	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{19}
 }
 
+type ResolveProposalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProposalId    string                 `protobuf:"bytes,2,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveProposalRequest) Reset() {
+	*x = ResolveProposalRequest{}
+	mi := &file_agentruntime_v1_config_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveProposalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveProposalRequest) ProtoMessage() {}
+
+func (x *ResolveProposalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentruntime_v1_config_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveProposalRequest.ProtoReflect.Descriptor instead.
+func (*ResolveProposalRequest) Descriptor() ([]byte, []int) {
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ResolveProposalRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ResolveProposalRequest) GetProposalId() string {
+	if x != nil {
+		return x.ProposalId
+	}
+	return ""
+}
+
+func (x *ResolveProposalRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ResolveProposalRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ResolveProposalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
+	Revision      int32                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveProposalResponse) Reset() {
+	*x = ResolveProposalResponse{}
+	mi := &file_agentruntime_v1_config_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveProposalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveProposalResponse) ProtoMessage() {}
+
+func (x *ResolveProposalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentruntime_v1_config_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveProposalResponse.ProtoReflect.Descriptor instead.
+func (*ResolveProposalResponse) Descriptor() ([]byte, []int) {
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ResolveProposalResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *ResolveProposalResponse) GetRevision() int32 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type ProposalItem struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProposalItem) Reset() {
+	*x = ProposalItem{}
+	mi := &file_agentruntime_v1_config_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProposalItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProposalItem) ProtoMessage() {}
+
+func (x *ProposalItem) ProtoReflect() protoreflect.Message {
+	mi := &file_agentruntime_v1_config_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProposalItem.ProtoReflect.Descriptor instead.
+func (*ProposalItem) Descriptor() ([]byte, []int) {
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ProposalItem) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *ProposalItem) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ProposalItem) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type PendingProposal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Yaml          string                 `protobuf:"bytes,2,opt,name=yaml,proto3" json:"yaml,omitempty"`
+	Summary       []*ProposalItem        `protobuf:"bytes,3,rep,name=summary,proto3" json:"summary,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PendingProposal) Reset() {
+	*x = PendingProposal{}
+	mi := &file_agentruntime_v1_config_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingProposal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingProposal) ProtoMessage() {}
+
+func (x *PendingProposal) ProtoReflect() protoreflect.Message {
+	mi := &file_agentruntime_v1_config_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingProposal.ProtoReflect.Descriptor instead.
+func (*PendingProposal) Descriptor() ([]byte, []int) {
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PendingProposal) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PendingProposal) GetYaml() string {
+	if x != nil {
+		return x.Yaml
+	}
+	return ""
+}
+
+func (x *PendingProposal) GetSummary() []*ProposalItem {
+	if x != nil {
+		return x.Summary
+	}
+	return nil
+}
+
+func (x *PendingProposal) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
 type WatchConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
@@ -1097,7 +1345,7 @@ type WatchConfigRequest struct {
 
 func (x *WatchConfigRequest) Reset() {
 	*x = WatchConfigRequest{}
-	mi := &file_agentruntime_v1_config_proto_msgTypes[20]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1109,7 +1357,7 @@ func (x *WatchConfigRequest) String() string {
 func (*WatchConfigRequest) ProtoMessage() {}
 
 func (x *WatchConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_config_proto_msgTypes[20]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1122,7 +1370,7 @@ func (x *WatchConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchConfigRequest.ProtoReflect.Descriptor instead.
 func (*WatchConfigRequest) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{20}
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *WatchConfigRequest) GetWorkspaceId() string {
@@ -1154,7 +1402,7 @@ type ConfigEvent struct {
 
 func (x *ConfigEvent) Reset() {
 	*x = ConfigEvent{}
-	mi := &file_agentruntime_v1_config_proto_msgTypes[21]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1414,7 @@ func (x *ConfigEvent) String() string {
 func (*ConfigEvent) ProtoMessage() {}
 
 func (x *ConfigEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_config_proto_msgTypes[21]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1427,7 @@ func (x *ConfigEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigEvent.ProtoReflect.Descriptor instead.
 func (*ConfigEvent) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{21}
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ConfigEvent) GetEvent() isConfigEvent_Event {
@@ -1255,7 +1503,7 @@ type ConfigChanged struct {
 
 func (x *ConfigChanged) Reset() {
 	*x = ConfigChanged{}
-	mi := &file_agentruntime_v1_config_proto_msgTypes[22]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1267,7 +1515,7 @@ func (x *ConfigChanged) String() string {
 func (*ConfigChanged) ProtoMessage() {}
 
 func (x *ConfigChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_config_proto_msgTypes[22]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1280,7 +1528,7 @@ func (x *ConfigChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigChanged.ProtoReflect.Descriptor instead.
 func (*ConfigChanged) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{22}
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ConfigChanged) GetLayer() string {
@@ -1307,7 +1555,7 @@ type ConfigInvalid struct {
 
 func (x *ConfigInvalid) Reset() {
 	*x = ConfigInvalid{}
-	mi := &file_agentruntime_v1_config_proto_msgTypes[23]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1567,7 @@ func (x *ConfigInvalid) String() string {
 func (*ConfigInvalid) ProtoMessage() {}
 
 func (x *ConfigInvalid) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_config_proto_msgTypes[23]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1580,7 @@ func (x *ConfigInvalid) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigInvalid.ProtoReflect.Descriptor instead.
 func (*ConfigInvalid) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{23}
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ConfigInvalid) GetLayer() string {
@@ -1358,7 +1606,7 @@ type ConfigRolledBack struct {
 
 func (x *ConfigRolledBack) Reset() {
 	*x = ConfigRolledBack{}
-	mi := &file_agentruntime_v1_config_proto_msgTypes[24]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1370,7 +1618,7 @@ func (x *ConfigRolledBack) String() string {
 func (*ConfigRolledBack) ProtoMessage() {}
 
 func (x *ConfigRolledBack) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_config_proto_msgTypes[24]
+	mi := &file_agentruntime_v1_config_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1383,7 +1631,7 @@ func (x *ConfigRolledBack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigRolledBack.ProtoReflect.Descriptor instead.
 func (*ConfigRolledBack) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{24}
+	return file_agentruntime_v1_config_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ConfigRolledBack) GetRevision() int32 {
@@ -1474,7 +1722,27 @@ const file_agentruntime_v1_config_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x05R\brevision\"\x12\n" +
-	"\x10RollbackResponse\"h\n" +
+	"\x10RollbackResponse\"\x8a\x01\n" +
+	"\x16ResolveProposalRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
+	"\vproposal_id\x18\x02 \x01(\tR\n" +
+	"proposalId\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\"O\n" +
+	"\x17ResolveProposalResponse\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x05R\brevision\"P\n" +
+	"\fProposalItem\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x8d\x01\n" +
+	"\x0fPendingProposal\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04yaml\x18\x02 \x01(\tR\x04yaml\x127\n" +
+	"\asummary\x18\x03 \x03(\v2\x1d.agentruntime.v1.ProposalItemR\asummary\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\"h\n" +
 	"\x12WatchConfigRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12/\n" +
 	"\x06cursor\x18\x02 \x01(\v2\x17.agentruntime.v1.CursorR\x06cursor\"\x85\x02\n" +
@@ -1492,7 +1760,7 @@ const file_agentruntime_v1_config_proto_rawDesc = "" +
 	"\x05layer\x18\x01 \x01(\tR\x05layer\x12\x16\n" +
 	"\x06errors\x18\x02 \x01(\tR\x06errors\".\n" +
 	"\x10ConfigRolledBack\x12\x1a\n" +
-	"\brevision\x18\x01 \x01(\x05R\brevision2\xf4\x05\n" +
+	"\brevision\x18\x01 \x01(\x05R\brevision2\xda\x06\n" +
 	"\rConfigService\x12R\n" +
 	"\tGetConfig\x12!.agentruntime.v1.GetConfigRequest\x1a\".agentruntime.v1.GetConfigResponse\x12R\n" +
 	"\tGetSchema\x12!.agentruntime.v1.GetSchemaRequest\x1a\".agentruntime.v1.GetSchemaResponse\x12O\n" +
@@ -1501,7 +1769,8 @@ const file_agentruntime_v1_config_proto_rawDesc = "" +
 	"\x05Apply\x12\x1d.agentruntime.v1.ApplyRequest\x1a\x1e.agentruntime.v1.ApplyResponse\x12^\n" +
 	"\rListRevisions\x12%.agentruntime.v1.ListRevisionsRequest\x1a&.agentruntime.v1.ListRevisionsResponse\x12X\n" +
 	"\vGetRevision\x12#.agentruntime.v1.GetRevisionRequest\x1a$.agentruntime.v1.GetRevisionResponse\x12O\n" +
-	"\bRollback\x12 .agentruntime.v1.RollbackRequest\x1a!.agentruntime.v1.RollbackResponse\x12R\n" +
+	"\bRollback\x12 .agentruntime.v1.RollbackRequest\x1a!.agentruntime.v1.RollbackResponse\x12d\n" +
+	"\x0fResolveProposal\x12'.agentruntime.v1.ResolveProposalRequest\x1a(.agentruntime.v1.ResolveProposalResponse\x12R\n" +
 	"\vWatchConfig\x12#.agentruntime.v1.WatchConfigRequest\x1a\x1c.agentruntime.v1.ConfigEvent0\x01B2Z0agent-runtime/gen/agentruntime/v1;agentruntimev1b\x06proto3"
 
 var (
@@ -1516,75 +1785,82 @@ func file_agentruntime_v1_config_proto_rawDescGZIP() []byte {
 	return file_agentruntime_v1_config_proto_rawDescData
 }
 
-var file_agentruntime_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_agentruntime_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_agentruntime_v1_config_proto_goTypes = []any{
-	(*GetConfigRequest)(nil),      // 0: agentruntime.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),     // 1: agentruntime.v1.GetConfigResponse
-	(*GetSchemaRequest)(nil),      // 2: agentruntime.v1.GetSchemaRequest
-	(*GetSchemaResponse)(nil),     // 3: agentruntime.v1.GetSchemaResponse
-	(*ValidateRequest)(nil),       // 4: agentruntime.v1.ValidateRequest
-	(*ValidateResponse)(nil),      // 5: agentruntime.v1.ValidateResponse
-	(*PlanRequest)(nil),           // 6: agentruntime.v1.PlanRequest
-	(*PlanResponse)(nil),          // 7: agentruntime.v1.PlanResponse
-	(*RestartPlan)(nil),           // 8: agentruntime.v1.RestartPlan
-	(*LivePlan)(nil),              // 9: agentruntime.v1.LivePlan
-	(*StalePlan)(nil),             // 10: agentruntime.v1.StalePlan
-	(*ApplyRequest)(nil),          // 11: agentruntime.v1.ApplyRequest
-	(*ApplyResponse)(nil),         // 12: agentruntime.v1.ApplyResponse
-	(*ListRevisionsRequest)(nil),  // 13: agentruntime.v1.ListRevisionsRequest
-	(*ListRevisionsResponse)(nil), // 14: agentruntime.v1.ListRevisionsResponse
-	(*ConfigRevision)(nil),        // 15: agentruntime.v1.ConfigRevision
-	(*GetRevisionRequest)(nil),    // 16: agentruntime.v1.GetRevisionRequest
-	(*GetRevisionResponse)(nil),   // 17: agentruntime.v1.GetRevisionResponse
-	(*RollbackRequest)(nil),       // 18: agentruntime.v1.RollbackRequest
-	(*RollbackResponse)(nil),      // 19: agentruntime.v1.RollbackResponse
-	(*WatchConfigRequest)(nil),    // 20: agentruntime.v1.WatchConfigRequest
-	(*ConfigEvent)(nil),           // 21: agentruntime.v1.ConfigEvent
-	(*ConfigChanged)(nil),         // 22: agentruntime.v1.ConfigChanged
-	(*ConfigInvalid)(nil),         // 23: agentruntime.v1.ConfigInvalid
-	(*ConfigRolledBack)(nil),      // 24: agentruntime.v1.ConfigRolledBack
-	nil,                           // 25: agentruntime.v1.GetConfigResponse.ProvenanceEntry
-	(*Pagination)(nil),            // 26: agentruntime.v1.Pagination
-	(*Cursor)(nil),                // 27: agentruntime.v1.Cursor
+	(*GetConfigRequest)(nil),        // 0: agentruntime.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),       // 1: agentruntime.v1.GetConfigResponse
+	(*GetSchemaRequest)(nil),        // 2: agentruntime.v1.GetSchemaRequest
+	(*GetSchemaResponse)(nil),       // 3: agentruntime.v1.GetSchemaResponse
+	(*ValidateRequest)(nil),         // 4: agentruntime.v1.ValidateRequest
+	(*ValidateResponse)(nil),        // 5: agentruntime.v1.ValidateResponse
+	(*PlanRequest)(nil),             // 6: agentruntime.v1.PlanRequest
+	(*PlanResponse)(nil),            // 7: agentruntime.v1.PlanResponse
+	(*RestartPlan)(nil),             // 8: agentruntime.v1.RestartPlan
+	(*LivePlan)(nil),                // 9: agentruntime.v1.LivePlan
+	(*StalePlan)(nil),               // 10: agentruntime.v1.StalePlan
+	(*ApplyRequest)(nil),            // 11: agentruntime.v1.ApplyRequest
+	(*ApplyResponse)(nil),           // 12: agentruntime.v1.ApplyResponse
+	(*ListRevisionsRequest)(nil),    // 13: agentruntime.v1.ListRevisionsRequest
+	(*ListRevisionsResponse)(nil),   // 14: agentruntime.v1.ListRevisionsResponse
+	(*ConfigRevision)(nil),          // 15: agentruntime.v1.ConfigRevision
+	(*GetRevisionRequest)(nil),      // 16: agentruntime.v1.GetRevisionRequest
+	(*GetRevisionResponse)(nil),     // 17: agentruntime.v1.GetRevisionResponse
+	(*RollbackRequest)(nil),         // 18: agentruntime.v1.RollbackRequest
+	(*RollbackResponse)(nil),        // 19: agentruntime.v1.RollbackResponse
+	(*ResolveProposalRequest)(nil),  // 20: agentruntime.v1.ResolveProposalRequest
+	(*ResolveProposalResponse)(nil), // 21: agentruntime.v1.ResolveProposalResponse
+	(*ProposalItem)(nil),            // 22: agentruntime.v1.ProposalItem
+	(*PendingProposal)(nil),         // 23: agentruntime.v1.PendingProposal
+	(*WatchConfigRequest)(nil),      // 24: agentruntime.v1.WatchConfigRequest
+	(*ConfigEvent)(nil),             // 25: agentruntime.v1.ConfigEvent
+	(*ConfigChanged)(nil),           // 26: agentruntime.v1.ConfigChanged
+	(*ConfigInvalid)(nil),           // 27: agentruntime.v1.ConfigInvalid
+	(*ConfigRolledBack)(nil),        // 28: agentruntime.v1.ConfigRolledBack
+	nil,                             // 29: agentruntime.v1.GetConfigResponse.ProvenanceEntry
+	(*Pagination)(nil),              // 30: agentruntime.v1.Pagination
+	(*Cursor)(nil),                  // 31: agentruntime.v1.Cursor
 }
 var file_agentruntime_v1_config_proto_depIdxs = []int32{
-	25, // 0: agentruntime.v1.GetConfigResponse.provenance:type_name -> agentruntime.v1.GetConfigResponse.ProvenanceEntry
+	29, // 0: agentruntime.v1.GetConfigResponse.provenance:type_name -> agentruntime.v1.GetConfigResponse.ProvenanceEntry
 	8,  // 1: agentruntime.v1.PlanResponse.restart_apps:type_name -> agentruntime.v1.RestartPlan
 	9,  // 2: agentruntime.v1.PlanResponse.live_apps:type_name -> agentruntime.v1.LivePlan
 	10, // 3: agentruntime.v1.PlanResponse.stale_apps:type_name -> agentruntime.v1.StalePlan
 	8,  // 4: agentruntime.v1.ApplyResponse.restart_apps:type_name -> agentruntime.v1.RestartPlan
-	26, // 5: agentruntime.v1.ListRevisionsRequest.pagination:type_name -> agentruntime.v1.Pagination
+	30, // 5: agentruntime.v1.ListRevisionsRequest.pagination:type_name -> agentruntime.v1.Pagination
 	15, // 6: agentruntime.v1.ListRevisionsResponse.revisions:type_name -> agentruntime.v1.ConfigRevision
-	27, // 7: agentruntime.v1.ListRevisionsResponse.next_page_token:type_name -> agentruntime.v1.Cursor
+	31, // 7: agentruntime.v1.ListRevisionsResponse.next_page_token:type_name -> agentruntime.v1.Cursor
 	15, // 8: agentruntime.v1.GetRevisionResponse.revision:type_name -> agentruntime.v1.ConfigRevision
-	27, // 9: agentruntime.v1.WatchConfigRequest.cursor:type_name -> agentruntime.v1.Cursor
-	22, // 10: agentruntime.v1.ConfigEvent.changed:type_name -> agentruntime.v1.ConfigChanged
-	23, // 11: agentruntime.v1.ConfigEvent.invalid:type_name -> agentruntime.v1.ConfigInvalid
-	24, // 12: agentruntime.v1.ConfigEvent.rolled_back:type_name -> agentruntime.v1.ConfigRolledBack
-	27, // 13: agentruntime.v1.ConfigEvent.cursor:type_name -> agentruntime.v1.Cursor
-	0,  // 14: agentruntime.v1.ConfigService.GetConfig:input_type -> agentruntime.v1.GetConfigRequest
-	2,  // 15: agentruntime.v1.ConfigService.GetSchema:input_type -> agentruntime.v1.GetSchemaRequest
-	4,  // 16: agentruntime.v1.ConfigService.Validate:input_type -> agentruntime.v1.ValidateRequest
-	6,  // 17: agentruntime.v1.ConfigService.Plan:input_type -> agentruntime.v1.PlanRequest
-	11, // 18: agentruntime.v1.ConfigService.Apply:input_type -> agentruntime.v1.ApplyRequest
-	13, // 19: agentruntime.v1.ConfigService.ListRevisions:input_type -> agentruntime.v1.ListRevisionsRequest
-	16, // 20: agentruntime.v1.ConfigService.GetRevision:input_type -> agentruntime.v1.GetRevisionRequest
-	18, // 21: agentruntime.v1.ConfigService.Rollback:input_type -> agentruntime.v1.RollbackRequest
-	20, // 22: agentruntime.v1.ConfigService.WatchConfig:input_type -> agentruntime.v1.WatchConfigRequest
-	1,  // 23: agentruntime.v1.ConfigService.GetConfig:output_type -> agentruntime.v1.GetConfigResponse
-	3,  // 24: agentruntime.v1.ConfigService.GetSchema:output_type -> agentruntime.v1.GetSchemaResponse
-	5,  // 25: agentruntime.v1.ConfigService.Validate:output_type -> agentruntime.v1.ValidateResponse
-	7,  // 26: agentruntime.v1.ConfigService.Plan:output_type -> agentruntime.v1.PlanResponse
-	12, // 27: agentruntime.v1.ConfigService.Apply:output_type -> agentruntime.v1.ApplyResponse
-	14, // 28: agentruntime.v1.ConfigService.ListRevisions:output_type -> agentruntime.v1.ListRevisionsResponse
-	17, // 29: agentruntime.v1.ConfigService.GetRevision:output_type -> agentruntime.v1.GetRevisionResponse
-	19, // 30: agentruntime.v1.ConfigService.Rollback:output_type -> agentruntime.v1.RollbackResponse
-	21, // 31: agentruntime.v1.ConfigService.WatchConfig:output_type -> agentruntime.v1.ConfigEvent
-	23, // [23:32] is the sub-list for method output_type
-	14, // [14:23] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	22, // 9: agentruntime.v1.PendingProposal.summary:type_name -> agentruntime.v1.ProposalItem
+	31, // 10: agentruntime.v1.WatchConfigRequest.cursor:type_name -> agentruntime.v1.Cursor
+	26, // 11: agentruntime.v1.ConfigEvent.changed:type_name -> agentruntime.v1.ConfigChanged
+	27, // 12: agentruntime.v1.ConfigEvent.invalid:type_name -> agentruntime.v1.ConfigInvalid
+	28, // 13: agentruntime.v1.ConfigEvent.rolled_back:type_name -> agentruntime.v1.ConfigRolledBack
+	31, // 14: agentruntime.v1.ConfigEvent.cursor:type_name -> agentruntime.v1.Cursor
+	0,  // 15: agentruntime.v1.ConfigService.GetConfig:input_type -> agentruntime.v1.GetConfigRequest
+	2,  // 16: agentruntime.v1.ConfigService.GetSchema:input_type -> agentruntime.v1.GetSchemaRequest
+	4,  // 17: agentruntime.v1.ConfigService.Validate:input_type -> agentruntime.v1.ValidateRequest
+	6,  // 18: agentruntime.v1.ConfigService.Plan:input_type -> agentruntime.v1.PlanRequest
+	11, // 19: agentruntime.v1.ConfigService.Apply:input_type -> agentruntime.v1.ApplyRequest
+	13, // 20: agentruntime.v1.ConfigService.ListRevisions:input_type -> agentruntime.v1.ListRevisionsRequest
+	16, // 21: agentruntime.v1.ConfigService.GetRevision:input_type -> agentruntime.v1.GetRevisionRequest
+	18, // 22: agentruntime.v1.ConfigService.Rollback:input_type -> agentruntime.v1.RollbackRequest
+	20, // 23: agentruntime.v1.ConfigService.ResolveProposal:input_type -> agentruntime.v1.ResolveProposalRequest
+	24, // 24: agentruntime.v1.ConfigService.WatchConfig:input_type -> agentruntime.v1.WatchConfigRequest
+	1,  // 25: agentruntime.v1.ConfigService.GetConfig:output_type -> agentruntime.v1.GetConfigResponse
+	3,  // 26: agentruntime.v1.ConfigService.GetSchema:output_type -> agentruntime.v1.GetSchemaResponse
+	5,  // 27: agentruntime.v1.ConfigService.Validate:output_type -> agentruntime.v1.ValidateResponse
+	7,  // 28: agentruntime.v1.ConfigService.Plan:output_type -> agentruntime.v1.PlanResponse
+	12, // 29: agentruntime.v1.ConfigService.Apply:output_type -> agentruntime.v1.ApplyResponse
+	14, // 30: agentruntime.v1.ConfigService.ListRevisions:output_type -> agentruntime.v1.ListRevisionsResponse
+	17, // 31: agentruntime.v1.ConfigService.GetRevision:output_type -> agentruntime.v1.GetRevisionResponse
+	19, // 32: agentruntime.v1.ConfigService.Rollback:output_type -> agentruntime.v1.RollbackResponse
+	21, // 33: agentruntime.v1.ConfigService.ResolveProposal:output_type -> agentruntime.v1.ResolveProposalResponse
+	25, // 34: agentruntime.v1.ConfigService.WatchConfig:output_type -> agentruntime.v1.ConfigEvent
+	25, // [25:35] is the sub-list for method output_type
+	15, // [15:25] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_agentruntime_v1_config_proto_init() }
@@ -1593,7 +1869,7 @@ func file_agentruntime_v1_config_proto_init() {
 		return
 	}
 	file_agentruntime_v1_common_proto_init()
-	file_agentruntime_v1_config_proto_msgTypes[21].OneofWrappers = []any{
+	file_agentruntime_v1_config_proto_msgTypes[25].OneofWrappers = []any{
 		(*ConfigEvent_Changed)(nil),
 		(*ConfigEvent_Invalid)(nil),
 		(*ConfigEvent_RolledBack)(nil),
@@ -1604,7 +1880,7 @@ func file_agentruntime_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentruntime_v1_config_proto_rawDesc), len(file_agentruntime_v1_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

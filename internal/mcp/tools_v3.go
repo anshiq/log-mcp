@@ -30,6 +30,11 @@ type searchLogsIn struct {
 	MaxRows    int      `json:"max_rows,omitempty" jsonschema:"Maximum matches (default 200, cap 1000)."`
 }
 
+type resolveProposalIn struct {
+	ProposalID string `json:"proposal_id,omitempty" jsonschema:"Proposal id from get_project_info pendingProposal. Empty uses the current pending proposal."`
+	Action     string `json:"action" jsonschema:"approve or dismiss."`
+}
+
 // v3Tools is implemented by *Bridge. Embedded (session-scoped) runtimes
 // return a descriptive error directing the agent to daemon mode.
 type v3Tools interface {
@@ -37,6 +42,7 @@ type v3Tools interface {
 	ValidateConfig(ctx context.Context, yaml string) (map[string]any, error)
 	PlanConfig(ctx context.Context, yaml string) (map[string]any, error)
 	ApplyConfig(ctx context.Context, yaml string, baseRevision int64, message string) (map[string]any, error)
+	ResolveProposal(ctx context.Context, proposalID, action string) (map[string]any, error)
 	SearchLogs(ctx context.Context, query string, processIDs []string, regex bool, maxRows int) (map[string]any, error)
 	ListSessions(ctx context.Context) ([]map[string]any, error)
 }
@@ -61,7 +67,7 @@ func (e *daemonRequiredError) Error() string {
 
 func registerV3Tools(server *mcp.Server, h *handlers) {
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "get_project_info", Description: "Where this project lives in v3: project/workspace ids, the config file path (edit it directly or via apply_config), trust state, and which other sessions (agents, GUI) are attached here. Call it before editing config."},
+		&mcp.Tool{Name: "get_project_info", Description: "Where this project lives in v3: project/workspace ids, config revision and pending proposals, and which other sessions (agents, GUI) are attached here. Call it before editing config."},
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, map[string]any, error) {
 			h.log(ctx, "get_project_info", nil)
 			b, err := bridgeOf(h)
@@ -106,7 +112,7 @@ func registerV3Tools(server *mcp.Server, h *handlers) {
 		})
 
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "apply_config", Description: "Apply project YAML: validate, record a revision, hot-reload. Uses optimistic concurrency (base_revision from plan_config). Prefer editing the file at the configPath from get_project_info; use this when you only have YAML text."},
+		&mcp.Tool{Name: "apply_config", Description: "Apply project YAML: validate, record a revision, hot-reload. Uses optimistic concurrency (base_revision from plan_config). Edit config only through apply_config."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in applyConfigIn) (*mcp.CallToolResult, map[string]any, error) {
 			h.log(ctx, "apply_config", nil)
 			b, err := bridgeOf(h)
@@ -114,6 +120,21 @@ func registerV3Tools(server *mcp.Server, h *handlers) {
 				return nil, nil, err
 			}
 			res, err := b.ApplyConfig(ctx, in.YAML, in.BaseRevision, in.Message)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+
+	mcp.AddTool(server,
+		&mcp.Tool{Name: "resolve_config_proposal", Description: "Approve or dismiss a pending config proposal for auto-detected apps. Never approve on the user's behalf; always surface pending proposals first."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in resolveProposalIn) (*mcp.CallToolResult, map[string]any, error) {
+			h.log(ctx, "resolve_config_proposal", in)
+			b, err := bridgeOf(h)
+			if err != nil {
+				return nil, nil, err
+			}
+			res, err := b.ResolveProposal(ctx, in.ProposalID, in.Action)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -161,6 +161,17 @@ func newProjectCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 					return err
 				}
 				fmt.Printf("project %v\n", proj["project"])
+				if wss, err := cl.ProjectService().ListWorkspaces(ctx, pid); err == nil && len(wss) > 0 {
+					wsID := wss[0].ID
+					if cfg, err := cl.ConfigService().Get(ctx, wsID); err == nil {
+						if pp, ok := cfg["pendingProposal"].(map[string]any); ok && pp != nil {
+							fmt.Printf("proposal %v pending: %v\n", pp["id"], pp["summary"])
+						}
+						if rev, ok := cfg["configRevision"]; ok {
+							fmt.Printf("config revision %v (%v)\n", rev, cfg["configSource"])
+						}
+					}
+				}
 				return nil
 			},
 		},

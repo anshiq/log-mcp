@@ -54,8 +54,6 @@ func TestPaths_Methods(t *testing.T) {
 		{"PIDPath", "/run/agent-runtime/agentd.pid", p.PIDPath()},
 		{"LockPath", "/run/agent-runtime/agentd.lock", p.LockPath()},
 		{"LogPath", "/var/lib/agent-runtime-state/agentd.log", p.LogPath()},
-		{"ProjectDir", "/var/lib/agent-runtime/projects/proj_123", p.ProjectDir("proj_123")},
-		{"ProjectConfigPath", "/var/lib/agent-runtime/projects/proj_123/agent-runtime.yaml", p.ProjectConfigPath("proj_123")},
 		{"WorkspaceDir", "/var/lib/agent-runtime/logs/ws_456", p.WorkspaceDir("ws_456")},
 		{"ShimDir", "/run/agent-runtime/shims/inst_789", p.ShimDir("inst_789")},
 		{"TrashDir", "/var/lib/agent-runtime/trash", p.TrashDir()},
