@@ -35,7 +35,9 @@
     tab = $bindable('logs'),
     onClose,
     onCopyId,
-    onRemoved
+    onRemoved,
+    onTabChange,
+    fullPage = false
   }: {
     processId: string;
     process?: Process;
@@ -43,6 +45,8 @@
     onClose: () => void;
     onCopyId: (id: string) => void;
     onRemoved: (ids: string[]) => void;
+    onTabChange?: (t: DetailTab) => void;
+    fullPage?: boolean;
   } = $props();
 
   let waited = $state(false);
@@ -66,6 +70,12 @@
     process ? processMenu(process, { onCopyId, afterRemove: onRemoved }) : []
   );
 
+  function selectTab(next: DetailTab) {
+    if (next === tab) return;
+    tab = next;
+    onTabChange?.(next);
+  }
+
   function tabKey(e: KeyboardEvent) {
     const idx = tabs.findIndex((t) => t.id === tab);
     let next = idx;
@@ -75,7 +85,7 @@
     else if (e.key === 'End') next = tabs.length - 1;
     else return;
     e.preventDefault();
-    tab = tabs[next]!.id;
+    selectTab(tabs[next]!.id);
     (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
   }
 </script>
@@ -121,7 +131,7 @@
           <Ellipsis size={15} />
         </ActionMenu>
       {/if}
-      <button type="button" class="btn ghost icon sm" aria-label="Close details" title="Close (Esc)" onclick={onClose}>
+      <button type="button" class="btn ghost icon sm" aria-label={fullPage ? 'Back to processes' : 'Close details'} title={fullPage ? 'Back (Esc)' : 'Close (Esc)'} onclick={onClose}>
         <X size={16} />
       </button>
     </div>
@@ -143,7 +153,7 @@
         aria-selected={tab === t.id}
         aria-controls="panel"
         tabindex={tab === t.id ? 0 : -1}
-        onclick={() => (tab = t.id)}
+        onclick={() => selectTab(t.id)}
       >
         <Icon size={13} />{t.label}
       </button>
@@ -163,7 +173,7 @@
         <div class="missing"><span class="muted">Loading process…</span></div>
       {/if}
     {:else if tab === 'logs'}
-      <ProcessLogs {processId} {live} />
+      <ProcessLogs processId={processId} {live} workspaceId={process?.workspaceId ?? ''} />
     {:else if tab === 'info'}
       <ProcessInfo {process} />
     {:else if tab === 'env'}

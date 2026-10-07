@@ -8,7 +8,6 @@
   import Trash from '@lucide/svelte/icons/trash';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import ProcessTable from '../../components/ProcessTable.svelte';
-  import ProcessDetail, { type DetailTab } from '../../components/ProcessDetail.svelte';
   import ProcessConfirm from '../../components/ProcessConfirm.svelte';
   import StartProcessDialog from '../../components/StartProcessDialog.svelte';
   import ActionMenu from '../../components/ActionMenu.svelte';
@@ -24,13 +23,8 @@
   let query = $state('');
   let statusFilter = $state<StatusFilter>('all');
   let selected = $state(new Set<string>());
-  let detailTab = $state<DetailTab>('logs');
   let showStart = $state(false);
-  let stageWidth = $state(1200);
   let searchInput: HTMLInputElement | null = $state(null);
-
-  const openId = $derived(router.match('/processes/:id')?.params['id'] ?? '');
-  const overlay = $derived(stageWidth < 900);
   const scoped = $derived(processes.scoped);
   const counts = $derived({
     all: scoped.length,
@@ -46,7 +40,6 @@
   const selectedIds = $derived([...selected].filter((id) => processes.map.has(id)));
   const selectedProcs = $derived(selectedIds.map((id) => processes.map.get(id)!));
   const filtersActive = $derived(query.trim() !== '' || statusFilter !== 'all');
-  const openProcess = $derived(processes.map.get(openId));
 
   const chips = $derived([
     { id: 'all' as StatusFilter, label: 'All', count: counts.all },
@@ -76,17 +69,12 @@
     if (selected.size > 0 && selectedIds.length !== selected.size) selected = new Set(selectedIds);
   });
 
-  function openDetail(id: string) {
-    void router.navigate(`/processes/${id}`);
+  function openDetail(id: string, tab = 'logs') {
+    void router.navigate(`/processes/${id}?tab=${tab}`);
   }
 
   function openLogs(id: string) {
-    detailTab = 'logs';
-    openDetail(id);
-  }
-
-  function closeDetail() {
-    void router.navigate('/processes');
+    openDetail(id, 'logs');
   }
 
   async function copyId(id: string) {
@@ -103,7 +91,6 @@
     const next = new Set(selected);
     for (const id of ids) next.delete(id);
     selected = next;
-    if (openId && ids.includes(openId)) closeDetail();
   }
 
   function clearFilters() {
@@ -121,8 +108,7 @@
   function started(processId: string) {
     showStart = false;
     toasts.ok('Process started');
-    detailTab = 'logs';
-    openDetail(processId);
+    openDetail(processId, 'logs');
   }
 
   function onKey(e: KeyboardEvent) {
@@ -133,11 +119,10 @@
       query = '';
       return;
     }
-    if (selected.size > 0 && !openId) {
+    if (selected.size > 0) {
       selected = new Set();
       return;
     }
-    if (openId) closeDetail();
   }
 
   const signalItems = $derived(bulkSignalMenu(() => selectedIds));
@@ -212,14 +197,14 @@
     {/if}
   </div>
 
-  <div class="stage" class:overlay bind:clientWidth={stageWidth}>
+  <div class="stage">
     <div class="main">
       <ProcessTable
         {rows}
         totalCount={counts.all}
         {loading}
         bind:selected
-        {openId}
+        openId=""
         showWorkspace={scopeState.all}
         workspaceLabel={(id) => scopeState.workspaceLabel(id)}
         onOpen={openDetail}
@@ -230,24 +215,6 @@
         onClearFilters={clearFilters}
       />
     </div>
-
-    {#if openId}
-      {#if overlay}
-        <button class="scrim" type="button" tabindex="-1" aria-label="Close details" onclick={closeDetail}></button>
-      {/if}
-      <aside class="drawer" class:overlay aria-label="Process details">
-        {#key openId}
-          <ProcessDetail
-            processId={openId}
-            process={openProcess}
-            bind:tab={detailTab}
-            onClose={closeDetail}
-            onCopyId={copyId}
-            onRemoved={afterRemove}
-          />
-        {/key}
-      </aside>
-    {/if}
   </div>
 </div>
 
@@ -315,42 +282,6 @@
     position: relative;
     container: procs / inline-size;
   }
-  .drawer {
-    flex: none;
-    width: clamp(460px, 44%, 620px);
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    animation: drawer-in 200ms var(--ease);
-  }
-  .drawer.overlay {
-    position: absolute;
-    z-index: 40;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(600px, 100%);
-    box-shadow: var(--shadow-pop);
-    border-color: var(--border-strong);
-  }
-  .scrim {
-    position: absolute;
-    inset: 0;
-    z-index: 39;
-    border: none;
-    border-radius: var(--radius-lg);
-    background: color-mix(in srgb, var(--bg-0) 62%, transparent);
-    backdrop-filter: blur(1.5px);
-    animation: fade-in 160ms var(--ease);
-    cursor: default;
-  }
-  .scrim:hover {
-    background: color-mix(in srgb, var(--bg-0) 62%, transparent);
-  }
   .bulk {
     margin-left: auto;
     display: flex;
@@ -375,17 +306,6 @@
     width: 1px;
     height: 18px;
     background: var(--border);
-  }
-  @keyframes drawer-in {
-    from {
-      opacity: 0;
-      transform: translateX(22px);
-    }
-  }
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
   }
   @keyframes bulk-in {
     from {

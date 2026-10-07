@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Login from './Login.svelte';
   import ProcessesPage from './pages/ProcessesPage.svelte';
+  import ProcessPage from './pages/ProcessPage.svelte';
   import AppsPage from './pages/AppsPage.svelte';
   import ConfigPage from './pages/ConfigPage.svelte';
   import ProjectsPage from './pages/ProjectsPage.svelte';
@@ -80,7 +81,9 @@
   <ToastRegion />
 {:else}
   <Shell>
-    {#if router.match('/processes/:id?')}
+    {#if router.match('/processes/:id')}
+      <ProcessPage />
+    {:else if router.match('/processes')}
       <ProcessesPage />
     {:else if router.match('/logs')}
       <LogsPage />

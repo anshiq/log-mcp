@@ -21,7 +21,7 @@ export function handleAlertEvent(e: DaemonEvent) {
   toasts.push(`${t}: ${msg}`, 'err', {
     label: 'View logs',
     onClick: () => {
-      window.location.hash = `#/processes/${e.processId}/logs`;
+      window.location.hash = `#/processes/${e.processId}?tab=logs`;
     }
   });
   try {
