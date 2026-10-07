@@ -1,0 +1,110 @@
+name: version-release
+
+# Automates the version-bump strategy: versions are bumped by hand in code,
+# and when the minor digit (second digit, e.g. 0.4.x -> 0.5.0) moves past the
+# latest v* tag, this cuts the release. Patch bumps do not release.
+#
+# Canonical version: internal/mcp/server.go (var Version). The goreleaser
+# ldflags stamp the tag version into release binaries; the hardcoded values
+# below are local/dev fallbacks and must stay in sync with it.
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-release
+  cancel-in-progress: false
+
+jobs:
+  release-on-minor-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check consistency and detect minor bump
+        id: detect
+        run: |
+          set -euo pipefail
+
+          mcp=$(grep -oP 'var Version = "\K[0-9]+\.[0-9]+\.[0-9]+' internal/mcp/server.go)
+          gui=$(grep -oP 'var Version = "v\K[0-9]+\.[0-9]+\.[0-9]+' internal/gui/gui.go)
+          agentd=$(grep -oP 'var version = "v\K[0-9]+\.[0-9]+\.[0-9]+' cmd/agentd/main.go)
+          makefile=$(grep -oP 'echo v\K[0-9]+\.[0-9]+\.[0-9]+' Makefile)
+          nix=$(grep -oP 'version = "\K[0-9]+\.[0-9]+\.[0-9]+' packaging/nix/flake.nix)
+          uipkg=$(grep -oP '"version": "\K[0-9]+\.[0-9]+\.[0-9]+' ui/package.json | head -n1)
+          vite=$(grep -oP "let version = '\K[0-9]+\.[0-9]+\.[0-9]+" ui/vite.config.ts)
+
+          for v in "$gui" "$agentd" "$makefile" "$nix" "$uipkg" "$vite"; do
+            if [ "$v" != "$mcp" ]; then
+              echo "version mismatch: canonical=$mcp gui=$gui agentd=$agentd makefile=$makefile nix=$nix ui=$uipkg vite=$vite"
+              exit 1
+            fi
+          done
+          echo "code version: $mcp"
+
+          latest=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -z "$latest" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$mcp" >> "$GITHUB_OUTPUT"
+            echo "no tag yet; releasing $mcp"
+            exit 0
+          fi
+          tag=${latest#v}
+          echo "latest tag: $latest"
+
+          IFS=. read -r cmaj cmin _ <<<"$mcp"
+          IFS=. read -r tmaj tmin _ <<<"$tag"
+          if [ "$cmaj" -gt "$tmaj" ] || { [ "$cmaj" -eq "$tmaj" ] && [ "$cmin" -gt "$tmin" ]; }; then
+            if git rev-parse -q --verify "refs/tags/v$mcp" >/dev/null; then
+              echo "tag v$mcp already exists; skipping"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "release=true" >> "$GITHUB_OUTPUT"
+              echo "version=$mcp" >> "$GITHUB_OUTPUT"
+              echo "minor bump $tag -> $mcp; releasing"
+            fi
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "no minor bump ($tag -> $mcp); skipping"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.detect.outputs.release == 'true'
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # Tag locally first so goreleaser resolves {{ .Version }} from it and
+      # creates the GitHub release itself. The tag is pushed afterwards with
+      # GITHUB_TOKEN, which does not re-trigger release.yml (no double release).
+      - name: Tag and release
+        if: steps.detect.outputs.release == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.detect.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$VERSION"
+
+      - uses: goreleaser/goreleaser-action@v6
+        if: steps.detect.outputs.release == 'true'
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push tag
+        if: steps.detect.outputs.release == 'true'
+        run: |
+          git push origin "v${{ steps.detect.outputs.version }}"
