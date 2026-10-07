@@ -201,7 +201,6 @@ type screen int
 
 const (
 	screenHome screen = iota
-	screenScaffoldResult
 	screenConnectSelect
 	screenConnectResult
 	screenStatus
@@ -257,7 +256,6 @@ func newWizardModel(loaded *config.Loaded, logger *slog.Logger) *wizardModel {
 		cwd:    cwd,
 		screen: screenHome,
 		homeItems: []menuItem{
-			{"Init agent-runtime.yaml", "Scaffold a config file for this project"},
 			{"Connect AI agents", "Autodetect installed agents; pick one or many to wire up MCP + skills"},
 			{"Open process manager", "start/logs/wait/stop — the interactive runtime session"},
 			{"Project status", "Config, apps, and what's currently connected"},
@@ -288,7 +286,7 @@ func (m *wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenHome:
 		return m.updateHome(keyMsg)
-	case screenScaffoldResult, screenConnectResult,
+	case screenConnectResult,
 		screenRemoveSkillsResult, screenRemoveMCPResult, screenStatus, screenHelp:
 		return m.updateResult(keyMsg)
 	case screenRemoveSkillsScope:
@@ -312,21 +310,19 @@ func (m *wizardModel) updateHome(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch m.cursor {
 		case 0:
-			m.runScaffold()
-		case 1:
 			m.beginConnect(false)
-		case 2:
+		case 1:
 			m.launchREPL = true
 			m.quitting = true
 			return m, tea.Quit
-		case 3:
+		case 2:
 			m.runStatus()
-		case 4:
+		case 3:
 			m.cursor = 0
 			m.screen = screenRemoveMenu
-		case 5:
+		case 4:
 			m.runHelp()
-		case 6:
+		case 5:
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -493,28 +489,6 @@ func (m *wizardModel) updateRemoveMenu(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // actions — thin wrappers over integrate/*, results captured as lines for the
 // result screen.
 
-func (m *wizardModel) runScaffold() {
-	m.screen = screenScaffoldResult
-	m.resultErr = nil
-	if existing := configPathUp(m.cwd); existing != "" {
-		m.resultLines = []string{fmt.Sprintf("agent-runtime.yaml already exists at %s (unchanged)", existing)}
-		return
-	}
-	path, created, err := integrate.ScaffoldConfig(m.cwd)
-	if err != nil {
-		m.resultErr = err
-		return
-	}
-	if created {
-		m.resultLines = []string{
-			fmt.Sprintf("created %s", path),
-			"Add your apps under the apps: block, then use 'start --app <name>' in the process manager.",
-		}
-	} else {
-		m.resultLines = []string{fmt.Sprintf("agent-runtime.yaml already exists at %s (unchanged)", path)}
-	}
-}
-
 func (m *wizardModel) runRemoveSkills() {
 	m.screen = screenRemoveSkillsResult
 	m.resultErr = nil
@@ -639,18 +613,14 @@ func (m *wizardModel) runStatus() {
 	m.resultErr = nil
 	var lines []string
 	lines = append(lines, fmt.Sprintf("project dir: %s", m.cwd))
-	if m.loaded.Path != "" {
-		lines = append(lines, fmt.Sprintf("config: %s", m.loaded.Path))
-		if len(m.loaded.Config.Apps) > 0 {
-			lines = append(lines, "apps:")
-			for _, n := range m.loaded.Names() {
-				lines = append(lines, "  "+n)
-			}
-		} else {
-			lines = append(lines, "apps: (none configured yet)")
+	lines = append(lines, "config: central store (use the web Config page or API to edit)")
+	if m.loaded != nil && len(m.loaded.Config.Apps) > 0 {
+		lines = append(lines, "apps:")
+		for _, n := range m.loaded.Names() {
+			lines = append(lines, "  "+n)
 		}
 	} else {
-		lines = append(lines, "config: none — run 'Init agent-runtime.yaml' from the home menu")
+		lines = append(lines, "apps: (none configured yet)")
 	}
 	lines = append(lines, "")
 	lines = append(lines, titleStyle.Render("coding agents"))
@@ -772,7 +742,7 @@ func (m *wizardModel) View() string {
 		body = m.viewMultiSelect("Disconnect AI agents", "space to toggle, a to toggle all, enter to remove")
 	case screenRemoveMenu:
 		body = m.viewRemoveMenu()
-	case screenScaffoldResult, screenConnectResult,
+	case screenConnectResult,
 		screenRemoveSkillsResult, screenRemoveMCPResult, screenStatus, screenHelp:
 		body = m.viewResult()
 	}

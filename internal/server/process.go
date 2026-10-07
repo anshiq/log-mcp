@@ -162,7 +162,6 @@ var (
 	ErrNotFound      = fmt.Errorf("not_found")
 	ErrStaleRevision = fmt.Errorf("stale_revision")
 	ErrPolicyDenied  = fmt.Errorf("policy_denied")
-	ErrRepoUntrusted = fmt.Errorf("repo_untrusted")
 	ErrInvalidArg    = fmt.Errorf("invalid_argument")
 )
 
@@ -179,9 +178,6 @@ func errorCode(err error) string {
 	if isErr(err, ErrPolicyDenied) {
 		return "policy_denied"
 	}
-	if isErr(err, ErrRepoUntrusted) {
-		return "repo_untrusted"
-	}
 	if isErr(err, ErrInvalidArg) {
 		return "invalid_argument"
 	}
@@ -193,8 +189,6 @@ func errorCode(err error) string {
 		return "stale_revision"
 	case contains(msg, "policy_denied"):
 		return "policy_denied"
-	case contains(msg, "repo_untrusted"):
-		return "repo_untrusted"
 	case contains(msg, "denied"):
 		return "denied"
 	case contains(msg, "requires either"), contains(msg, "required"), contains(msg, "invalid"), contains(msg, "unknown layer"):
@@ -229,7 +223,7 @@ func errorHTTPCode(err error) int {
 		return http.StatusNotFound
 	case "stale_revision":
 		return http.StatusConflict
-	case "policy_denied", "repo_untrusted", "denied":
+	case "policy_denied", "denied":
 		return http.StatusForbidden
 	case "invalid_argument":
 		return http.StatusBadRequest

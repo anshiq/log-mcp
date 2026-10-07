@@ -11,12 +11,8 @@ import (
 	"time"
 )
 
-func TestLoadFromFindsConfigUpward(t *testing.T) {
+func TestLoadFileExplicit(t *testing.T) {
 	root := t.TempDir()
-	sub := filepath.Join(root, "a", "b")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	yaml := `
 runtime:
   log_buffer_lines: 500
@@ -29,10 +25,11 @@ apps:
   frontend:
     type: nextjs
 `
-	if err := os.WriteFile(filepath.Join(root, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
+	path := filepath.Join(root, "agent-runtime.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, err := LoadFrom(sub)
+	l, err := LoadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,10 +51,7 @@ apps:
 }
 
 func TestDefaults(t *testing.T) {
-	l, err := LoadFrom(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	l := EmptyLoaded(t.TempDir())
 	rc := l.Config.Runtime
 	if rc.LogBufferLines != 10000 {
 		t.Fatalf("default log_buffer_lines = %d", rc.LogBufferLines)
@@ -84,7 +78,7 @@ func TestMaxExitedProcessesOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte("runtime:\n  max_exited_processes: 7\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, err := LoadFrom(dir)
+	l, err := LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +109,7 @@ func TestNamesSorted(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, err := LoadFrom(dir)
+	l, err := LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +392,7 @@ apps:
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, err := LoadFrom(dir)
+	l, err := LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +431,7 @@ func TestAppSupervisionDefaults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte("apps:\n  api:\n    command: [\"true\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, err := LoadFrom(dir)
+	l, err := LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

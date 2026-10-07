@@ -15,7 +15,6 @@ service ProjectService {
   rpc LinkWorkspace(LinkWorkspaceRequest) returns (LinkWorkspaceResponse);
   rpc ForgetProject(ForgetProjectRequest) returns (ForgetProjectResponse);
   rpc GC(GCRequest) returns (GCResponse);
-  rpc TrustRepoConfig(TrustRepoConfigRequest) returns (TrustRepoConfigResponse);
 }
 
 message ResolveRequest {
@@ -85,9 +84,3 @@ message GCResponse {
   repeated string removed_workspaces = 1;
 }
 
-message TrustRepoConfigRequest {
-  string workspace_id = 1;
-  string path = 2;
-  string sha256 = 3;
-}
-message TrustRepoConfigResponse {}

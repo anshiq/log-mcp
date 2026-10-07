@@ -16,7 +16,7 @@ import (
 const mcpClient = "mcp"
 
 type startIn struct {
-	App     string   `json:"app,omitempty" jsonschema:"Name of an app declared in agent-runtime.yaml. Mutually exclusive with command."`
+	App     string   `json:"app,omitempty" jsonschema:"Name of an app declared in the project config. Mutually exclusive with command."`
 	Command string   `json:"command,omitempty" jsonschema:"Executable to launch (npm, go, python, java, ...). Mutually exclusive with app."`
 	Args    []string `json:"args,omitempty" jsonschema:"Arguments passed to the command."`
 	WorkDir string   `json:"workdir,omitempty" jsonschema:"Working directory, absolute or relative to the project root."`
@@ -76,7 +76,7 @@ type processEnvIn struct {
 
 type openShellIn struct {
 	ProcessID string `json:"process_id,omitempty" jsonschema:"Clone the environment+workdir of this running process. Mutually exclusive with app and pid."`
-	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from agent-runtime.yaml. Mutually exclusive with process_id and pid."`
+	App       string `json:"app,omitempty" jsonschema:"Clone the resolved environment+workdir of this configured app from the project config. Mutually exclusive with process_id and pid."`
 	PID       int    `json:"pid,omitempty" jsonschema:"OS process id: shell into any process's workdir+env via /proc/<pid> (Linux). Mutually exclusive with process_id and app."`
 	Shell     string `json:"shell,omitempty" jsonschema:"Shell to launch (absolute path or name). Default $SHELL, then /bin/sh."`
 }
@@ -108,7 +108,7 @@ type getAuditLogIn struct {
 
 func registerTools(server *mcp.Server, h *handlers) {
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from agent-runtime.yaml). Returns immediately with a process_id; the process keeps running in the background."},
+		&mcp.Tool{Name: "start_process", Description: "MANDATORY for starting any development process in this project (dev servers, watchers, backends). A process started any other way is invisible to agent-runtime and cannot be monitored. Start by raw {command, args, workdir} or prefer a named app (app=, from the project config). Returns immediately with a process_id; the process keeps running in the background."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, *api.StartResult, error) {
 			h.log(ctx, "start_process", in)
 			res, err := h.rt.Start(ctx, api.StartRequest{
@@ -232,7 +232,7 @@ func registerTools(server *mcp.Server, h *handlers) {
 		})
 
 	mcp.AddTool(server,
-		&mcp.Tool{Name: "list_apps", Description: "List the apps declared in agent-runtime.yaml with their detected profile and start command. Prefer start_process(app=...) over raw commands for reproducibility."},
+		&mcp.Tool{Name: "list_apps", Description: "List the apps declared in the project config with their detected profile and start command. Prefer start_process(app=...) over raw commands for reproducibility."},
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *api.ListAppsResult, error) {
 			h.log(ctx, "list_apps", nil)
 			res, err := h.rt.Apps()

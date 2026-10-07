@@ -30,7 +30,7 @@ RULES (mandatory):
    - process_status(process_id) for lifecycle state, pid, exit code, and supervision health (healthy/unhealthy) + restart policy.
    - get_logs(process_id, stream="stderr", lines=100) for error output; use stream and contains to stay small.
    - wait_for_log(process_id, ready=true) to confirm the app actually came up.
-4. Prefer named apps when available: start_process(app="...") for apps in agent-runtime.yaml. list_apps shows them; list_processes recovers every process_id this runtime holds, including exited ones.
+4. Prefer named apps when available: start_process(app="...") for apps in the project config. list_apps shows them; list_processes recovers every process_id this runtime holds, including exited ones.
 5. On failure, get the tail from get_logs, fix the cause, then restart_process(process_id) and wait_for_log(process_id, ready=true) again. Never rebuild the process by hand.
 6. If you ever lose a process_id, recover it with list_processes instead of restarting the app yourself.
 
@@ -41,7 +41,7 @@ PERSISTENCE (v3 daemon):
 - get_project_info tells you where the project YAML lives now (central store, not the repo) and who else is watching. Config edits hot-reload; validate_config/plan_config/apply_config edit it safely, or edit the file at the returned configPath directly.
 
 SUPERVISION (continuous, not request-driven):
-- Apps declared in agent-runtime.yaml can configure readiness overrides, a health_check (HTTP/TCP probe), and a restart policy (never|on-failure|always) with exponential backoff. agent-runtime notices crashes and health failures on its own — you do not need to poll.
+- Apps declared in the project config can configure readiness overrides, a health_check (HTTP/TCP probe), and a restart policy (never|on-failure|always) with exponential backoff. agent-runtime notices crashes and health failures on its own — you do not need to poll.
 - A process that fails its health check repeatedly, or crashes per its restart policy, is auto-restarted with visible backoff. Exhausting the restart budget marks it crashed (process_status shows status="crashed"). Manual stop_process never triggers a restart.
 - For an ad-hoc process started without an app entry, use set_restart_policy(process_id, policy) to opt into auto-restart.
 

@@ -12,11 +12,11 @@ import (
 func TestWizardSmoke(t *testing.T) {
 	m := newWizardModel(&config.Loaded{}, nil)
 	view := m.View()
-	if !strings.Contains(view, "agent-runtime") || !strings.Contains(view, "Init agent-runtime.yaml") {
+	if !strings.Contains(view, "agent-runtime") || !strings.Contains(view, "Connect AI agents") {
 		t.Fatalf("home view missing content:\n%s", view)
 	}
 	// navigate to Connect AI agents
-	m.cursor = 1
+	m.cursor = 0
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(*wizardModel)
 	if m.screen != screenConnectSelect {
@@ -65,7 +65,7 @@ func TestWizardSmoke(t *testing.T) {
 	}
 
 	// status screen
-	m.cursor = 3
+	m.cursor = 2
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(*wizardModel)
 	view = m.View()

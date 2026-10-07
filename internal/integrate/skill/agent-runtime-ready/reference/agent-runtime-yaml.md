@@ -1,9 +1,10 @@
-# agent-runtime.yaml reference
+# project config reference
 
-`agent-runtime.yaml` declares how runnable apps are started, supervised, and
-env-configured. It lives at the project root; the runtime finds it by walking
-up from the current directory. A ready-to-edit starter lives in
-`templates/agent-runtime.yaml`.
+The project config declares how runnable apps are started, supervised, and
+env-configured. It lives in the central store (`projects/<id>/agent-runtime.yaml`,
+plus per-workspace overlays) and is edited via the web Config page or
+`get_project_info` / `validate_config` / `plan_config` / `apply_config` — never
+via files in the repository.
 
 ## Full annotated template
 
@@ -40,9 +41,9 @@ apps:
     # Profile name — gives readiness detection + optional default command.
     type: node
 
-    # Relative to the directory containing agent-runtime.yaml, then resolved
-    # through filepath.EvalSymlinks (predictable uv/poetry walk-ups). Must
-    # exist — a missing workdir fails the start BEFORE anything is exec'd.
+    # Relative to the workspace root, then resolved through
+    # filepath.EvalSymlinks (predictable uv/poetry walk-ups). Must exist — a
+    # missing workdir fails the start BEFORE anything is exec'd.
     workdir: ./services/api
 
     # Explicit argv. Omit to use the profile's default command
@@ -71,7 +72,7 @@ lowest to highest precedence:
    default) or the parent process env (`shell_env: none`).
 2. **`runtime.env`** — a runtime-wide layer applied to every app/process.
 3. **`env_file`** — the app's (or the request's) dotenv file.
-4. **app `env`** — the app's `env:` block in `agent-runtime.yaml`.
+4. **app `env`** — the app's `env:` block in the project config.
 5. **request `env`** — the `env` array passed to `start_process`.
 
 Later layers override earlier ones for the same key. `get_process_env`
@@ -115,8 +116,8 @@ apps:
     command: ["python3", "-u", "worker.py"]
 ```
 
-- Paths (`workdir`, `env_file`) resolve **relative to the config file**, then
-  through `filepath.EvalSymlinks`.
+- Paths (`workdir`, `env_file`) resolve **relative to the workspace root**,
+  then through `filepath.EvalSymlinks`.
 - Each app's merged env is independent — `get_process_env(process_id)` per
   process shows exactly what that process got.
 - A missing `workdir` fails the start during resolution, **before anything is

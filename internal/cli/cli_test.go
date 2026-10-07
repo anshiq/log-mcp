@@ -418,7 +418,6 @@ func TestIntegrateSkillPrintsHint(t *testing.T) {
 		"reference/logging.md",
 		"reference/agent-runtime-yaml.md",
 		"reference/agent-workflow.md",
-		"templates/agent-runtime.yaml",
 		".claude/skills/agent-runtime-ready",
 		".config/opencode/skills/agent-runtime-ready",
 	} {

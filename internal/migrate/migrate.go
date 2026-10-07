@@ -1,6 +1,5 @@
-// Package migrate moves existing users to v3 (§14): resolve → trust
-// prompt → config import → legacy logs.db/audit.log import → v2 daemon
-// handover (legacy adopt path, processes badged until restarted).
+// Package migrate moves existing users to v3: resolve → legacy
+// logs.db/audit.log import → v2 daemon handover.
 package migrate
 
 import (
@@ -13,10 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"agent-runtime/internal/config"
 	"agent-runtime/internal/core"
 	"agent-runtime/internal/logpipe"
-	"agent-runtime/internal/store"
 
 	_ "modernc.org/sqlite"
 )
@@ -26,14 +23,12 @@ type Options struct {
 	DryRun   bool
 	AllKnown bool
 	Cleanup  bool
-	Yes      bool // trust repo configs non-interactively
 }
 
 // Report summarizes a migration run.
 type Report struct {
 	Dirs            []string
 	ProjectsCreated int
-	ConfigsImported int
 	LogsImported    int64
 	AuditImported   int
 	DaemonsStopped  int
@@ -43,35 +38,27 @@ type Report struct {
 // Migrate migrates one workspace directory into the v3 store.
 func Migrate(eng *core.Engine, dataDir, dir string, opts Options) (*Report, error) {
 	rep := &Report{Dirs: []string{dir}}
-	pid, wid, err := eng.ResolveWorkspace(dir)
+	_, wid, err := eng.ResolveWorkspace(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", dir, err)
 	}
-	ws, err := eng.Store().GetWorkspace(string(wid))
-	if err != nil {
+	if _, err := eng.Store().GetWorkspace(string(wid)); err != nil {
 		return nil, err
 	}
-	// 1. Repo config import (trust-gated).
-	if imported, err := importRepoConfig(eng, dataDir, string(pid), ws, opts); err != nil {
-		rep.Skipped = append(rep.Skipped, fmt.Sprintf("config: %v", err))
-	} else if imported {
-		rep.ConfigsImported++
-	}
-	// 2. Legacy archive import.
 	n, err := importLegacyLogs(eng, dataDir, string(wid), dir, opts)
 	if err != nil {
 		rep.Skipped = append(rep.Skipped, fmt.Sprintf("logs: %v", err))
 	} else {
 		rep.LogsImported += n
 	}
-	// 3. Legacy audit import.
+	// Legacy audit import.
 	m, err := importLegacyAudit(eng, dir, opts)
 	if err != nil {
 		rep.Skipped = append(rep.Skipped, fmt.Sprintf("audit: %v", err))
 	} else {
 		rep.AuditImported += m
 	}
-	// 4. v2 daemon handover.
+	// v2 daemon handover.
 	stopped, err := handoverV2Daemon(dir, opts)
 	if err != nil {
 		rep.Skipped = append(rep.Skipped, fmt.Sprintf("handover: %v", err))
@@ -79,44 +66,6 @@ func Migrate(eng *core.Engine, dataDir, dir string, opts Options) (*Report, erro
 		rep.DaemonsStopped++
 	}
 	return rep, nil
-}
-
-func importRepoConfig(eng *core.Engine, dataDir, projectID string, ws *store.Workspace, opts Options) (bool, error) {
-	ep := config.DiscoverEffective(dataDir, projectID, ws.ID, ws.Path)
-	if ep.Repo == "" {
-		return false, nil
-	}
-	data, err := os.ReadFile(ep.Repo)
-	if err != nil {
-		return false, err
-	}
-	sha := config.SHA256(data)
-	if trusted, _ := eng.Store().IsTrusted(ws.ID, ep.Repo); trusted {
-		if have, found, _ := eng.Store().RepoTrustSHA(ws.ID, ep.Repo); found && have == sha {
-			return false, nil // already imported + trusted
-		}
-	}
-	if !opts.Yes && !opts.DryRun {
-		return false, fmt.Errorf("repo config %s needs trust: run `agent-runtime project trust` or migrate --yes", ep.Repo)
-	}
-	if opts.DryRun {
-		return true, nil
-	}
-	target := ep.Project
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(target, data, 0o600); err != nil {
-		return false, err
-	}
-	by := "migrate"
-	if _, err := eng.Store().AddRevision(projectID, "project", string(data), sha, true, "", "import", "", "imported-from-repo"); err != nil {
-		return false, err
-	}
-	if err := eng.Store().TrustRepo(ws.ID, ep.Repo, sha, by); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // legacyEntry mirrors one v2 logstore entries row.
@@ -277,7 +226,7 @@ func handoverV2Daemon(root string, opts Options) (bool, error) {
 }
 
 // FindKnownDirs scans harness configs + recent dirs for v3-migratable
-// projects (agent-runtime.yaml files to import).
+// projects with legacy state to import.
 func FindKnownDirs() []string {
 	seen := map[string]bool{}
 	var out []string
@@ -297,7 +246,7 @@ func FindKnownDirs() []string {
 	}
 	for _, f := range candidates {
 		for _, dir := range extractDirs(f) {
-			if hasRepoConfig(dir) {
+			if hasLegacyState(dir) {
 				add(dir)
 			}
 		}
@@ -308,11 +257,9 @@ func FindKnownDirs() []string {
 	return out
 }
 
-func hasRepoConfig(dir string) bool {
-	for _, n := range []string{"agent-runtime.yaml", "agent-runtime.yml"} {
-		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
-			return true
-		}
+func hasLegacyState(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, ".agent-runtime")); err == nil {
+		return true
 	}
 	return false
 }

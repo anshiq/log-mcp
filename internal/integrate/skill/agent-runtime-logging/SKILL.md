@@ -84,7 +84,7 @@ Scaffold logging from the golden wiring so it is correct from line one:
    (`PORT`, `LOG_LEVEL`, `SERVICE`, `DATABASE_URL`, ...).
 3. Ship a middleware/filter that stamps `request_id` per request and appends
    `method path status duration_ms` to each request-scoped line.
-4. Declare the app in `agent-runtime.yaml` (`type: python`, command via the
+4. Declare the app in the project config (`type: python`, command via the
    venv interpreter, `PYTHONUNBUFFERED=1` — see the agent-runtime-ready skill
    for the full contract).
 5. Verify with the loop below and only report "done" once it passes.

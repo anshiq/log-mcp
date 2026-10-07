@@ -935,102 +935,6 @@ func (x *GCResponse) GetRemovedWorkspaces() []string {
 	return nil
 }
 
-type TrustRepoConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Sha256        string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TrustRepoConfigRequest) Reset() {
-	*x = TrustRepoConfigRequest{}
-	mi := &file_agentruntime_v1_project_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TrustRepoConfigRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TrustRepoConfigRequest) ProtoMessage() {}
-
-func (x *TrustRepoConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_project_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TrustRepoConfigRequest.ProtoReflect.Descriptor instead.
-func (*TrustRepoConfigRequest) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_project_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *TrustRepoConfigRequest) GetWorkspaceId() string {
-	if x != nil {
-		return x.WorkspaceId
-	}
-	return ""
-}
-
-func (x *TrustRepoConfigRequest) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-func (x *TrustRepoConfigRequest) GetSha256() string {
-	if x != nil {
-		return x.Sha256
-	}
-	return ""
-}
-
-type TrustRepoConfigResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TrustRepoConfigResponse) Reset() {
-	*x = TrustRepoConfigResponse{}
-	mi := &file_agentruntime_v1_project_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TrustRepoConfigResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TrustRepoConfigResponse) ProtoMessage() {}
-
-func (x *TrustRepoConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentruntime_v1_project_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TrustRepoConfigResponse.ProtoReflect.Descriptor instead.
-func (*TrustRepoConfigResponse) Descriptor() ([]byte, []int) {
-	return file_agentruntime_v1_project_proto_rawDescGZIP(), []int{19}
-}
-
 var File_agentruntime_v1_project_proto protoreflect.FileDescriptor
 
 const file_agentruntime_v1_project_proto_rawDesc = "" +
@@ -1103,12 +1007,7 @@ const file_agentruntime_v1_project_proto_rawDesc = "" +
 	"\tGCRequest\";\n" +
 	"\n" +
 	"GCResponse\x12-\n" +
-	"\x12removed_workspaces\x18\x01 \x03(\tR\x11removedWorkspaces\"g\n" +
-	"\x16TrustRepoConfigRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
-	"\x06sha256\x18\x03 \x01(\tR\x06sha256\"\x19\n" +
-	"\x17TrustRepoConfigResponse2\xba\x06\n" +
+	"\x12removed_workspaces\x18\x01 \x03(\tR\x11removedWorkspaces2\xd4\x05\n" +
 	"\x0eProjectService\x12L\n" +
 	"\aResolve\x12\x1f.agentruntime.v1.ResolveRequest\x1a .agentruntime.v1.ResolveResponse\x12[\n" +
 	"\fListProjects\x12$.agentruntime.v1.ListProjectsRequest\x1a%.agentruntime.v1.ListProjectsResponse\x12U\n" +
@@ -1118,8 +1017,7 @@ const file_agentruntime_v1_project_proto_rawDesc = "" +
 	"\x0eListWorkspaces\x12&.agentruntime.v1.ListWorkspacesRequest\x1a'.agentruntime.v1.ListWorkspacesResponse\x12^\n" +
 	"\rLinkWorkspace\x12%.agentruntime.v1.LinkWorkspaceRequest\x1a&.agentruntime.v1.LinkWorkspaceResponse\x12^\n" +
 	"\rForgetProject\x12%.agentruntime.v1.ForgetProjectRequest\x1a&.agentruntime.v1.ForgetProjectResponse\x12=\n" +
-	"\x02GC\x12\x1a.agentruntime.v1.GCRequest\x1a\x1b.agentruntime.v1.GCResponse\x12d\n" +
-	"\x0fTrustRepoConfig\x12'.agentruntime.v1.TrustRepoConfigRequest\x1a(.agentruntime.v1.TrustRepoConfigResponseB2Z0agent-runtime/gen/agentruntime/v1;agentruntimev1b\x06proto3"
+	"\x02GC\x12\x1a.agentruntime.v1.GCRequest\x1a\x1b.agentruntime.v1.GCResponseB2Z0agent-runtime/gen/agentruntime/v1;agentruntimev1b\x06proto3"
 
 var (
 	file_agentruntime_v1_project_proto_rawDescOnce sync.Once
@@ -1133,40 +1031,38 @@ func file_agentruntime_v1_project_proto_rawDescGZIP() []byte {
 	return file_agentruntime_v1_project_proto_rawDescData
 }
 
-var file_agentruntime_v1_project_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_agentruntime_v1_project_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_agentruntime_v1_project_proto_goTypes = []any{
-	(*ResolveRequest)(nil),          // 0: agentruntime.v1.ResolveRequest
-	(*ResolveResponse)(nil),         // 1: agentruntime.v1.ResolveResponse
-	(*ListProjectsRequest)(nil),     // 2: agentruntime.v1.ListProjectsRequest
-	(*ListProjectsResponse)(nil),    // 3: agentruntime.v1.ListProjectsResponse
-	(*Project)(nil),                 // 4: agentruntime.v1.Project
-	(*GetProjectRequest)(nil),       // 5: agentruntime.v1.GetProjectRequest
-	(*GetProjectResponse)(nil),      // 6: agentruntime.v1.GetProjectResponse
-	(*UpdateProjectRequest)(nil),    // 7: agentruntime.v1.UpdateProjectRequest
-	(*UpdateProjectResponse)(nil),   // 8: agentruntime.v1.UpdateProjectResponse
-	(*ListWorkspacesRequest)(nil),   // 9: agentruntime.v1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),  // 10: agentruntime.v1.ListWorkspacesResponse
-	(*Workspace)(nil),               // 11: agentruntime.v1.Workspace
-	(*LinkWorkspaceRequest)(nil),    // 12: agentruntime.v1.LinkWorkspaceRequest
-	(*LinkWorkspaceResponse)(nil),   // 13: agentruntime.v1.LinkWorkspaceResponse
-	(*ForgetProjectRequest)(nil),    // 14: agentruntime.v1.ForgetProjectRequest
-	(*ForgetProjectResponse)(nil),   // 15: agentruntime.v1.ForgetProjectResponse
-	(*GCRequest)(nil),               // 16: agentruntime.v1.GCRequest
-	(*GCResponse)(nil),              // 17: agentruntime.v1.GCResponse
-	(*TrustRepoConfigRequest)(nil),  // 18: agentruntime.v1.TrustRepoConfigRequest
-	(*TrustRepoConfigResponse)(nil), // 19: agentruntime.v1.TrustRepoConfigResponse
-	(*Pagination)(nil),              // 20: agentruntime.v1.Pagination
-	(*Cursor)(nil),                  // 21: agentruntime.v1.Cursor
+	(*ResolveRequest)(nil),         // 0: agentruntime.v1.ResolveRequest
+	(*ResolveResponse)(nil),        // 1: agentruntime.v1.ResolveResponse
+	(*ListProjectsRequest)(nil),    // 2: agentruntime.v1.ListProjectsRequest
+	(*ListProjectsResponse)(nil),   // 3: agentruntime.v1.ListProjectsResponse
+	(*Project)(nil),                // 4: agentruntime.v1.Project
+	(*GetProjectRequest)(nil),      // 5: agentruntime.v1.GetProjectRequest
+	(*GetProjectResponse)(nil),     // 6: agentruntime.v1.GetProjectResponse
+	(*UpdateProjectRequest)(nil),   // 7: agentruntime.v1.UpdateProjectRequest
+	(*UpdateProjectResponse)(nil),  // 8: agentruntime.v1.UpdateProjectResponse
+	(*ListWorkspacesRequest)(nil),  // 9: agentruntime.v1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil), // 10: agentruntime.v1.ListWorkspacesResponse
+	(*Workspace)(nil),              // 11: agentruntime.v1.Workspace
+	(*LinkWorkspaceRequest)(nil),   // 12: agentruntime.v1.LinkWorkspaceRequest
+	(*LinkWorkspaceResponse)(nil),  // 13: agentruntime.v1.LinkWorkspaceResponse
+	(*ForgetProjectRequest)(nil),   // 14: agentruntime.v1.ForgetProjectRequest
+	(*ForgetProjectResponse)(nil),  // 15: agentruntime.v1.ForgetProjectResponse
+	(*GCRequest)(nil),              // 16: agentruntime.v1.GCRequest
+	(*GCResponse)(nil),             // 17: agentruntime.v1.GCResponse
+	(*Pagination)(nil),             // 18: agentruntime.v1.Pagination
+	(*Cursor)(nil),                 // 19: agentruntime.v1.Cursor
 }
 var file_agentruntime_v1_project_proto_depIdxs = []int32{
-	20, // 0: agentruntime.v1.ListProjectsRequest.pagination:type_name -> agentruntime.v1.Pagination
+	18, // 0: agentruntime.v1.ListProjectsRequest.pagination:type_name -> agentruntime.v1.Pagination
 	4,  // 1: agentruntime.v1.ListProjectsResponse.projects:type_name -> agentruntime.v1.Project
-	21, // 2: agentruntime.v1.ListProjectsResponse.next_page_token:type_name -> agentruntime.v1.Cursor
+	19, // 2: agentruntime.v1.ListProjectsResponse.next_page_token:type_name -> agentruntime.v1.Cursor
 	4,  // 3: agentruntime.v1.GetProjectResponse.project:type_name -> agentruntime.v1.Project
 	4,  // 4: agentruntime.v1.UpdateProjectResponse.project:type_name -> agentruntime.v1.Project
-	20, // 5: agentruntime.v1.ListWorkspacesRequest.pagination:type_name -> agentruntime.v1.Pagination
+	18, // 5: agentruntime.v1.ListWorkspacesRequest.pagination:type_name -> agentruntime.v1.Pagination
 	11, // 6: agentruntime.v1.ListWorkspacesResponse.workspaces:type_name -> agentruntime.v1.Workspace
-	21, // 7: agentruntime.v1.ListWorkspacesResponse.next_page_token:type_name -> agentruntime.v1.Cursor
+	19, // 7: agentruntime.v1.ListWorkspacesResponse.next_page_token:type_name -> agentruntime.v1.Cursor
 	11, // 8: agentruntime.v1.LinkWorkspaceResponse.workspace:type_name -> agentruntime.v1.Workspace
 	0,  // 9: agentruntime.v1.ProjectService.Resolve:input_type -> agentruntime.v1.ResolveRequest
 	2,  // 10: agentruntime.v1.ProjectService.ListProjects:input_type -> agentruntime.v1.ListProjectsRequest
@@ -1176,18 +1072,16 @@ var file_agentruntime_v1_project_proto_depIdxs = []int32{
 	12, // 14: agentruntime.v1.ProjectService.LinkWorkspace:input_type -> agentruntime.v1.LinkWorkspaceRequest
 	14, // 15: agentruntime.v1.ProjectService.ForgetProject:input_type -> agentruntime.v1.ForgetProjectRequest
 	16, // 16: agentruntime.v1.ProjectService.GC:input_type -> agentruntime.v1.GCRequest
-	18, // 17: agentruntime.v1.ProjectService.TrustRepoConfig:input_type -> agentruntime.v1.TrustRepoConfigRequest
-	1,  // 18: agentruntime.v1.ProjectService.Resolve:output_type -> agentruntime.v1.ResolveResponse
-	3,  // 19: agentruntime.v1.ProjectService.ListProjects:output_type -> agentruntime.v1.ListProjectsResponse
-	6,  // 20: agentruntime.v1.ProjectService.GetProject:output_type -> agentruntime.v1.GetProjectResponse
-	8,  // 21: agentruntime.v1.ProjectService.UpdateProject:output_type -> agentruntime.v1.UpdateProjectResponse
-	10, // 22: agentruntime.v1.ProjectService.ListWorkspaces:output_type -> agentruntime.v1.ListWorkspacesResponse
-	13, // 23: agentruntime.v1.ProjectService.LinkWorkspace:output_type -> agentruntime.v1.LinkWorkspaceResponse
-	15, // 24: agentruntime.v1.ProjectService.ForgetProject:output_type -> agentruntime.v1.ForgetProjectResponse
-	17, // 25: agentruntime.v1.ProjectService.GC:output_type -> agentruntime.v1.GCResponse
-	19, // 26: agentruntime.v1.ProjectService.TrustRepoConfig:output_type -> agentruntime.v1.TrustRepoConfigResponse
-	18, // [18:27] is the sub-list for method output_type
-	9,  // [9:18] is the sub-list for method input_type
+	1,  // 17: agentruntime.v1.ProjectService.Resolve:output_type -> agentruntime.v1.ResolveResponse
+	3,  // 18: agentruntime.v1.ProjectService.ListProjects:output_type -> agentruntime.v1.ListProjectsResponse
+	6,  // 19: agentruntime.v1.ProjectService.GetProject:output_type -> agentruntime.v1.GetProjectResponse
+	8,  // 20: agentruntime.v1.ProjectService.UpdateProject:output_type -> agentruntime.v1.UpdateProjectResponse
+	10, // 21: agentruntime.v1.ProjectService.ListWorkspaces:output_type -> agentruntime.v1.ListWorkspacesResponse
+	13, // 22: agentruntime.v1.ProjectService.LinkWorkspace:output_type -> agentruntime.v1.LinkWorkspaceResponse
+	15, // 23: agentruntime.v1.ProjectService.ForgetProject:output_type -> agentruntime.v1.ForgetProjectResponse
+	17, // 24: agentruntime.v1.ProjectService.GC:output_type -> agentruntime.v1.GCResponse
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
@@ -1205,7 +1099,7 @@ func file_agentruntime_v1_project_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentruntime_v1_project_proto_rawDesc), len(file_agentruntime_v1_project_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

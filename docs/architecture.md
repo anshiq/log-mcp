@@ -47,8 +47,7 @@ agent-runtime v3 transforms the system from a per-project, session-scoped MCP su
 3. **Locator chain** — workspace resolution via path, dev/inode, git
 4. **Connect-RPC** — versioned API over Unix sockets
 5. **Central storage** — state.db under `~/.local/share/agent-runtime`
-6. **Config layering** — built-in → daemon defaults → repo → project → workspace
-7. **Trust gate** — repo configs are inactive until explicitly trusted
+6. **Config layering** — built-in → daemon defaults → project → workspace
 
 ## Directory Layout
 
@@ -91,7 +90,6 @@ $XDG_RUNTIME_DIR/agent-runtime/
 
 v2 → v3 migration is automatic:
 1. Resolve → new project + workspace
-2. Import repo config (trust-gated)
 3. Import legacy `logs.db` and `audit.log`
 4. Adopt v2 daemon processes via legacy adopt path
 5. v3 daemon reconnects all shims on boot
@@ -110,6 +108,5 @@ v2 → v3 migration is automatic:
 
 - UDS socket: `0700` directory, `0600` socket, `SO_PEERCRED` uid check
 - TCP listener: off by default, bearer token, strict Host check
-- Repo-config trust gate (direnv-style allow)
 - Secrets in env redacted; reveal is policy-gated and audited
 - DB/log files `0600`; data dir `0700`

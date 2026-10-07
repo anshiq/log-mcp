@@ -60,11 +60,6 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	// Raw layers for the editor.
 	raw := map[string]any{}
 	ep := config.DiscoverEffective(s.engine.DataDir(), pr.ProjectID(), wsID, pr.WorkspacePath())
-	if ep.Repo != "" {
-		if data, err := os.ReadFile(ep.Repo); err == nil {
-			raw["repo"] = string(data)
-		}
-	}
 	if data, err := os.ReadFile(ep.Project); err == nil {
 		raw["project"] = string(data)
 	}
@@ -80,13 +75,12 @@ func (s *Server) cfgGet(w http.ResponseWriter, r *http.Request) (any, error) {
 	layers := []any{
 		map[string]any{"name": "project", "path": ep.Project, "exists": fileExists(ep.Project), "writable": true},
 		map[string]any{"name": "workspace", "path": ep.Overlay, "exists": fileExists(ep.Overlay), "writable": true},
-		map[string]any{"name": "repo", "path": ep.Repo, "exists": fileExists(ep.Repo), "writable": false, "trusted": ep.Repo == "" || repoTrusted(s, wsID, ep.Repo), "sha256": fileSHA(ep.Repo)},
 	}
 	return map[string]any{
 		"projectId": pr.ProjectID(), "workspaceId": wsID,
 		"apps": apps, "provenance": prov, "raw": raw,
 		"configPath": ep.Project, "overlayPath": ep.Overlay,
-		"repoPath": ep.Repo, "warnings": resolvedWarnings(resolved),
+		"warnings": resolvedWarnings(resolved),
 		"revision": latestRevision, "layers": layers,
 	}, nil
 }
@@ -97,31 +91,6 @@ func fileExists(p string) bool {
 	}
 	_, err := os.Stat(p)
 	return err == nil
-}
-
-func fileSHA(p string) string {
-	if p == "" {
-		return ""
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return ""
-	}
-	return config.SHA256(data)
-}
-
-func repoTrusted(s *Server, wsID, path string) bool {
-	if path == "" {
-		return false
-	}
-	sha := fileSHA(path)
-	if sha == "" {
-		return false
-	}
-	if pr, err := s.engine.GetOrCreateRuntime(wsID); err == nil {
-		_ = pr
-	}
-	return true
 }
 
 func resolvedWarnings(resolved *config.Resolved) []string {
@@ -351,8 +320,7 @@ func (s *Server) cfgApply(w http.ResponseWriter, r *http.Request) (any, error) {
 		if res := pr.ResolvedConfig(); res != nil {
 			oldApps = res.Apps
 		}
-		trusted := true
-		res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), trusted, nil)
+		res, errs := config.Resolve(s.engine.DataDir(), req.ProjectID, ws, pr.WorkspacePath(), nil)
 		if errs != nil {
 			continue
 		}

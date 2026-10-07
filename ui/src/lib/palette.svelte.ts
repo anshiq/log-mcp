@@ -53,7 +53,7 @@ const ROUTES: { path: string; title: string; icon: Icon; keys?: string; keywords
   { path: '/processes', title: 'Processes', icon: Terminal, keys: 'g p', keywords: 'running apps' },
   { path: '/logs', title: 'Logs', icon: ScrollText, keys: 'g l', keywords: 'output stdout stderr' },
   { path: '/apps', title: 'Apps', icon: Boxes, keys: 'g a', keywords: 'definitions' },
-  { path: '/config', title: 'Config', icon: FileCog, keys: 'g c', keywords: 'yaml agent-runtime.yaml' },
+  { path: '/config', title: 'Config', icon: FileCog, keys: 'g c', keywords: 'yaml project config' },
   { path: '/config/revisions', title: 'Config Revisions', icon: History, keywords: 'history rollback' },
   { path: '/events', title: 'Events', icon: Activity, keys: 'g e', keywords: 'activity stream' },
   { path: '/sessions', title: 'Sessions', icon: Users, keys: 'g s', keywords: 'clients agents' },

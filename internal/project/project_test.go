@@ -261,10 +261,6 @@ func (f *fakeStore) AddFingerprint(pid ID, kind, value string, weak bool) error 
 func (f *fakeStore) GetProjectByFingerprints(fps []Fingerprint) ([]*Project, error) {
 	return nil, nil
 }
-func (f *fakeStore) TrustRepo(ws WorkspaceID, path, sha, by string) error { return nil }
-func (f *fakeStore) IsTrusted(ws WorkspaceID, path string) (bool, error) {
-	return false, nil
-}
 func (f *fakeStore) FindWorkspaceByDevIno(dev, ino uint64) (*Workspace, error) {
 	// In-memory fake: match by path existence is handled by Resolve's
 	// stat; here return the single workspace to exercise the rebind.

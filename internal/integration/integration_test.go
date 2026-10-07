@@ -112,10 +112,7 @@ func TestExampleApps(t *testing.T) {
 			}
 			appDir := filepath.Join(t.TempDir(), tc.dir)
 			writeAppFixture(t, appDir, tc.files)
-			loaded, err := config.LoadFrom(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
+			loaded := config.EmptyLoaded(t.TempDir())
 			// Make the runtime resolve relative workdirs against the app dir.
 			loaded.ProjectDir = appDir
 			rt := runtime.New(loaded, nil)
@@ -215,7 +212,7 @@ func newRuntimeFromFixture(t *testing.T, fixture string) *runtime.Runtime {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := config.LoadFrom(dir)
+	loaded, err := config.LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,6 @@
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import Link from '@lucide/svelte/icons/link';
-  import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import Eraser from '@lucide/svelte/icons/eraser';
   import Copy from '@lucide/svelte/icons/copy';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
@@ -71,7 +70,6 @@
   let renameValue = $state('');
   let renameBusy = $state(false);
 
-  let busyWs = $state('');
 
   const visible = $derived.by(() => {
     const q = filter.trim().toLowerCase();
@@ -253,29 +251,6 @@
     toasts.ok(`Scope set to ${scopeState.workspaceLabel(w.id)}`);
   }
 
-  async function trustRepo(w: WorkspaceRow) {
-    busyWs = w.id;
-    try {
-      const bundle = await ConfigService.get(w.id);
-      const repo = (bundle.layers as { name: string; path: string; exists: boolean; sha256?: string; trusted?: boolean }[]).find((l) => l.name === 'repo');
-      if (!repo || !repo.exists || !repo.sha256) {
-        toasts.info('This workspace has no agent-runtime.yaml to trust');
-        return;
-      }
-      const ok = await dialogs.confirm(`Trust the repository config at\n${repo.path}\n\nIt will be allowed to define apps and commands that the daemon runs.`, {
-        title: 'Trust repo config',
-        confirmLabel: 'Trust config'
-      });
-      if (!ok) return;
-      await ProjectService.trustRepoConfig(w.id, repo.path, repo.sha256);
-      toasts.ok('Repo config trusted');
-    } catch (err) {
-      toastError(err);
-    } finally {
-      busyWs = '';
-    }
-  }
-
   async function copyPath(path: string) {
     await getPlatform().copyText(path);
     toasts.info('Path copied');
@@ -412,9 +387,6 @@
                   </div>
                   <div class="wactions">
                     <IconButton label="Copy path" size="sm" onclick={() => void copyPath(w.path)}><Copy size={13} /></IconButton>
-                    <Button size="sm" variant="ghost" loading={busyWs === w.id} onclick={() => void trustRepo(w)} title="Trust this workspace’s agent-runtime.yaml">
-                      {#if busyWs !== w.id}<ShieldCheck size={13} />{/if}Trust config
-                    </Button>
                     <Button size="sm" variant={active ? 'secondary' : 'primary'} disabled={active} onclick={() => useWorkspace(w)}>
                       {#if active}<Check size={13} />Selected{:else}Use this workspace{/if}
                     </Button>

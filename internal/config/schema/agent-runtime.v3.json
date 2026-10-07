@@ -28,7 +28,7 @@
           "type": "object",
           "description": "Security policy for this project.",
           "properties": {
-            "mode": { "type": "string", "enum": ["trusted", "restricted"], "default": "trusted", "description": "Trusted allows repo configs; restricted requires explicit trust." }
+            "mode": { "type": "string", "enum": ["trusted", "restricted"], "default": "trusted", "description": "Trusted is the default permissive posture; restricted confines commands and workdirs." }
           }
         }
       }

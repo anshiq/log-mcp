@@ -195,17 +195,6 @@ func (e *Engine) GetOrCreateRuntime(workspaceID string) (*ProjectRuntime, error)
 		lastUsed:  time.Now(),
 		stale:     map[string]bool{},
 		allocPort: e.AllocatePort,
-		trusted: func(workspaceID, path, sha string) bool {
-			ok, err := e.store.IsTrusted(workspaceID, path)
-			if err != nil || !ok {
-				return false
-			}
-			have, found, err := e.store.RepoTrustSHA(workspaceID, path)
-			if err != nil || !found {
-				return false
-			}
-			return have == sha
-		},
 	}
 	e.runtimes.Store(workspaceID, rt)
 	_ = e.store.TouchProject(ws.ProjectID)
@@ -488,14 +477,6 @@ func (a storeAdapter) GetProjectByFingerprints(fps []project.Fingerprint) ([]*pr
 		out = append(out, cvtProject(p))
 	}
 	return out, nil
-}
-
-func (a storeAdapter) TrustRepo(ws project.WorkspaceID, path, sha string, by string) error {
-	return a.db.TrustRepo(string(ws), path, sha, by)
-}
-
-func (a storeAdapter) IsTrusted(ws project.WorkspaceID, path string) (bool, error) {
-	return a.db.IsTrusted(string(ws), path)
 }
 
 func (a storeAdapter) FindWorkspaceByDevIno(dev, ino uint64) (*project.Workspace, error) {

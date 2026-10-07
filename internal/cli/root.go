@@ -20,16 +20,14 @@ import (
 
 // Run is the CLI entry point invoked from main with os.Args[1:].
 //
-// No arguments -> the interactive setup wizard (menu: init agent-runtime.yaml,
-// install skills, connect an AI agent, open the process manager). The process
+// No arguments -> the interactive setup wizard (menu: connect AI agents,
+// install skills, open the process manager). The process
 // manager itself lives under "repl"; "serve" and the other subcommands run as
 // one-shots. The REPL commands (start/logs/wait/...) only exist inside a
 // session because they manage the session's processes.
 func Run(args []string, logger *slog.Logger) error {
-	loaded, err := config.LoadDefault()
-	if err != nil {
-		return err
-	}
+	cwd, _ := os.Getwd()
+	loaded := config.EmptyLoaded(cwd)
 	if len(args) == 0 {
 		return runBare(loaded, logger)
 	}
@@ -73,8 +71,8 @@ func newRootCmd(s *session, loaded *config.Loaded, logger *slog.Logger) *cobra.C
 		Long: `agent-runtime supervises development processes and exposes them over MCP.
 
 Run with no arguments to open the native GUI window (desktop build with a
-display), otherwise the interactive setup wizard (init agent-runtime.yaml,
-install or remove skills, connect or disconnect an AI coding agent).
+display), otherwise the interactive setup wizard (install or remove skills,
+connect or disconnect an AI coding agent).
 
 One-shot commands:
    gui                Open the native GUI application window (desktop build).

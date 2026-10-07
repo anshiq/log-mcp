@@ -157,7 +157,7 @@ func newStartCmd(s *session) *cobra.Command {
 		Short:              "Start a process and return its process_id (never blocks)",
 		DisableFlagParsing: true,
 		Long: `Start a supervised process and return its process_id immediately.
-  start --app <name> [--env K=V ...]     start a named app from agent-runtime.yaml
+  start --app <name> [--env K=V ...]     start a named app from the project config
   start <command> [args...]              start a raw command
   start <app-name>                       shortcut: a lone arg matching a configured app
 Flags must precede the command (mirrors 'run').`,
@@ -207,7 +207,7 @@ func newListCmd(s *session) *cobra.Command {
 func newAppsCmd(s *session) *cobra.Command {
 	return &cobra.Command{
 		Use:   "apps",
-		Short: "List apps configured in agent-runtime.yaml",
+		Short: "List apps configured in the project config",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res, err := s.rt.Apps()
 			if err != nil {
@@ -494,7 +494,7 @@ func printProcesses(procs []api.ProcessSummary) {
 
 func printApps(apps []api.AppInfo) {
 	if len(apps) == 0 {
-		fmt.Println("no apps configured (add an apps: block to agent-runtime.yaml)")
+		fmt.Println("no apps configured (add an apps: block in the web Config page)")
 		return
 	}
 	fmt.Printf("%-16s %-12s %s\n", "name", "type", "workdir")

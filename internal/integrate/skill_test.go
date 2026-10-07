@@ -22,7 +22,6 @@ func TestSkillFiles(t *testing.T) {
 		"agent-runtime-ready/reference/agent-runtime-yaml.md",
 		"agent-runtime-ready/reference/agent-workflow.md",
 		"agent-runtime-ready/reference/logging.md",
-		"agent-runtime-ready/templates/agent-runtime.yaml",
 		"agent-runtime-logging/SKILL.md",
 		"agent-runtime-logging/reference/logging.md",
 		"agent-runtime-logging/templates/logging_config.py",
@@ -52,8 +51,8 @@ func TestInstallSkillTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 5 || updated != 0 || unchanged != 0 {
-		t.Fatalf("ready first install: created=%d updated=%d unchanged=%d, want 5/0/0", created, updated, unchanged)
+	if created != 4 || updated != 0 || unchanged != 0 {
+		t.Fatalf("ready first install: created=%d updated=%d unchanged=%d, want 4/0/0", created, updated, unchanged)
 	}
 	created, updated, unchanged, err = InstallSkillTree(logging)
 	if err != nil {
@@ -79,8 +78,8 @@ func TestInstallSkillTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 0 || updated != 0 || unchanged != 5 {
-		t.Fatalf("ready second install: created=%d updated=%d unchanged=%d, want 0/0/5", created, updated, unchanged)
+	if created != 0 || updated != 0 || unchanged != 4 {
+		t.Fatalf("ready second install: created=%d updated=%d unchanged=%d, want 0/0/4", created, updated, unchanged)
 	}
 
 	// Modify one file; the third install must report exactly one update.
@@ -96,8 +95,8 @@ func TestInstallSkillTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created != 0 || updated != 1 || unchanged != 4 {
-		t.Fatalf("ready third install: created=%d updated=%d unchanged=%d, want 0/1/4", created, updated, unchanged)
+	if created != 0 || updated != 1 || unchanged != 3 {
+		t.Fatalf("ready third install: created=%d updated=%d unchanged=%d, want 0/1/3", created, updated, unchanged)
 	}
 
 	// Unknown skill name is an error.

@@ -147,7 +147,7 @@ type runOptions struct {
 // form the raw start command.
 func parseRunArgs(args []string) (runOptions, error) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	app := fs.String("app", "", "named app from agent-runtime.yaml")
+	app := fs.String("app", "", "named app from the project config")
 	workdir := fs.String("workdir", "", "working directory override")
 	var env stringList
 	fs.Var(&env, "env", "KEY=VALUE environment override (repeatable)")

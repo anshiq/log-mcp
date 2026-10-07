@@ -108,8 +108,6 @@ type Store interface {
 	GC() ([]string, error)
 	AddFingerprint(projectID ID, kind, value string, weak bool) error
 	GetProjectByFingerprints(fingerprints []Fingerprint) ([]*Project, error)
-	TrustRepo(workspaceID WorkspaceID, path, sha256 string, trustedBy string) error
-	IsTrusted(workspaceID WorkspaceID, path string) (bool, error)
 	// Locator-chain extensions (optional; resolver degrades gracefully
 	// when a Store does not implement them — see storeExtras).
 	FindWorkspaceByDevIno(dev, ino uint64) (*Workspace, error)

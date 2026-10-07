@@ -154,7 +154,7 @@ if __name__ == "__main__":
 ```
 
 - **Unbuffered output is mandatory**: Python block-buffers piped stdout.
-  Set `PYTHONUNBUFFERED=1` in the app's `env:` block in `agent-runtime.yaml`,
+  Set `PYTHONUNBUFFERED=1` in the app's `env:` block in the project config,
   or run with `python3 -u`, or `flush=True` on prints. Without it the
   readiness line and log lines are delayed or lost.
 - uvicorn handles SIGTERM/SIGINT with its own graceful shutdown — no handler

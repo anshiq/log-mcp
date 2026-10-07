@@ -271,7 +271,7 @@
     return p.startedAt ? duration(now - p.startedAt) : '';
   }
 
-  const layerNames: Record<string, string> = { project: 'project', workspace: 'workspace', repo: 'repo' };
+  const layerNames: Record<string, string> = { project: 'project', workspace: 'workspace' };
 </script>
 
 <div class="page">
@@ -336,7 +336,7 @@
         <div class="empty-state">
           <div class="icon-wrap"><Boxes size={22} /></div>
           <h3>No apps configured</h3>
-          <p>Define apps in this workspace's agent-runtime.yaml and they will show up here, ready to start with one click.</p>
+          <p>Define apps in this workspace's project config and they will show up here, ready to start with one click.</p>
           <button class="btn primary" onclick={() => void router.navigate('/config')}><FileCog size={15} />Open config editor</button>
         </div>
       </div>

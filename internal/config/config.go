@@ -1,4 +1,4 @@
-// Package config loads the optional per-project agent-runtime.yaml file and
+// Package config loads project configuration and
 // provides defaults for runtime behaviour.
 package config
 
@@ -411,35 +411,10 @@ func (l *Loaded) Names() []string {
 	return names
 }
 
-// LoadDefault finds agent-runtime.yaml by walking up from the current working
-// directory. Returns an empty config (with defaults) when none is found.
-func LoadDefault() (*Loaded, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	return LoadFrom(cwd)
-}
-
-// LoadFrom finds agent-runtime.yaml starting at startDir and walking upward.
-func LoadFrom(startDir string) (*Loaded, error) {
-	dir := startDir
-	for {
-		for _, name := range []string{"agent-runtime.yaml", "agent-runtime.yml"} {
-			path := filepath.Join(dir, name)
-			if _, err := os.Stat(path); err == nil {
-				return LoadFile(path)
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
+func EmptyLoaded(projectDir string) *Loaded {
 	cfg := Config{}
 	cfg.defaults()
-	return &Loaded{Config: cfg, ProjectDir: startDir}, nil
+	return &Loaded{Config: cfg, ProjectDir: projectDir}
 }
 
 // LoadFile loads a config from an explicit path.

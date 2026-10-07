@@ -40,8 +40,7 @@ alive; slow consumers get `Gap{dropped}` instead of backpressure (§5.4).
 
 Resolve (path → project/workspace via the locator chain), ListProjects,
 GetProject, UpdateProject (rename), ListWorkspaces, LinkWorkspace,
-ForgetProject (soft delete, 30-day trash), GC (missing paths),
-TrustRepoConfig (repo-config trust gate).
+ForgetProject (soft delete, 30-day trash), GC (missing paths).
 
 ## ConfigService
 
@@ -90,7 +89,7 @@ ListAudit (filterable, newest-first, secrets redacted).
 ## Errors
 
 HTTP status + `{"error", "code"}`; structured details
-(`policy_denied` + rule, `repo_untrusted`, `stale_revision`, `not_found`)
+(`policy_denied` + rule, `stale_revision`, `not_found`)
 travel as `ErrorInfo` with codegen. Handshake header on every call:
 `X-Agent-Runtime-Client: <kind>/<version>`.
 

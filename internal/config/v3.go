@@ -5,10 +5,9 @@
 //
 //  1. Built-in defaults
 //  2. agentd.yaml → defaults:
-//  3. Repo layer (opt-in, trust-gated): <workspace>/agent-runtime.yaml
-//  4. Project layer: projects/<id>/agent-runtime.yaml
-//  5. Workspace overlay: projects/<id>/workspaces/<ws>.yaml
-//  6. Request-time overrides (that start only)
+//  3. Project layer: projects/<id>/agent-runtime.yaml
+//  4. Workspace overlay: projects/<id>/workspaces/<ws>.yaml
+//  5. Request-time overrides (that start only)
 //
 // Merge rules: maps merge by key; apps.<name> merges field-wise; lists
 // replace unless the key ends in `+` (e.g. env+:), which appends. Every
@@ -37,7 +36,6 @@ type Layer string
 const (
 	LayerBuiltin   Layer = "builtin"
 	LayerDaemon    Layer = "daemon-defaults"
-	LayerRepo      Layer = "repo"
 	LayerProject   Layer = "project"
 	LayerWorkspace Layer = "workspace"
 	LayerRequest   Layer = "request"
@@ -465,27 +463,14 @@ func DeprecationWarnings(data []byte) []string {
 
 // EffectivePaths records which files feed a workspace's config.
 type EffectivePaths struct {
-	Repo      string // "" when absent
-	Project   string
-	Overlay   string // "" when absent
-	RepoTrust bool
+	Project string
+	Overlay string
 }
 
-// DiscoverEffective finds the candidate config files for a workspace.
-// Nothing is read; use Resolve to load+merge.
 func DiscoverEffective(dataDir, projectID, workspaceID, workspacePath string) EffectivePaths {
 	ep := EffectivePaths{
 		Project: filepath.Join(dataDir, "projects", projectID, "agent-runtime.yaml"),
 		Overlay: filepath.Join(dataDir, "projects", projectID, "workspaces", workspaceID+".yaml"),
-	}
-	for _, cand := range []string{
-		filepath.Join(workspacePath, "agent-runtime.yaml"),
-		filepath.Join(workspacePath, "agent-runtime.yml"),
-	} {
-		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-			ep.Repo = cand
-			break
-		}
 	}
 	if _, err := os.Stat(ep.Overlay); err != nil {
 		ep.Overlay = ""
@@ -504,10 +489,7 @@ type Resolved struct {
 	Alerts []AlertRule `json:"alerts"`
 }
 
-// Resolve loads and merges all layers. repoTrusted reports whether the
-// repo layer passed the trust gate; when false and a repo file exists it
-// is skipped (last trusted revision stays effective upstream).
-func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted bool, daemonDefaults map[string]string) (*Resolved, []*ValidationError) {
+func Resolve(dataDir, projectID, workspaceID, workspacePath string, daemonDefaults map[string]string) (*Resolved, []*ValidationError) {
 	ep := DiscoverEffective(dataDir, projectID, workspaceID, workspacePath)
 	merged := map[string]V3App{}
 	prov := Provenance{}
@@ -538,19 +520,6 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted 
 		return nil
 	}
 
-	// Repo layer (trust-gated).
-	if ep.Repo != "" {
-		if repoTrusted {
-			data, err := os.ReadFile(ep.Repo)
-			if err == nil {
-				if errs := apply(data, LayerRepo, filepath.Dir(ep.Repo)); len(errs) > 0 {
-					return nil, errs
-				}
-			}
-		} else {
-			warnings = append(warnings, "repo config present but untrusted; ignoring until trusted")
-		}
-	}
 	// Project layer.
 	if data, err := os.ReadFile(ep.Project); err == nil {
 		if errs := apply(data, LayerProject, workspacePath); len(errs) > 0 {
@@ -569,9 +538,6 @@ func Resolve(dataDir, projectID, workspaceID, workspacePath string, repoTrusted 
 	return &Resolved{Apps: merged, Provenance: prov, Paths: ep, Warnings: warnings, Redact: redact, Alerts: alerts}, nil
 }
 
-// mergeApp merges src into dst field-wise; lists replace unless the key
-// ends in `+` (env+: appends). Relative workdirs resolve against base,
-// except repo-layer files where base is the file's own directory.
 func mergeApp(dst *V3App, src V3App, base, workspacePath string) {
 	if src.Type != "" {
 		dst.Type = src.Type
@@ -619,9 +585,6 @@ func mergeApp(dst *V3App, src V3App, base, workspacePath string) {
 	_ = workspacePath
 }
 
-// ToLoaded converts a Resolved workspace config into a config.Loaded the
-// existing runtime.Runtime can host. Relative paths resolve against the
-// workspace root (§13).
 func (r *Resolved) ToLoaded(workspacePath string) *Loaded {
 	cfg := Config{}
 	cfg.defaults()

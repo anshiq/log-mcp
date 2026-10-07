@@ -13,7 +13,6 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import FileCode from '@lucide/svelte/icons/file-code';
   import Sparkles from '@lucide/svelte/icons/sparkles';
-  import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import Spinner from '../lib/ui/Spinner.svelte';
   import RelativeTime from '../lib/ui/RelativeTime.svelte';
   import PlanPanel from './config/PlanPanel.svelte';
@@ -32,7 +31,6 @@
   let cursor = $state({ line: 1, col: 1 });
   let disposers: (() => void)[] = [];
 
-  const untrusted = $derived(session.warnings.some((w) => /untrusted/i.test(w)));
   const problemCount = $derived(session.errors.length + session.validationWarnings.length);
   const layerPath = $derived(session.layerInfo?.path || `${session.layer} layer`);
   const canApply = $derived(session.writable && !session.empty && session.dirty && !session.invalid && !session.applying && !session.validating);
@@ -203,16 +201,6 @@
     </div>
   </div>
 
-  {#if !session.writable}
-    <div class="notice">
-      <Lock size={14} />
-      <span class="grow">The repo layer lives in your repository and is read-only here. Edit the file in your editor and changes are picked up automatically.</span>
-      {#if untrusted}
-        <button class="btn sm" onclick={() => void session.trustRepo()}><ShieldAlert size={13} />Trust this config</button>
-      {/if}
-    </div>
-  {/if}
-
   <div class="main">
     <div class="monaco-wrap">
       <div class="monaco" bind:this={host}></div>
@@ -365,21 +353,6 @@
   .btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
-  }
-  .notice {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    background: color-mix(in srgb, var(--info) 8%, var(--bg-1));
-    border-bottom: 1px solid var(--border);
-    color: var(--text-1);
-    font-size: var(--fs-sm);
-    flex: none;
-  }
-  .notice .grow {
-    flex: 1;
-    min-width: 0;
   }
   .main {
     flex: 1;

@@ -1,14 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
-  import Lock from '@lucide/svelte/icons/lock';
   import FileCog from '@lucide/svelte/icons/file-cog';
   import Layers from '@lucide/svelte/icons/layers';
   import Users from '@lucide/svelte/icons/users';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import X from '@lucide/svelte/icons/x';
   import Spinner from '../../lib/ui/Spinner.svelte';
   import WorkspacePicker from '../../components/WorkspacePicker.svelte';
@@ -25,12 +23,10 @@
 
   const layerMeta: { name: LayerName; label: string; hint: string }[] = [
     { name: 'project', label: 'Project', hint: 'Stored by agent-runtime for this project. Editable.' },
-    { name: 'workspace', label: 'Workspace', hint: 'Overrides for this workspace folder only. Editable.' },
-    { name: 'repo', label: 'Repo', hint: 'agent-runtime.yaml checked into the repository. Read-only here.' }
+    { name: 'workspace', label: 'Workspace', hint: 'Overrides for this workspace folder only. Editable.' }
   ];
 
-  const untrusted = $derived(session.warnings.some((w) => /untrusted/i.test(w)));
-  const otherWarnings = $derived(session.warnings.filter((w) => !/untrusted/i.test(w)));
+  const otherWarnings = $derived(session.warnings);
 
   function go(path: string) {
     internalNav = true;
@@ -99,7 +95,7 @@
       <WorkspacePicker
         icon={FileCog}
         title="Pick a workspace to configure"
-        body="Config is layered per workspace. Choose one to edit its agent-runtime.yaml, preview the impact on running apps and roll back revisions."
+        body="Config is layered per workspace. Choose one to edit its project config, preview the impact on running apps and roll back revisions."
       />
     </div>
   {:else}
@@ -130,7 +126,7 @@
                 disabled={!session.loaded || onRevisions}
                 onclick={() => session.setLayer(l.name)}
               >
-                {#if l.name === 'project'}<GitBranch size={13} />{:else if l.name === 'workspace'}<Users size={13} />{:else}<Lock size={13} />{/if}
+                {#if l.name === 'project'}<GitBranch size={13} />{:else}<Users size={13} />{/if}
                 {l.label}
                 <span class="state" class:exists={info?.exists} title={info?.exists ? 'file exists' : 'file not created yet'}></span>
                 {#if session.isDirty(l.name)}<span class="dot warn" title="unsaved edits"></span>{/if}
@@ -168,13 +164,6 @@
         <TriangleAlert size={16} />
         <span class="grow">{session.loadError}</span>
         <button class="btn sm" onclick={() => void session.load(wsId)}><RefreshCw size={13} />Retry</button>
-      </div>
-    {/if}
-    {#if untrusted}
-      <div class="banner info">
-        <ShieldAlert size={16} />
-        <span class="grow">The repo config in this workspace is not trusted yet, so its apps are ignored until you trust it.</span>
-        <button class="btn sm" onclick={() => void session.trustRepo()}>Trust repo config</button>
       </div>
     {/if}
     {#each otherWarnings as w}

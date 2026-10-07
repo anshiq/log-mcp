@@ -145,7 +145,7 @@ never affects the other.
 ## Supervision (v2) — crash & health are watched for you
 
 For apps that declare a `restart` policy and/or a `health_check` in
-`agent-runtime.yaml`, agent-runtime supervises **continuously**: it notices a
+the project config (central store), agent-runtime supervises **continuously**: it notices a
 3am crash or a failing health probe on its own and restarts with exponential
 backoff. You do not need to poll `process_status`.
 

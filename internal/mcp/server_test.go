@@ -55,10 +55,7 @@ func TestMain(m *testing.M) {
 
 func newRuntime(t *testing.T) *runtime.Runtime {
 	t.Helper()
-	loaded, err := config.LoadFrom(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	loaded := config.EmptyLoaded(t.TempDir())
 	return runtime.New(loaded, nil)
 }
 
@@ -338,10 +335,7 @@ func TestWaitForExitTool(t *testing.T) {
 }
 
 func TestListAppsTool(t *testing.T) {
-	loaded, err := config.LoadFrom(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	loaded := config.EmptyLoaded(t.TempDir())
 	rt := runtime.New(loaded, nil)
 	server := rtmcp.NewServer(rt, nil)
 	clientT, serverT := mcp.NewInMemoryTransports()

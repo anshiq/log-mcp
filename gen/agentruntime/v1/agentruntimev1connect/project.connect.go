@@ -57,9 +57,6 @@ const (
 	ProjectServiceForgetProjectProcedure = "/agentruntime.v1.ProjectService/ForgetProject"
 	// ProjectServiceGCProcedure is the fully-qualified name of the ProjectService's GC RPC.
 	ProjectServiceGCProcedure = "/agentruntime.v1.ProjectService/GC"
-	// ProjectServiceTrustRepoConfigProcedure is the fully-qualified name of the ProjectService's
-	// TrustRepoConfig RPC.
-	ProjectServiceTrustRepoConfigProcedure = "/agentruntime.v1.ProjectService/TrustRepoConfig"
 )
 
 // ProjectServiceClient is a client for the agentruntime.v1.ProjectService service.
@@ -72,7 +69,6 @@ type ProjectServiceClient interface {
 	LinkWorkspace(context.Context, *connect.Request[v1.LinkWorkspaceRequest]) (*connect.Response[v1.LinkWorkspaceResponse], error)
 	ForgetProject(context.Context, *connect.Request[v1.ForgetProjectRequest]) (*connect.Response[v1.ForgetProjectResponse], error)
 	GC(context.Context, *connect.Request[v1.GCRequest]) (*connect.Response[v1.GCResponse], error)
-	TrustRepoConfig(context.Context, *connect.Request[v1.TrustRepoConfigRequest]) (*connect.Response[v1.TrustRepoConfigResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the agentruntime.v1.ProjectService service. By
@@ -134,26 +130,19 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("GC")),
 			connect.WithClientOptions(opts...),
 		),
-		trustRepoConfig: connect.NewClient[v1.TrustRepoConfigRequest, v1.TrustRepoConfigResponse](
-			httpClient,
-			baseURL+ProjectServiceTrustRepoConfigProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("TrustRepoConfig")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // projectServiceClient implements ProjectServiceClient.
 type projectServiceClient struct {
-	resolve         *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
-	listProjects    *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
-	getProject      *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
-	updateProject   *connect.Client[v1.UpdateProjectRequest, v1.UpdateProjectResponse]
-	listWorkspaces  *connect.Client[v1.ListWorkspacesRequest, v1.ListWorkspacesResponse]
-	linkWorkspace   *connect.Client[v1.LinkWorkspaceRequest, v1.LinkWorkspaceResponse]
-	forgetProject   *connect.Client[v1.ForgetProjectRequest, v1.ForgetProjectResponse]
-	gC              *connect.Client[v1.GCRequest, v1.GCResponse]
-	trustRepoConfig *connect.Client[v1.TrustRepoConfigRequest, v1.TrustRepoConfigResponse]
+	resolve        *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	listProjects   *connect.Client[v1.ListProjectsRequest, v1.ListProjectsResponse]
+	getProject     *connect.Client[v1.GetProjectRequest, v1.GetProjectResponse]
+	updateProject  *connect.Client[v1.UpdateProjectRequest, v1.UpdateProjectResponse]
+	listWorkspaces *connect.Client[v1.ListWorkspacesRequest, v1.ListWorkspacesResponse]
+	linkWorkspace  *connect.Client[v1.LinkWorkspaceRequest, v1.LinkWorkspaceResponse]
+	forgetProject  *connect.Client[v1.ForgetProjectRequest, v1.ForgetProjectResponse]
+	gC             *connect.Client[v1.GCRequest, v1.GCResponse]
 }
 
 // Resolve calls agentruntime.v1.ProjectService.Resolve.
@@ -196,11 +185,6 @@ func (c *projectServiceClient) GC(ctx context.Context, req *connect.Request[v1.G
 	return c.gC.CallUnary(ctx, req)
 }
 
-// TrustRepoConfig calls agentruntime.v1.ProjectService.TrustRepoConfig.
-func (c *projectServiceClient) TrustRepoConfig(ctx context.Context, req *connect.Request[v1.TrustRepoConfigRequest]) (*connect.Response[v1.TrustRepoConfigResponse], error) {
-	return c.trustRepoConfig.CallUnary(ctx, req)
-}
-
 // ProjectServiceHandler is an implementation of the agentruntime.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
@@ -211,7 +195,6 @@ type ProjectServiceHandler interface {
 	LinkWorkspace(context.Context, *connect.Request[v1.LinkWorkspaceRequest]) (*connect.Response[v1.LinkWorkspaceResponse], error)
 	ForgetProject(context.Context, *connect.Request[v1.ForgetProjectRequest]) (*connect.Response[v1.ForgetProjectResponse], error)
 	GC(context.Context, *connect.Request[v1.GCRequest]) (*connect.Response[v1.GCResponse], error)
-	TrustRepoConfig(context.Context, *connect.Request[v1.TrustRepoConfigRequest]) (*connect.Response[v1.TrustRepoConfigResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -269,12 +252,6 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("GC")),
 		connect.WithHandlerOptions(opts...),
 	)
-	projectServiceTrustRepoConfigHandler := connect.NewUnaryHandler(
-		ProjectServiceTrustRepoConfigProcedure,
-		svc.TrustRepoConfig,
-		connect.WithSchema(projectServiceMethods.ByName("TrustRepoConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/agentruntime.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceResolveProcedure:
@@ -293,8 +270,6 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceForgetProjectHandler.ServeHTTP(w, r)
 		case ProjectServiceGCProcedure:
 			projectServiceGCHandler.ServeHTTP(w, r)
-		case ProjectServiceTrustRepoConfigProcedure:
-			projectServiceTrustRepoConfigHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -334,8 +309,4 @@ func (UnimplementedProjectServiceHandler) ForgetProject(context.Context, *connec
 
 func (UnimplementedProjectServiceHandler) GC(context.Context, *connect.Request[v1.GCRequest]) (*connect.Response[v1.GCResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentruntime.v1.ProjectService.GC is not implemented"))
-}
-
-func (UnimplementedProjectServiceHandler) TrustRepoConfig(context.Context, *connect.Request[v1.TrustRepoConfigRequest]) (*connect.Response[v1.TrustRepoConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentruntime.v1.ProjectService.TrustRepoConfig is not implemented"))
 }

@@ -49,7 +49,7 @@ func newSetupCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 	return &cobra.Command{
 		Use:   "setup",
 		Short: "Open the interactive setup wizard",
-		Long:  "Open the interactive setup wizard (init agent-runtime.yaml, connect AI agents, open the process manager).",
+		Long:  "Open the interactive setup wizard (connect AI agents, open the process manager).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return setupMain(loaded, logger)
 		},

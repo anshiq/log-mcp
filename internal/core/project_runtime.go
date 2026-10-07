@@ -9,7 +9,6 @@ package core
 import (
 	"context"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -26,8 +25,6 @@ type ProjectRuntime struct {
 	wsPath    string
 	dataDir   string
 	logger    *slog.Logger
-	trusted   func(workspaceID, path, sha string) bool
-	// allocPort allocates stable ${port:name} values (engine settings).
 	allocPort func(workspaceID, name string, def int) (int, error)
 
 	mu       sync.RWMutex
@@ -117,8 +114,7 @@ func startRequestFor(app string) api.StartRequest {
 
 // loadLocked resolves config and hosts a runtime.Runtime. Callers hold p.mu.
 func (p *ProjectRuntime) loadLocked() error {
-	trusted := p.repoTrusted()
-	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, trusted, nil)
+	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, nil)
 	if errs != nil {
 		// Invalid config: keep last good if we have one, else fail with
 		// the first validation error (file/line/col included).
@@ -169,22 +165,6 @@ func (p *ProjectRuntime) expandPortsLocked() {
 	}
 }
 
-// repoTrusted checks the trust gate for the repo-layer config.
-func (p *ProjectRuntime) repoTrusted() bool {
-	ep := config.DiscoverEffective(p.dataDir, p.projectID, p.wsID, p.wsPath)
-	if ep.Repo == "" {
-		return true
-	}
-	data, err := os.ReadFile(ep.Repo)
-	if err != nil {
-		return false
-	}
-	if p.trusted == nil {
-		return false
-	}
-	return p.trusted(p.wsID, ep.Repo, config.SHA256(data))
-}
-
 // autostart launches apps with autostart: true on a fresh runtime
 // (no processes yet). It runs async so daemon boot never blocks on
 // slow app startups.
@@ -213,14 +193,9 @@ func (p *ProjectRuntime) autostart() {
 	}()
 }
 
-// startWatcher observes the effective files and reconciles on save.
 func (p *ProjectRuntime) startWatcher() {
 	ep := config.DiscoverEffective(p.dataDir, p.projectID, p.wsID, p.wsPath)
-	var paths []string
-	if ep.Repo != "" {
-		paths = append(paths, ep.Repo)
-	}
-	paths = append(paths, ep.Project)
+	paths := []string{ep.Project}
 	if ep.Overlay != "" {
 		paths = append(paths, ep.Overlay)
 	}
@@ -235,8 +210,6 @@ func (p *ProjectRuntime) startWatcher() {
 	p.watcher = w
 }
 
-// onValidConfig reconciles a validated save: new revision, planner,
-// stale marking, reload: restart handling.
 func (p *ProjectRuntime) onValidConfig(ch config.Change) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -244,8 +217,7 @@ func (p *ProjectRuntime) onValidConfig(ch config.Change) {
 	if p.resolved != nil {
 		oldApps = p.resolved.Apps
 	}
-	trusted := p.repoTrusted()
-	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, trusted, nil)
+	resolved, errs := config.Resolve(p.dataDir, p.projectID, p.wsID, p.wsPath, nil)
 	if errs != nil {
 		return // lost race with another save; watcher will fire again
 	}

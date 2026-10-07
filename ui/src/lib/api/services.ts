@@ -30,7 +30,6 @@ export const ProjectService = {
   linkWorkspace: (projectId: string, path: string) => call<{ projectId: string; path: string }, unknown>('ProjectService', 'LinkWorkspace', { projectId, path }),
   forget: (projectId: string) => call<{ projectId: string }, unknown>('ProjectService', 'ForgetProject', { projectId }),
   gc: () => call<Record<string, never>, { removedWorkspaces: string[] }>('ProjectService', 'GC', {}),
-  trustRepoConfig: (workspaceId: string, path: string, sha256: string) => call<{ workspaceId: string; path: string; sha256: string }, unknown>('ProjectService', 'TrustRepoConfig', { workspaceId, path, sha256 })
 };
 
 export const ProcessService = {

@@ -22,7 +22,5 @@
 - **Stale workspaces**: `project gc` after moves/deletes.
 - **GUI blank**: daemon down shows the "daemon not running" screen;
   start it and reload.
-- **Untrusted repo config**: processes refuse with `repo_untrusted`;
-  review the diff and `project trust`.
 - **Invalid YAML save**: last good revision stays active; the GUI/CLI
   shows file/line/column from `config.invalid`.

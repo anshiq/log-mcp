@@ -22,12 +22,8 @@ func TestMigrateLegacyArchive(t *testing.T) {
 	eng := core.NewWithOptions(db, core.Options{DataDir: dataDir})
 	defer eng.Close()
 
-	// Legacy project layout: repo yaml + .agent-runtime/logs.db + audit.log.
+	// Legacy project layout: .agent-runtime/logs.db + audit.log.
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "agent-runtime.yaml"),
-		[]byte("apps:\n  api:\n    command: [npm, run, dev]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	legacyDir := filepath.Join(root, ".agent-runtime")
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -51,25 +47,14 @@ func TestMigrateLegacyArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rep, err := Migrate(eng, dataDir, root, Options{Yes: true})
+	rep, err := Migrate(eng, dataDir, root, Options{})
 	if err != nil {
 		t.Fatalf("Migrate: %v", err)
-	}
-	if rep.ConfigsImported != 1 {
-		t.Fatalf("configs = %d", rep.ConfigsImported)
 	}
 	if rep.LogsImported != 5 {
 		t.Fatalf("logs = %d", rep.LogsImported)
 	}
 	if rep.AuditImported != 1 {
 		t.Fatalf("audit = %d", rep.AuditImported)
-	}
-	// Config file landed in the central store.
-	pid, _, err := eng.ResolveWorkspace(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dataDir, "projects", string(pid), "agent-runtime.yaml")); err != nil {
-		t.Fatalf("central config missing: %v", err)
 	}
 }

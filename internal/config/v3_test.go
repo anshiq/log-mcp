@@ -67,29 +67,27 @@ func TestResolveLayering(t *testing.T) {
 	if err := os.MkdirAll(projDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Repo file (trusted) + project file: project wins per-app fields.
-	if err := os.WriteFile(filepath.Join(ws, "agent-runtime.yaml"),
-		[]byte("apps:\n  api:\n    command: [repo-cmd]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(projDir, "agent-runtime.yaml"),
 		[]byte("apps:\n  api:\n    command: [proj-cmd]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, errs := Resolve(dir, "proj_1", "ws_1", ws, true, nil)
+	wsDir := filepath.Join(dir, "projects", "proj_1", "workspaces")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wsDir, "ws_1.yaml"),
+		[]byte("apps:\n  api:\n    command: [ws-cmd]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, errs := Resolve(dir, "proj_1", "ws_1", ws, nil)
 	if len(errs) != 0 {
 		t.Fatalf("errs = %v", errs)
 	}
-	if got := res.Apps["api"].Command[0]; got != "proj-cmd" {
-		t.Fatalf("command = %q, want proj-cmd", got)
+	if got := res.Apps["api"].Command[0]; got != "ws-cmd" {
+		t.Fatalf("command = %q, want ws-cmd", got)
 	}
-	if res.Provenance["apps.api"] != LayerProject {
+	if res.Provenance["apps.api"] != LayerWorkspace {
 		t.Fatalf("provenance = %q", res.Provenance["apps.api"])
-	}
-	// Untrusted repo file is skipped.
-	res2, _ := Resolve(dir, "proj_1", "ws_1", ws, false, nil)
-	if got := res2.Apps["api"].Command[0]; got != "proj-cmd" {
-		t.Fatalf("untrusted command = %q", got)
 	}
 }
 

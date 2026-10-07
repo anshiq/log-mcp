@@ -27,7 +27,6 @@ func newProjectCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 		Long:  "Resolve working directories to stable project identities (locator chain: path → dev/ino → git → fingerprints). State lives in ~/.local/share/agent-runtime/state.db, never in the repo.",
 	}
 	cmd.AddCommand(
-		newProjectTrustCmd(),
 		&cobra.Command{
 			Use:   "resolve [dir]",
 			Short: "Resolve a directory to project + workspace IDs",
@@ -236,50 +235,7 @@ func newProjectCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 				return cl.ProjectService().Forget(ctx, args[0])
 			},
 		},
-		newProjectExportCmd(),
 	)
-	return cmd
-}
-
-func newProjectExportCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "export",
-		Short: "Write the effective config back into the repo (--to-repo; explicit only)",
-		RunE: func(c *cobra.Command, args []string) error {
-			toRepo, _ := c.Flags().GetBool("to-repo")
-			if !toRepo {
-				return fmt.Errorf("usage: project export --to-repo")
-			}
-			p := paths.User()
-			cl, err := client.EnsureDaemon(p.SocketPath())
-			if err != nil {
-				return err
-			}
-			cwd, _ := os.Getwd()
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			res, err := cl.ProjectService().Resolve(ctx, cwd)
-			if err != nil {
-				return err
-			}
-			cfg, err := cl.ConfigService().Get(ctx, res.WorkspaceID)
-			if err != nil {
-				return err
-			}
-			raw, _ := cfg["raw"].(map[string]any)
-			text, _ := raw["project"].(string)
-			if text == "" {
-				return fmt.Errorf("no project-layer config to export")
-			}
-			dest := cwd + "/agent-runtime.yaml"
-			if err := os.WriteFile(dest, []byte(text), 0o644); err != nil {
-				return err
-			}
-			fmt.Printf("exported to %s (repo layer still needs `project trust`)\n", dest)
-			return nil
-		},
-	}
-	cmd.Flags().Bool("to-repo", false, "write effective config to ./agent-runtime.yaml")
 	return cmd
 }
 

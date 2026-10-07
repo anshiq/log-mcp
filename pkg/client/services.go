@@ -294,11 +294,6 @@ func (c *ProjectServiceClient) GetProject(ctx context.Context, projectID string)
 	return out, err
 }
 
-func (c *ProjectServiceClient) TrustRepo(ctx context.Context, workspaceID, path, sha string) error {
-	return c.client.call(ctx, "ProjectService", "TrustRepoConfig",
-		map[string]any{"workspaceId": workspaceID, "path": path, "sha256": sha}, nil)
-}
-
 func (c *ProjectServiceClient) Forget(ctx context.Context, projectID string) error {
 	return c.client.call(ctx, "ProjectService", "ForgetProject", map[string]any{"projectId": projectID}, nil)
 }

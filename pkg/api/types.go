@@ -6,7 +6,7 @@ package api
 // StartRequest is the input to start_process / `agent-runtime run`.
 //
 // Either App or Command must be set. Command takes a raw start specification;
-// App resolves through the project's agent-runtime.yaml (profile defaults,
+// App resolves through the project's central config (profile defaults,
 // workdir, env_file) and may be combined with overrides.
 type StartRequest struct {
 	App     string   `json:"app,omitempty"`

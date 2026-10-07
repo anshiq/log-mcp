@@ -1,7 +1,7 @@
 ---
 version: 3
 name: agent-runtime-ready
-description: Use when scaffolding, creating, or modifying any runnable application (web server, worker, CLI, backend service) or its logging/startup/shutdown/config code so it integrates with the agent-runtime MCP process supervisor (start_process, wait_for_log, get_logs, signal_process, get_process_env, open_shell, agent-runtime.yaml). Ensures a detectable readiness line, clean stdout/stderr, graceful SIGTERM/SIGINT shutdown, env-only config, and a declared app entry.
+description: Use when scaffolding, creating, or modifying any runnable application (web server, worker, CLI, backend service) or its logging/startup/shutdown/config code so it integrates with the agent-runtime MCP process supervisor (start_process, wait_for_log, get_logs, signal_process, get_process_env, open_shell, project config). Ensures a detectable readiness line, clean stdout/stderr, graceful SIGTERM/SIGINT shutdown, env-only config, and a declared app entry.
 ---
 
 # agent-runtime-ready
@@ -72,9 +72,9 @@ literal, case-insensitive substrings; a clever rephrase breaks
    SIGTERM/SIGINT handler that closes and exits 0.
 3. Add `.env.example` listing every required variable (`PORT`, `DATABASE_URL`,
    ...) with sensible defaults where safe.
-4. Write `agent-runtime.yaml` from `templates/agent-runtime.yaml` — declare
-   the app under `apps:` with `type`, `workdir`, `command` (or the profile
-   default), `env_file`, and `env` as needed.
+4. Declare the app in the project config (central store — web Config page or
+   `apply_config`) under `apps:` with `type`, `workdir`, `command` (or the
+   profile default), `env_file`, and `env` as needed.
 5. Run the Verification Loop below and only report "done" once it passes.
 
 ## Flow B — onboard an existing app
@@ -84,7 +84,7 @@ literal, case-insensitive substrings; a clever rephrase breaks
 - [ ] Add a SIGTERM/SIGINT handler if the app has none.
 - [ ] Confirm the app does not daemonize, re-exec, or detach children.
 - [ ] Add or repair `.env.example`; replace hardcoded config with env reads.
-- [ ] Add an `apps:` entry in `agent-runtime.yaml`.
+- [ ] Add an `apps:` entry in the project config (central store).
 - [ ] Run the Verification Loop below and only report "done" once it passes.
 
 ## Verification Loop (must pass before "done")

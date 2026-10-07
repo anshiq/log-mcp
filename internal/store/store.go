@@ -210,15 +210,7 @@ CREATE TABLE IF NOT EXISTS config_revisions (
   created_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS rev_proj ON config_revisions(project_id, layer, id DESC);
-
-CREATE TABLE IF NOT EXISTS repo_trust (
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  path         TEXT NOT NULL,
-  sha256       TEXT NOT NULL,
-  trusted_at   INTEGER NOT NULL,
-  trusted_by   TEXT NOT NULL,
-  PRIMARY KEY (workspace_id, path)
-);
+DROP TABLE IF EXISTS repo_trust;
 
 CREATE TABLE IF NOT EXISTS sessions (
   id           TEXT PRIMARY KEY,
@@ -673,32 +665,6 @@ func (d *DB) MarkWorkspaceMissing(id string) error {
 // GetWorkspace is an alias kept for engine call sites.
 func (d *DB) GetWorkspace(id string) (*Workspace, error) {
 	return d.GetWorkspaceAtID(id)
-}
-
-func (d *DB) TrustRepo(workspaceID, path, sha256, trustedBy string) error {
-	_, err := d.db.Exec("INSERT OR REPLACE INTO repo_trust (workspace_id, path, sha256, trusted_at, trusted_by) VALUES (?, ?, ?, ?, ?)", workspaceID, path, sha256, time.Now().Unix(), trustedBy)
-	return err
-}
-
-func (d *DB) IsTrusted(workspaceID, path string) (bool, error) {
-	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM repo_trust WHERE workspace_id = ? AND path = ?", workspaceID, path).Scan(&count)
-	return count > 0, err
-}
-
-// RepoTrustSHA returns the trusted sha256 for (workspace, path).
-// Trust is (workspace_id, path, sha256): a changed file becomes untrusted
-// until re-approved (§9.3).
-func (d *DB) RepoTrustSHA(workspaceID, path string) (string, bool, error) {
-	var sha string
-	err := d.db.QueryRow("SELECT sha256 FROM repo_trust WHERE workspace_id = ? AND path = ?", workspaceID, path).Scan(&sha)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	return sha, true, nil
 }
 
 // Fingerprint is a git fingerprint for a project.

@@ -451,8 +451,8 @@ func (b *Bridge) ProjectInfo(ctx context.Context) (map[string]any, error) {
 	return map[string]any{
 		"projectId": b.projectID, "workspaceId": b.workspaceID,
 		"project": proj, "configPath": cfg["configPath"],
-		"overlayPath": cfg["overlayPath"], "repoPath": cfg["repoPath"],
-		"sessions": sessions,
+		"overlayPath": cfg["overlayPath"],
+		"sessions":    sessions,
 	}, nil
 }
 

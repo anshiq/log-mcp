@@ -61,7 +61,7 @@ reads).
 `Local: http://localhost:3000`, which match the nextjs profile
 (`(?i)ready`, `(?i)local:\s*https?://`).
 
-- Set `PORT` via env: `env: ["PORT=3001"]` in `agent-runtime.yaml`, or
+- Set `PORT` via env: `env: ["PORT=3001"]` in the project config, or
   `start_process(..., env=["PORT=3001"])`. `next dev` honors `PORT`.
 - Keep `NODE_ENV=development` for dev (set it in `runtime.env` if you want
   it for every app).
@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
 - **Unbuffered output is mandatory**: Python block-buffers piped stdout, so
   the readiness line can be delayed or lost. Set `PYTHONUNBUFFERED=1` in the
-  app's `env:` block in `agent-runtime.yaml`, or run `python3 -u app.py`, or
+  app's `env:` block in the project config, or run `python3 -u app.py`, or
   use `flush=True` on prints.
 - uvicorn handles SIGTERM/SIGINT with its own graceful shutdown — no handler
   needed.

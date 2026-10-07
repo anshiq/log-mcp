@@ -89,7 +89,7 @@ func TestInitializeHandshake(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte("runtime:\n  shell_env: none\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := config.LoadFrom(dir)
+	loaded, err := config.LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -98,7 +98,7 @@ func runShell(rt *runtime.Runtime, res *api.StartResult) error {
 func printShellUsage() {
 	fmt.Fprintf(os.Stderr, "usage: agent-runtime shell <app> [--shell path]\n")
 	fmt.Fprintf(os.Stderr, "       agent-runtime shell --pid <os-pid> [--shell path]\n")
-	fmt.Fprintf(os.Stderr, "  shell into the resolved workdir+env of an app from agent-runtime.yaml\n")
+	fmt.Fprintf(os.Stderr, "  shell into the resolved workdir+env of an app from the project config\n")
 	fmt.Fprintf(os.Stderr, "  (a proc_<hex> process id only resolves inside the same serve session; over MCP use open_shell)\n")
 	fmt.Fprintf(os.Stderr, "  --shell path   shell executable (default $SHELL, then /bin/sh)\n")
 	fmt.Fprintf(os.Stderr, "  --pid <os-pid>   attach to a process by OS pid (reads /proc/<pid>/cwd + environ; works for processes from other agent-runtime sessions)\n")
@@ -107,7 +107,7 @@ func printShellUsage() {
 // shellTarget maps a CLI target to exactly one of ProcessID or App for
 // OpenShell (which prefers ProcessID when set — passing both would shadow the
 // app path). A proc_<hex> string is a process id; anything else is an app
-// name from agent-runtime.yaml.
+// name from the project config.
 func shellTarget(target string) (procID, app string) {
 	if strings.HasPrefix(target, "proc_") {
 		return target, ""

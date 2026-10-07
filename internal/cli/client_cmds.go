@@ -77,9 +77,9 @@ func newDaemonPsCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 				fmt.Println("no processes")
 				return nil
 			}
-		for _, p := range items {
-			fmt.Printf("%s\t%v\t%v\t%v\n", procIDOf(p), p["status"], p["command"], p["pid"])
-		}
+			for _, p := range items {
+				fmt.Printf("%s\t%v\t%v\t%v\n", procIDOf(p), p["status"], p["command"], p["pid"])
+			}
 			return nil
 		},
 	}

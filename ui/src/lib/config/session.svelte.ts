@@ -1,9 +1,9 @@
-import { ConfigService, ProjectService, isApiError, openStream } from '../api';
+import { ConfigService, isApiError, openStream } from '../api';
 import type { PlanResult, Revision } from '../api/types';
 import { toasts, toastError } from '../toasts.svelte';
 import { toConfigApps, type ConfigApp } from './apps';
 
-export type LayerName = 'project' | 'workspace' | 'repo';
+export type LayerName = 'project' | 'workspace';
 
 export interface LayerInfo {
   name: LayerName;
@@ -62,10 +62,10 @@ export interface ChoiceRequest {
   resolve: (id: string | null) => void;
 }
 
-const LAYERS: LayerName[] = ['project', 'workspace', 'repo'];
+const LAYERS: LayerName[] = ['project', 'workspace'];
 
 function emptyTexts(): Record<LayerName, string> {
-  return { project: '', workspace: '', repo: '' };
+  return { project: '', workspace: '' };
 }
 
 function issues(raw: unknown): ValidationIssue[] {
@@ -151,7 +151,7 @@ export class ConfigSession {
   }
 
   get writable(): boolean {
-    return this.layer !== 'repo' && (this.layerInfo?.writable ?? true);
+    return this.layerInfo?.writable ?? true;
   }
 
   isDirty(layer: LayerName): boolean {
@@ -519,18 +519,6 @@ export class ConfigSession {
       this.apps = toConfigApps(cfg.apps, prov);
     } catch {
       return;
-    }
-  }
-
-  async trustRepo(): Promise<void> {
-    const info = this.layers.find((l) => l.name === 'repo');
-    if (!info || !info.path) return;
-    try {
-      await ProjectService.trustRepoConfig(this.workspaceId, info.path, info.sha256);
-      toasts.ok('Repo config trusted');
-      await this.load(this.workspaceId, { keepLayer: true });
-    } catch (err) {
-      toastError(err);
     }
   }
 

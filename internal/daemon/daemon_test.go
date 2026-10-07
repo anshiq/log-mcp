@@ -23,7 +23,7 @@ func newTestRuntime(t *testing.T) (*runtime.Runtime, string) {
 	if err := os.WriteFile(filepath.Join(dir, "agent-runtime.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := config.LoadFrom(dir)
+	loaded, err := config.LoadFile(filepath.Join(dir, "agent-runtime.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

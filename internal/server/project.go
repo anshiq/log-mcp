@@ -1,5 +1,5 @@
 // ProjectService: Resolve, ListProjects, GetProject, UpdateProject,
-// ListWorkspaces, LinkWorkspace, ForgetProject, GC, TrustRepoConfig.
+// ListWorkspaces, LinkWorkspace, ForgetProject, GC.
 package server
 
 import (
@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"agent-runtime/internal/project"
 )
@@ -22,7 +21,6 @@ func (s *Server) routeProject(mux *http.ServeMux) {
 	mux.HandleFunc(p+"LinkWorkspace", s.wrap(s.projLink))
 	mux.HandleFunc(p+"ForgetProject", s.wrap(s.projForget))
 	mux.HandleFunc(p+"GC", s.wrap(s.projGC))
-	mux.HandleFunc(p+"TrustRepoConfig", s.wrap(s.projTrust))
 }
 
 func (s *Server) projResolve(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -166,30 +164,6 @@ func (s *Server) projGC(w http.ResponseWriter, r *http.Request) (any, error) {
 		missing = []string{}
 	}
 	return map[string]any{"removedWorkspaces": missing}, nil
-}
-
-func (s *Server) projTrust(w http.ResponseWriter, r *http.Request) (any, error) {
-	var req struct {
-		WorkspaceID string `json:"workspaceId"`
-		Path        string `json:"path"`
-		SHA256      string `json:"sha256"`
-		TrustedBy   string `json:"trustedBy"`
-	}
-	_ = decode(r, &req)
-	if req.WorkspaceID == "" || req.Path == "" || req.SHA256 == "" {
-		return nil, fmt.Errorf("workspaceId, path and sha256 required")
-	}
-	by := req.TrustedBy
-	if by == "" {
-		by, _ = s.sessionOf(r)
-		if by == "" {
-			by = "api"
-		}
-	}
-	if err := s.engine.Store().TrustRepo(req.WorkspaceID, req.Path, req.SHA256, by); err != nil {
-		return nil, err
-	}
-	return map[string]any{"trusted": true, "at": time.Now().Unix()}, nil
 }
 
 func mustListProjects(s *Server) []storeProject {
