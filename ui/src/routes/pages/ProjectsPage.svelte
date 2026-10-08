@@ -149,11 +149,6 @@
     openDialog = true;
   }
 
-  async function browse() {
-    const picked = await getPlatform().pickDirectory();
-    if (picked) openPath = picked;
-  }
-
   async function submitPath(e: Event) {
     e.preventDefault();
     const path = openPath.trim();
@@ -432,9 +427,6 @@
             invalid={pathInvalid || !!openError}
             oninput={() => (openError = '')}
           />
-          {#if getPlatform().name === 'wails'}
-            <Button onclick={() => void browse()}><FolderOpen size={14} />Browse</Button>
-          {/if}
         </div>
         {#if pathInvalid}
           <span class="hint bad">Enter an absolute path, e.g. /home/you/code/app or C:\code\app.</span>

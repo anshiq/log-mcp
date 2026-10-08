@@ -8,7 +8,7 @@
 | daemon-socket mode | Permissive socket | `doctor --fix`; check `XDG_RUNTIME_DIR` ownership |
 | runtime/data/config-dir | Wrong modes or missing | `doctor --fix`; never run as root |
 | daemon-reachable FAIL | Socket exists but refuses | `agentd.log` in `$XDG_STATE_HOME/agent-runtime/`; `daemon restart` |
-| disk | Log volume pressure | Raise `agentd.yaml` retention caps, `project gc`, GUI disk meter |
+| disk | Log volume pressure | Raise `agentd.yaml` retention caps, `project gc`, web UI disk meter |
 | integrations | Harness state | `integrate status`, `integrate <agent> --write` |
 | legacy-migration | v2 dirs remain | `migrate --dry-run --all-known`, then `migrate --cleanup` |
 
@@ -20,7 +20,7 @@
   daemon; it reconnects via `shim.sock`, or marks `orphaned` (signal +
   pid-poll fallback, UI-badged).
 - **Stale workspaces**: `project gc` after moves/deletes.
-- **GUI blank**: daemon down shows the "daemon not running" screen;
+- **Blank page**: daemon down shows the "daemon not running" screen;
   start it and reload.
-- **Invalid YAML save**: last good revision stays active; the GUI/CLI
+- **Invalid YAML save**: last good revision stays active; the web UI/CLI
   shows file/line/column from `config.invalid`.

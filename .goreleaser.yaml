@@ -51,29 +51,6 @@ builds:
       - arm64
     ldflags:
       - -s -w
-  - id: agent-runtime-desktop
-    main: ./cmd/agent-runtime
-    binary: agent-runtime
-    env:
-      - CGO_ENABLED=1
-    tags:
-      - desktop
-      - production
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    overrides:
-      - goos: linux
-        tags:
-          - desktop
-          - production
-          - webkit2_41
-    ldflags:
-      - -s -w -X agent-runtime/internal/mcp.Version={{ .Version }} -X agent-runtime/internal/gui.Version={{ .Version }}
 
 archives:
   - id: agent-runtime
@@ -94,21 +71,6 @@ archives:
       - README.md
       - packaging/systemd/agentd.socket
       - packaging/systemd/agentd.service
-  - id: agent-runtime-desktop
-    builds:
-      - agent-runtime-desktop
-    formats:
-      - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    name_template: >-
-      {{ .ProjectName }}-desktop_{{ .Version }}_{{ .Os }}_{{ .Arch }}
-    files:
-      - LICENSE*
-      - README.md
-      - packaging/desktop/agent-runtime.desktop
 
 nfpms:
   - id: agent-runtime
@@ -130,8 +92,6 @@ nfpms:
         dst: /usr/lib/systemd/user/agentd.socket
       - src: packaging/systemd/agentd.service
         dst: /usr/lib/systemd/user/agentd.service
-      - src: packaging/desktop/agent-runtime.desktop
-        dst: /usr/share/applications/agent-runtime.desktop
 
 checksum:
   name_template: checksums.txt

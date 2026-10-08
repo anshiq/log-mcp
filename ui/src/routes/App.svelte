@@ -29,14 +29,12 @@
   import DaemonUnreachable from '../app/DaemonUnreachable.svelte';
   import ShortcutsDialog from '../app/ShortcutsDialog.svelte';
 
-  let authed = $state(__APP_TARGET__ !== 'web' || hasAuthToken());
+  let authed = $state(hasAuthToken());
   let booted = $state(false);
   let shortcutsOpen = $state(false);
 
   onMount(() => {
-    if (__APP_TARGET__ === 'web') {
-      setUnauthorizedHandler(() => (authed = false));
-    }
+    setUnauthorizedHandler(() => (authed = false));
     const offKeys = installGlobalKeys();
     const onShortcuts = () => (shortcutsOpen = true);
     window.addEventListener('ar:shortcuts', onShortcuts);

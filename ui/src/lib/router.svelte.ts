@@ -1,3 +1,5 @@
+import { hasAuthToken } from './api/auth';
+
 export interface RouteMatch {
   path: string;
   params: Record<string, string>;
@@ -65,12 +67,9 @@ class Router {
         if (cur) this.lastScroll.set(this.path, cur.scrollTop);
         this.path = parseHash();
         applyTitle(this.path);
-        if (__APP_TARGET__ === 'web') {
-          const { hasAuthToken } = { hasAuthToken: () => !!sessionStorage.getItem('ar.token') || !!localStorage.getItem('ar.token') };
-          if (!hasAuthToken() && !this.path.startsWith('/login')) {
-            this.navigate('/login?next=' + encodeURIComponent(this.path), { replace: true });
-            return;
-          }
+        if (!hasAuthToken() && !this.path.startsWith('/login')) {
+          this.navigate('/login?next=' + encodeURIComponent(this.path), { replace: true });
+          return;
         }
         requestAnimationFrame(() => {
           const el = document.querySelector('.content');

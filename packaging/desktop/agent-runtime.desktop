@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Agent Runtime
-Comment=Supervise development processes across all projects
-Exec=agent-runtime
-Icon=agent-runtime
-Terminal=false
-Categories=Development;Utility;
-StartupWMClass=agent-runtime

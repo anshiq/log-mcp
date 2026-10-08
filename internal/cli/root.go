@@ -1,8 +1,7 @@
 // Cobra command tree for agent-runtime. The MCP server ("serve") is an
-// explicit subcommand; running with no arguments opens the native GUI window
-// (desktop build with a display) or the command help. run/shell/integrate keep
-// their hand-rolled flag parsers (DisableFlagParsing) so flags may appear after
-// positional arguments.
+// explicit subcommand; running with no arguments prints the command help.
+// run/shell/integrate keep their hand-rolled flag parsers (DisableFlagParsing)
+// so flags may appear after positional arguments.
 package cli
 
 import (
@@ -10,20 +9,17 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"runtime"
 
 	"github.com/spf13/cobra"
 
 	"agent-runtime/internal/config"
-	"agent-runtime/internal/gui"
 	rtmcp "agent-runtime/internal/mcp"
 )
 
 // Run is the CLI entry point invoked from main with os.Args[1:].
 //
-// No arguments -> the native GUI window when the desktop build has a display,
-// otherwise the command help. The process manager lives under "repl"; "serve"
-// and the other subcommands run as one-shots. The REPL commands
+// No arguments -> the command help. The process manager lives under "repl";
+// "serve" and the other subcommands run as one-shots. The REPL commands
 // (start/logs/wait/...) only exist inside a session because they manage the
 // session's processes.
 func Run(args []string, logger *slog.Logger) error {
@@ -39,6 +35,9 @@ func Run(args []string, logger *slog.Logger) error {
 		if a == "--tui" || a == "-t" {
 			return errors.New("the TUI has been removed; use `agent-runtime web` for the web interface")
 		}
+		if a == "--gui" {
+			return errors.New("the desktop GUI has been removed; use `agent-runtime web` for the web interface")
+		}
 	}
 	root := newRootCmd(nil, loaded, logger)
 	root.SetArgs(args)
@@ -46,23 +45,7 @@ func Run(args []string, logger *slog.Logger) error {
 }
 
 func runBare(loaded *config.Loaded, logger *slog.Logger) error {
-	if gui.Available() && hasDisplay() {
-		return gui.Run(logger)
-	}
 	return newRootCmd(nil, loaded, logger).Help()
-}
-
-func hasDisplay() bool {
-	if os.Getenv("AGENT_RUNTIME_NO_GUI") != "" {
-		return false
-	}
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		return true
-	}
-	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("MIR_SOCKET") != "" {
-		return true
-	}
-	return false
 }
 
 // newRootCmd builds the full command tree. s is nil for one-shot use; when
@@ -74,11 +57,9 @@ func newRootCmd(s *session, loaded *config.Loaded, logger *slog.Logger) *cobra.C
 		Short: "local async process supervisor for AI coding agents",
 		Long: `agent-runtime supervises development processes and exposes them over MCP.
 
-Run with no arguments to open the native GUI window (desktop build with a
-display), otherwise the command help.
+Run with no arguments to print the command help.
 
 One-shot commands:
-   gui                Open the native GUI application window (desktop build).
    web                Open the web UI (token URL + browser).
    serve              Run the MCP stdio server (what coding agents launch).
    repl               Open the interactive process manager (start/logs/wait/stop).
@@ -115,7 +96,6 @@ One-shot commands:
 		newDaemonConfigCmd(loaded, logger),
 		newDaemonSessionsCmd(loaded, logger),
 		newMigrateCmd(loaded, logger),
-		newGuiCmd(loaded, logger),
 		newDoctorCmd(loaded, logger),
 		newWebCmd(loaded, logger),
 		newVersionCmd(),

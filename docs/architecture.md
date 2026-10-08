@@ -2,7 +2,7 @@
 
 ## Overview
 
-agent-runtime v3 transforms the system from a per-project, session-scoped MCP supervisor into a **per-user background platform**: an always-on daemon, a central project registry, a versioned API, and a desktop GUI.
+agent-runtime v3 transforms the system from a per-project, session-scoped MCP supervisor into a **per-user background platform**: an always-on daemon, a central project registry, a versioned API, and a web UI.
 
 ## Components
 
@@ -35,8 +35,8 @@ agent-runtime v3 transforms the system from a per-project, session-scoped MCP su
      ┌──────┼──────┐
      │      │      │
       ▼      ▼      ▼
-    CLI    MCP    GUI     (all use pkg/client, single agent-runtime binary)
-   agent-  bridge gui mode
+    CLI    MCP    Web     (CLI/MCP use pkg/client; the web UI talks to the daemon API)
+   agent-  bridge web UI
    runtime serve
 ```
 

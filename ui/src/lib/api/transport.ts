@@ -32,7 +32,7 @@ export function setUnauthorizedHandler(fn: () => void): void {
 function headers(): HeadersInit {
   const h: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Agent-Runtime-Client': `${__APP_TARGET__}/${__APP_VERSION__}`
+    'X-Agent-Runtime-Client': `web/${__APP_VERSION__}`
   };
   const token = getAuthToken();
   if (token) h['Authorization'] = `Bearer ${token}`;
@@ -59,10 +59,8 @@ export async function call<Req, Res>(
       signal: controller.signal
     });
     if (res.status === 401) {
-      if (__APP_TARGET__ === 'web') {
-        clearAuthToken();
-        onUnauthorized?.();
-      }
+      clearAuthToken();
+      onUnauthorized?.();
       throw new ApiError('unauthorized', 401, 'unauthorized', service, method);
     }
     const text = await res.text();
@@ -173,10 +171,8 @@ export function openStream(
         signal: controller.signal
       });
       if (res.status === 401) {
-        if (__APP_TARGET__ === 'web') {
-          clearAuthToken();
-          onUnauthorized?.();
-        }
+        clearAuthToken();
+        onUnauthorized?.();
         return;
       }
       if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);

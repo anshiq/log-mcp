@@ -12,14 +12,9 @@ command.
   registry, process supervision, the log pipeline (with FTS5 search) and a
   global event bus, all backed by a single-writer SQLite `state.db`.
 - **agent-runtime** — the CLI / MCP bridge agents talk to. Bare `agent-runtime`
-  opens the native GUI window (desktop build), `agent-runtime web` opens the
-  web UI.
+  prints the command help, `agent-runtime web` opens the web UI.
 - **agent-runtime-shim** — a tiny (<= 4 MB RSS), dependency-free process shim
   that stays put under a running process across an agentd upgrade.
-- **agent-runtime-gui** — deprecated shim that execs `agent-runtime gui`. The
-  desktop GUI (Wails, `internal/gui`) now ships inside the single
-  `agent-runtime` binary, over the same daemon API for watching projects,
-  sessions, events, resources and audit history by hand.
 
 See [docs/architecture.md](docs/architecture.md) for the full component
 diagram, [docs/api.md](docs/api.md) for the daemon API, and
