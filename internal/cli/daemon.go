@@ -102,14 +102,6 @@ func newDaemonCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 			},
 		},
 		&cobra.Command{
-			Use:    "run",
-			Short:  "Run the daemon in the foreground (internal)",
-			Hidden: true,
-			RunE: func(c *cobra.Command, args []string) error {
-				return daemon.Run(loaded, logger)
-			},
-		},
-		&cobra.Command{
 			Use:   "restart",
 			Short: "Restart the per-user daemon (processes keep running)",
 			RunE: func(c *cobra.Command, args []string) error {

@@ -161,7 +161,11 @@ func (d *Daemon) WaitReady(timeout time.Duration) error {
 }
 
 func pidAliveV3(pid int) bool {
-	return pidAlive(pid)
+	if pid <= 0 {
+		return false
+	}
+	err := unix.Kill(pid, 0)
+	return err == nil || err == unix.EPERM
 }
 
 func (d *Daemon) WithTCP(addr string) *Daemon {

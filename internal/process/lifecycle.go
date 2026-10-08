@@ -264,10 +264,9 @@ func (m *Manager) waitLoop(proc *ManagedProcess, inst *instance) {
 	proc.mu.Unlock()
 	m.recordInstance(proc, inst, old.started, &now, &code)
 
-	// Evict oldest terminal processes beyond the cap BEFORE done closes, so
-	// once Done is observable the registry and log buffers are already bounded
-	// for the daemon's lifetime.
 	m.maybeEvictExited()
+	m.sweepExpired()
+	m.scheduleExpiry(proc.ID, inst.id)
 	inst.finish()
 	proc.wakeup.ping() // wake waiters so they can re-scan for final lines
 

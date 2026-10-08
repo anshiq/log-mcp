@@ -62,7 +62,7 @@ proto:
 	PATH="$(PWD)/ui/node_modules/.bin:$$(go env GOPATH)/bin:$$PATH" buf generate
 	buf lint
 	buf breaking --against '.git#branch=master'
-	@echo "Protobuf generated files are in gen/ and ui/src/gen/"
+	@echo "Protobuf generated files are in gen/"
 
 gen-deps:
 	go install github.com/bufbuild/buf/cmd/buf@latest

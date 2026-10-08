@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,10 +24,11 @@ import (
 type Options struct {
 	LogCapacity        int
 	DefaultGrace       time.Duration
-	MaxExitedProcesses int // max terminal (exited/stopped/failed) processes retained; 0 disables eviction
+	MaxExitedProcesses int
+	ExitedTTL          time.Duration
 	Events             *events.Bus
 	Logger             *slog.Logger
-	Sink               logs.Sink // optional durable log archive; nil disables persistence
+	Sink               logs.Sink
 }
 
 // Manager owns all managed processes and is safe for concurrent use.
@@ -36,10 +38,11 @@ type Manager struct {
 	logs    *logs.Store
 	sink    logs.Sink
 
-	mu     sync.RWMutex
-	procs  map[string]*ManagedProcess
-	nextID uint64
-	instID uint64
+	mu        sync.RWMutex
+	procs     map[string]*ManagedProcess
+	nextID    uint64
+	instID    uint64
+	exitedTTL atomic.Int64
 }
 
 // New creates a Manager bound to rootCtx. rootCtx cancellation is the backstop
@@ -51,19 +54,24 @@ func New(rootCtx context.Context, opts Options) *Manager {
 	if opts.DefaultGrace <= 0 {
 		opts.DefaultGrace = 5 * time.Second
 	}
+	if opts.ExitedTTL <= 0 {
+		opts.ExitedTTL = 5 * time.Minute
+	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
 	if opts.Events == nil {
 		opts.Events = events.New()
 	}
-	return &Manager{
+	m := &Manager{
 		rootCtx: rootCtx,
 		opts:    opts,
 		logs:    logs.NewStoreWithSink(opts.LogCapacity, opts.Sink),
 		sink:    opts.Sink,
 		procs:   make(map[string]*ManagedProcess),
 	}
+	m.exitedTTL.Store(int64(opts.ExitedTTL))
+	return m
 }
 
 // Start launches a process and returns immediately. The process continues
@@ -100,6 +108,7 @@ func (m *Manager) Start(ctx context.Context, spec StartSpec, profile string, gra
 		m.logs.Delete(id)
 		return nil, err
 	}
+	m.sweepExpired()
 	return proc, nil
 }
 
@@ -307,7 +316,7 @@ func (m *Manager) maybeEvictExited() {
 	for id, p := range m.procs {
 		info := p.Info()
 		switch info.Status {
-		case StatusExited, StatusStopped, StatusFailed:
+		case StatusExited, StatusStopped, StatusFailed, StatusCrashed:
 			exit := time.Time{}
 			if info.ExitedAt != nil {
 				exit = *info.ExitedAt
@@ -323,6 +332,95 @@ func (m *Manager) maybeEvictExited() {
 	for _, t := range terms[:len(terms)-cap] {
 		m.Remove(t.id, false)
 	}
+}
+
+func (m *Manager) SetExitedTTL(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	m.exitedTTL.Store(int64(d))
+	m.opts.ExitedTTL = d
+}
+
+func (m *Manager) sweepExpired() {
+	ttl := time.Duration(m.exitedTTL.Load())
+	if ttl <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-ttl)
+	type expired struct {
+		id       string
+		instID   string
+		exitedAt time.Time
+	}
+	m.mu.RLock()
+	var victims []expired
+	for id, p := range m.procs {
+		info := p.Info()
+		switch info.Status {
+		case StatusExited, StatusStopped, StatusFailed, StatusCrashed:
+		default:
+			continue
+		}
+		if info.ExitedAt == nil || info.ExitedAt.After(cutoff) {
+			continue
+		}
+		victims = append(victims, expired{id: id, instID: info.InstanceID, exitedAt: *info.ExitedAt})
+	}
+	m.mu.RUnlock()
+	for _, v := range victims {
+		proc, ok := m.Get(v.id)
+		if !ok {
+			continue
+		}
+		if proc.InstanceID() != v.instID {
+			continue
+		}
+		info := proc.Info()
+		switch info.Status {
+		case StatusExited, StatusStopped, StatusFailed, StatusCrashed:
+		default:
+			continue
+		}
+		if info.ExitedAt == nil || info.ExitedAt.After(cutoff) {
+			continue
+		}
+		m.Remove(v.id, false)
+	}
+}
+
+func (m *Manager) scheduleExpiry(id, instID string) {
+	ttl := time.Duration(m.exitedTTL.Load())
+	if ttl <= 0 {
+		return
+	}
+	go func() {
+		select {
+		case <-time.After(ttl):
+		case <-m.rootCtx.Done():
+			return
+		}
+		proc, ok := m.Get(id)
+		if !ok {
+			return
+		}
+		if proc.InstanceID() != instID {
+			return
+		}
+		info := proc.Info()
+		switch info.Status {
+		case StatusExited, StatusStopped, StatusFailed, StatusCrashed:
+		default:
+			return
+		}
+		if info.ExitedAt == nil {
+			return
+		}
+		if time.Since(*info.ExitedAt) < ttl {
+			return
+		}
+		m.Remove(id, false)
+	}()
 }
 
 // Get returns the managed process, if present.

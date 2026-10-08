@@ -85,6 +85,7 @@ func New(loaded *config.Loaded, logger *slog.Logger) *Runtime {
 		LogCapacity:        loaded.Config.Runtime.LogBufferLines,
 		DefaultGrace:       loaded.Config.Runtime.StopGrace.Time(),
 		MaxExitedProcesses: loaded.Config.Runtime.MaxExitedProcesses,
+		ExitedTTL:          loaded.Config.Runtime.ExitedTTL.Time(),
 		Logger:             logger,
 		Sink:               sink,
 	})
@@ -212,7 +213,12 @@ func (r *Runtime) getCfg() *config.Loaded { return r.cfg.Load() }
 // ReloadConfig hot-swaps the project config without touching running
 // processes. New starts resolve against the new revision; supervision
 // changes apply live; spec changes mark processes stale upstream.
-func (r *Runtime) ReloadConfig(loaded *config.Loaded) { r.cfg.Store(loaded) }
+func (r *Runtime) ReloadConfig(loaded *config.Loaded) {
+	r.cfg.Store(loaded)
+	if ttl := loaded.Config.Runtime.ExitedTTL.Time(); ttl > 0 {
+		r.manager.SetExitedTTL(ttl)
+	}
+}
 
 // RecordAudit appends a tool-call line to the audit log (no-op when the audit
 // log is unavailable). args are redacted for secrets by the audit writer.

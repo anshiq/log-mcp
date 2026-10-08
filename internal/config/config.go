@@ -49,6 +49,7 @@ type RuntimeConfig struct {
 	MaxLogLines        int      `yaml:"max_log_lines"`
 	MaxLogBytes        int      `yaml:"max_log_bytes"`
 	MaxExitedProcesses int      `yaml:"max_exited_processes"`
+	ExitedTTL          Duration `yaml:"exited_ttl"`
 	LogStore           string   `yaml:"log_store"`       // "memory" (default) | "sqlite"
 	DBPath             string   `yaml:"db_path"`         // resolved against ProjectDir; default .agent-runtime/logs.db
 	DBMaxAgeDays       *int     `yaml:"db_max_age_days"` // nil -> 7; 0 = keep forever
@@ -121,6 +122,9 @@ func (r *RuntimeConfig) defaults() {
 	}
 	if r.MaxExitedProcesses <= 0 {
 		r.MaxExitedProcesses = 50
+	}
+	if r.ExitedTTL == 0 {
+		r.ExitedTTL = Duration(5 * time.Minute)
 	}
 	if r.LogStore == "" {
 		r.LogStore = "memory"

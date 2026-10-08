@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-ui",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Web UI for agent-runtime. Talks only to the Connect-compatible daemon API at /api.",
   "type": "module",
   "scripts": {

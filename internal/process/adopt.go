@@ -109,9 +109,11 @@ func (m *Manager) adoptedWaitLoop(proc *ManagedProcess, inst *instance) {
 				exited: &now, exitCode: &code,
 			})
 			proc.mu.Unlock()
-			m.recordInstance(proc, inst, old.started, &now, &code)
-			m.maybeEvictExited()
-			inst.finish()
+		m.recordInstance(proc, inst, old.started, &now, &code)
+		m.maybeEvictExited()
+		m.sweepExpired()
+		m.scheduleExpiry(proc.ID, inst.id)
+		inst.finish()
 			proc.wakeup.ping()
 			eventType := events.Exited
 			if inst.stopReq.Load() {

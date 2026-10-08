@@ -24,6 +24,7 @@
         "stop_grace": { "type": "string", "default": "5s", "description": "Grace period before SIGKILL after SIGTERM." },
         "log_buffer_lines": { "type": "integer", "default": 10000, "description": "Ring buffer lines retained per process." },
         "max_exited_processes": { "type": "integer", "default": 50, "description": "How many exited processes to keep listed." },
+        "exited_ttl": { "type": "string", "default": "5m", "description": "How long to keep exited processes listed before auto-removal." },
         "security": {
           "type": "object",
           "description": "Security policy for this project.",

@@ -13,7 +13,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        version = "0.4.4";
+        version = "0.5.0";
       in {
         packages = {
           agent-runtime = pkgs.buildGoModule {

@@ -1,8 +1,7 @@
 // Package cli implements the agent-runtime command-line interface. Running
-// with no arguments opens the native GUI window (desktop build with a display)
-// or the command help; the MCP server runs under "serve" and the process
-// manager under "repl" (repl.go). run/shell/integrate/version are one-shot
-// helpers, and the CLI wiring lives in root.go.
+// with no arguments prints the command help; the MCP server runs under
+// "serve" and the process manager under "repl" (repl.go). run/shell/integrate
+// version are one-shot helpers, and the CLI wiring lives in root.go.
 package cli
 
 import (
@@ -112,21 +111,7 @@ func ServeHTTP(loaded *config.Loaded, logger *slog.Logger, addr string) error {
 	var facade runtime.Facade
 	var shutdown func() error
 	var bridge *rtmcp.Bridge
-	if loaded.Config.Runtime.Daemon {
-		// Legacy per-project daemon path (v2 compat).
-		started, err := daemon.Start(loaded, logger)
-		if err != nil {
-			return err
-		}
-		if started {
-			if err := daemon.WaitReady(loaded.ProjectDir, 10*time.Second); err != nil {
-				return err
-			}
-		}
-		facade = daemon.NewClient(daemon.SocketPath(loaded.ProjectDir))
-		shutdown = func() error { return nil } // daemon owns the processes
-	} else if b, err := dialBridge(loaded, logger, serveOptions{}); err == nil {
-		// v3 bridge: remote MCP clients share the per-user daemon.
+	if b, err := dialBridge(loaded, logger, serveOptions{}); err == nil {
 		bridge = b
 		facade = b
 		shutdown = func() error { return b.Close() }

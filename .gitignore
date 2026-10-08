@@ -11,10 +11,6 @@ ui/dist-web/
 !/internal/webui/dist/
 /internal/webui/dist/.build.json
 
-!/internal/gui/dist/
-/internal/gui/dist/*
-!/internal/gui/dist/index.html
-
 test-results/
 ui/test-results/
 playwright-report/
