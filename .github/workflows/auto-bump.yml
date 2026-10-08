@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          FILES="internal/mcp/server.go internal/gui/gui.go cmd/agentd/main.go Makefile packaging/nix/flake.nix ui/package.json ui/package-lock.json ui/vite.config.ts"
+          FILES="internal/mcp/server.go cmd/agentd/main.go packaging/nix/flake.nix ui/package.json ui/package-lock.json ui/vite.config.ts"
 
           BASE="${{ github.event.before }}"
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
@@ -57,9 +57,7 @@ jobs:
           echo "bumping $CUR -> $NEW"
 
           sed -i -E "s/var Version = \"[0-9]+\.[0-9]+\.[0-9]+\"/var Version = \"$NEW\"/" internal/mcp/server.go
-          sed -i -E "s/var Version = \"v[0-9]+\.[0-9]+\.[0-9]+\"/var Version = \"v$NEW\"/" internal/gui/gui.go
           sed -i -E "s/var version = \"v[0-9]+\.[0-9]+\.[0-9]+\"/var version = \"v$NEW\"/" cmd/agentd/main.go
-          sed -i -E "s/echo v[0-9]+\.[0-9]+\.[0-9]+-dev/echo v$NEW-dev/" Makefile
           sed -i -E "s/^([[:space:]]*version = \")[0-9]+\.[0-9]+\.[0-9]+(\";)/\1$NEW\2/" packaging/nix/flake.nix
           sed -i -E "s/let version = '[0-9]+\.[0-9]+\.[0-9]+'/let version = '$NEW'/" ui/vite.config.ts
           npm --prefix ui version "$NEW" --no-git-tag-version --allow-same-version >/dev/null
@@ -67,15 +65,13 @@ jobs:
           # Verify everything agrees and nothing got mangled.
           for got in \
             "$(grep -oP 'var Version = \"\K[0-9]+\.[0-9]+\.[0-9]+' internal/mcp/server.go)" \
-            "$(grep -oP 'var Version = \"v\K[0-9]+\.[0-9]+\.[0-9]+' internal/gui/gui.go)" \
             "$(grep -oP 'var version = \"v\K[0-9]+\.[0-9]+\.[0-9]+' cmd/agentd/main.go)" \
-            "$(grep -oP 'echo v\K[0-9]+\.[0-9]+\.[0-9]+' Makefile)" \
             "$(grep -oP 'version = \"\K[0-9]+\.[0-9]+\.[0-9]+' packaging/nix/flake.nix)" \
             "$(grep -oP '\"version\": \"\K[0-9]+\.[0-9]+\.[0-9]+' ui/package.json | head -n1)" \
             "$(grep -oP "let version = '\K[0-9]+\.[0-9]+\.[0-9]+" ui/vite.config.ts)"; do
             [ "$got" = "$NEW" ] || { echo "mismatch after bump: $got != $NEW"; exit 1; }
           done
-          test -z "$(gofmt -l internal/mcp/server.go internal/gui/gui.go cmd/agentd/main.go)"
+          test -z "$(gofmt -l internal/mcp/server.go cmd/agentd/main.go)"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
