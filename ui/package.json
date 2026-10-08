@@ -1,6 +1,6 @@
 {
   "name": "agent-runtime-ui",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Shared frontend for the agent-runtime desktop GUI (Wails) and web UI. Talks only to the Connect-compatible daemon API at /api.",
   "type": "module",
   "scripts": {

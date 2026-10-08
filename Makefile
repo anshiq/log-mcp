@@ -41,7 +41,7 @@ ui-build:
 # needs cgo + GTK/WebKitGTK dev headers, so it's kept out of the default
 # `build` target. On NixOS: nix develop ./packaging/nix -c make build-gui
 build-gui: ui ui-build ui-web-embed
-	go build -ldflags "-X agent-runtime/internal/gui.Version=$$(git describe --tags --always --dirty 2>/dev/null || echo v0.4.3-dev)" -tags "$(GUI_TAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
+	go build -ldflags "-X agent-runtime/internal/gui.Version=$$(git describe --tags --always --dirty 2>/dev/null || echo v0.4.4-dev)" -tags "$(GUI_TAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/agent-runtime
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/agent-runtime-gui ./cmd/agent-runtime-gui
 
 ui-check:
