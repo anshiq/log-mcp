@@ -122,10 +122,9 @@ func (s *Server) intSkills(w http.ResponseWriter, r *http.Request) (any, error) 
 func (s *Server) intInstallSkills(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
 		Harness string `json:"harness"`
-		Scope   string `json:"scope"`
 	}
 	_ = decode(r, &req)
-	res, err := integrate.InstallSkills(req.Harness, req.Scope)
+	res, err := integrate.InstallSkills(req.Harness)
 	if err != nil {
 		return nil, err
 	}
@@ -135,10 +134,9 @@ func (s *Server) intInstallSkills(w http.ResponseWriter, r *http.Request) (any, 
 func (s *Server) intRemoveSkills(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
 		Harness string `json:"harness"`
-		Scope   string `json:"scope"`
 	}
 	_ = decode(r, &req)
-	if err := integrate.RemoveSkills(req.Harness, req.Scope); err != nil {
+	if err := integrate.RemoveSkills(req.Harness); err != nil {
 		return nil, err
 	}
 	return map[string]any{"removed": true}, nil

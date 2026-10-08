@@ -1,9 +1,8 @@
 // Embedded skill bundle installation. The bundle lives in skill/ and is
 // compiled into the binary via go:embed so `agent-runtime integrate skill`
-// works after `go install` with no repo checkout on disk. Each skill installs
-// into the agent skill trees (Claude Code's .claude/skills and opencode's
-// .config/opencode/skills — or project .opencode/skills), at global or project
-// scope.
+// works after `go install` with no repo checkout on disk. Skills install into
+// the agent skill trees (Claude Code's ~/.claude/skills and opencode's
+// ~/.config/opencode/skills) at global scope only.
 package integrate
 
 import (
@@ -59,33 +58,26 @@ func SkillFiles() []string {
 	return out
 }
 
-// SkillTargetDirs returns the directories every skill installs into for the
-// given scope. Each returned path is a skill directory itself
-// (…/skills/<skill-name>), not the skills root. For each skill there is one
-// Claude Code target and one opencode target.
-func SkillTargetDirs(scope Scope, baseDir string) []string {
+// SkillTargetDirs returns the directories every skill installs into. Each
+// returned path is a skill directory itself (…/skills/<skill-name>), not the
+// skills root. For each skill there is one Claude Code target and one opencode
+// target, both in the user's home directory.
+func SkillTargetDirs() []string {
 	var dirs []string
 	for _, name := range SkillNames() {
-		dirs = append(dirs, skillDirs(scope, baseDir, name)...)
+		dirs = append(dirs, skillDirs(name)...)
 	}
 	return dirs
 }
 
-// skillDirs returns the two agent skill directories for one skill. opencode
-// reads project skills from .opencode/skills and global skills from
-// .config/opencode/skills; Claude Code reads both scopes from .claude/skills.
-func skillDirs(scope Scope, baseDir, name string) []string {
-	root := baseDir
-	if scope != ScopeProject {
-		root, _ = os.UserHomeDir()
-	}
-	opencode := filepath.Join(root, ".config", "opencode", "skills", name)
-	if scope == ScopeProject {
-		opencode = filepath.Join(root, ".opencode", "skills", name)
-	}
+// skillDirs returns the two global agent skill directories for one skill.
+// opencode reads global skills from .config/opencode/skills; Claude Code reads
+// them from .claude/skills.
+func skillDirs(name string) []string {
+	root, _ := os.UserHomeDir()
 	return []string{
 		filepath.Join(root, ".claude", "skills", name),
-		opencode,
+		filepath.Join(root, ".config", "opencode", "skills", name),
 	}
 }
 
@@ -137,12 +129,12 @@ func InstallSkillTree(destDir string) (created, updated, unchanged int, err erro
 	return created, updated, unchanged, nil
 }
 
-// RemoveSkillTrees removes every installed copy of the embedded skills for the
-// given scope. It returns the directories actually removed (a directory that
-// was never installed is skipped, not an error).
-func RemoveSkillTrees(scope Scope, baseDir string) ([]string, error) {
+// RemoveSkillTrees removes every installed copy of the embedded skills. It
+// returns the directories actually removed (a directory that was never
+// installed is skipped, not an error).
+func RemoveSkillTrees() ([]string, error) {
 	var removed []string
-	for _, d := range SkillTargetDirs(scope, baseDir) {
+	for _, d := range SkillTargetDirs() {
 		if _, err := os.Stat(d); os.IsNotExist(err) {
 			continue
 		}

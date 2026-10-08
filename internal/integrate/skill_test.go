@@ -109,12 +109,11 @@ func TestInstallSkillTree(t *testing.T) {
 }
 
 func TestRemoveSkillTrees(t *testing.T) {
-	base := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
 	// Nothing installed yet: a no-op, not an error.
-	removed, err := RemoveSkillTrees(ScopeProject, base)
+	removed, err := RemoveSkillTrees()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,14 +121,14 @@ func TestRemoveSkillTrees(t *testing.T) {
 		t.Fatalf("removed %v from an empty tree", removed)
 	}
 
-	// Install at project scope, then remove.
-	dirs := SkillTargetDirs(ScopeProject, base)
+	// Install everywhere, then remove.
+	dirs := SkillTargetDirs()
 	for _, d := range dirs {
 		if _, _, _, err := InstallSkillTree(d); err != nil {
 			t.Fatal(err)
 		}
 	}
-	removed, err = RemoveSkillTrees(ScopeProject, base)
+	removed, err = RemoveSkillTrees()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,13 +141,8 @@ func TestRemoveSkillTrees(t *testing.T) {
 		}
 	}
 
-	// Global scope untouched by the project removal.
-	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "agent-runtime-ready")); !os.IsNotExist(err) {
-		t.Fatalf("project removal touched global scope: %v", err)
-	}
-
 	// Second remove is a no-op.
-	removed, err = RemoveSkillTrees(ScopeProject, base)
+	removed, err = RemoveSkillTrees()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,25 +152,11 @@ func TestRemoveSkillTrees(t *testing.T) {
 }
 
 func TestSkillTargetDirs(t *testing.T) {
-	base := t.TempDir()
-
-	project := SkillTargetDirs(ScopeProject, base)
-	wantProject := []string{
-		filepath.Join(base, ".claude", "skills", "agent-runtime-logging"),
-		filepath.Join(base, ".opencode", "skills", "agent-runtime-logging"),
-		filepath.Join(base, ".claude", "skills", "agent-runtime-project-config"),
-		filepath.Join(base, ".opencode", "skills", "agent-runtime-project-config"),
-		filepath.Join(base, ".claude", "skills", "agent-runtime-ready"),
-		filepath.Join(base, ".opencode", "skills", "agent-runtime-ready"),
-	}
-	if !reflect.DeepEqual(project, wantProject) {
-		t.Fatalf("project dirs = %v, want %v", project, wantProject)
-	}
-
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	global := SkillTargetDirs(ScopeGlobal, base)
-	wantGlobal := []string{
+
+	got := SkillTargetDirs()
+	want := []string{
 		filepath.Join(home, ".claude", "skills", "agent-runtime-logging"),
 		filepath.Join(home, ".config", "opencode", "skills", "agent-runtime-logging"),
 		filepath.Join(home, ".claude", "skills", "agent-runtime-project-config"),
@@ -184,7 +164,7 @@ func TestSkillTargetDirs(t *testing.T) {
 		filepath.Join(home, ".claude", "skills", "agent-runtime-ready"),
 		filepath.Join(home, ".config", "opencode", "skills", "agent-runtime-ready"),
 	}
-	if !reflect.DeepEqual(global, wantGlobal) {
-		t.Fatalf("global dirs = %v, want %v", global, wantGlobal)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("dirs = %v, want %v", got, want)
 	}
 }

@@ -55,9 +55,9 @@ func TestParseIntegrateArgs(t *testing.T) {
 			wantPos:  []string{"skill"},
 		},
 		{
-			name:     "skill write project scope",
-			args:     []string{"skill", "--write", "--scope", "project"},
-			wantOpts: integrateOptions{write: true, scope: "project"},
+			name:     "skill write global scope",
+			args:     []string{"skill", "--write", "--scope", "global"},
+			wantOpts: integrateOptions{write: true, scope: "global"},
 			wantPos:  []string{"skill"},
 		},
 		{
@@ -67,9 +67,9 @@ func TestParseIntegrateArgs(t *testing.T) {
 			wantPos:  []string{"claude"},
 		},
 		{
-			name:     "remove skill project scope",
-			args:     []string{"skill", "--remove", "--scope", "project"},
-			wantOpts: integrateOptions{remove: true, scope: "project"},
+			name:     "remove skill global scope",
+			args:     []string{"skill", "--remove", "--scope", "global"},
+			wantOpts: integrateOptions{remove: true, scope: "global"},
 			wantPos:  []string{"skill"},
 		},
 		{
@@ -426,31 +426,19 @@ func TestIntegrateSkillPrintsHint(t *testing.T) {
 	}
 }
 
-// TestIntegrateSkillRemove installs the skills into a temp project then removes
-// them via `integrate skill --remove --scope project`. It must not prompt
+// TestIntegrateSkillRemove installs the skills into the temp home's skill
+// trees then removes them via `integrate skill --remove`. It must not prompt
 // (stdin is not a TTY in tests) and must leave no skill directories behind.
 func TestIntegrateSkillRemove(t *testing.T) {
-	proj := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	oldwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(proj); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		_ = os.Chdir(oldwd)
-	}()
 
 	// Nothing installed: a no-op, no error.
 	if err := Integrate([]string{"skill", "--remove"}); err != nil {
 		t.Fatalf("remove with nothing installed = %v", err)
 	}
 
-	dirs := integrate.SkillTargetDirs(integrate.ScopeProject, proj)
+	dirs := integrate.SkillTargetDirs()
 	for _, d := range dirs {
 		if _, _, _, err := integrate.InstallSkillTree(d); err != nil {
 			t.Fatal(err)
@@ -464,14 +452,14 @@ func TestIntegrateSkillRemove(t *testing.T) {
 	}
 	old := os.Stdout
 	os.Stdout = f
-	err = Integrate([]string{"skill", "--remove", "--scope", "project"})
+	err = Integrate([]string{"skill", "--remove"})
 	f.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("Integrate(skill --remove) = %v", err)
 	}
 	data, _ := os.ReadFile(out)
-	for _, want := range []string{"removed", ".claude/skills/agent-runtime-ready", ".opencode/skills/agent-runtime-ready"} {
+	for _, want := range []string{"removed", ".claude/skills/agent-runtime-ready", ".config/opencode/skills/agent-runtime-ready"} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("output missing %q:\n%s", want, data)
 		}
@@ -480,5 +468,17 @@ func TestIntegrateSkillRemove(t *testing.T) {
 		if _, err := os.Stat(d); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after remove", d)
 		}
+	}
+}
+
+// TestIntegrateSkillProjectScopeRejected: skills install at global scope only,
+// so an explicit --scope project must fail instead of silently installing.
+func TestIntegrateSkillProjectScopeRejected(t *testing.T) {
+	err := Integrate([]string{"skill", "--write", "--scope", "project"})
+	if err == nil {
+		t.Fatal("expected an error for --scope project, got nil")
+	}
+	if !strings.Contains(err.Error(), "global") {
+		t.Fatalf("error = %q, want it to mention global scope", err)
 	}
 }

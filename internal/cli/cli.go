@@ -1,8 +1,8 @@
 // Package cli implements the agent-runtime command-line interface. Running
-// with no arguments opens the interactive setup wizard (setup.go); the MCP
-// server runs under "serve" and the process manager under "repl" (repl.go).
-// run/shell/integrate/version are one-shot helpers, and the CLI wiring lives
-// in root.go.
+// with no arguments opens the native GUI window (desktop build with a display)
+// or the command help; the MCP server runs under "serve" and the process
+// manager under "repl" (repl.go). run/shell/integrate/version are one-shot
+// helpers, and the CLI wiring lives in root.go.
 package cli
 
 import (
@@ -248,32 +248,28 @@ func scopeNames(scopes []integrate.Scope) string {
 }
 
 // integrateSkill prints the install plan for, installs (--write), or removes
-// (--remove) the embedded skill bundle. The default scope is global; --scope
-// project targets the current working directory's .claude/.opencode trees.
+// (--remove) the embedded skill bundle. Skills install at global scope only.
 func integrateSkill(opts integrateOptions) error {
-	scope := integrate.ScopeGlobal
 	if opts.scope != "" {
 		if err := validateScope(opts.scope); err != nil {
 			return err
 		}
-		scope = integrate.Scope(opts.scope)
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
+		if opts.scope != string(integrate.ScopeGlobal) {
+			return errors.New("skills only support global scope")
+		}
 	}
 	if opts.remove {
 		var present []string
-		for _, d := range integrate.SkillTargetDirs(scope, cwd) {
+		for _, d := range integrate.SkillTargetDirs() {
 			if _, err := os.Stat(d); err == nil {
 				present = append(present, d)
 			}
 		}
 		if len(present) == 0 {
-			fmt.Printf("no installed skills to remove (%s scope)\n", scope)
+			fmt.Println("no installed skills to remove")
 			return nil
 		}
-		fmt.Printf("skills installed (%s scope):\n", scope)
+		fmt.Println("skills installed:")
 		for _, d := range present {
 			fmt.Printf("  %s\n", d)
 		}
@@ -286,7 +282,7 @@ func integrateSkill(opts integrateOptions) error {
 				return errors.New("removal cancelled")
 			}
 		}
-		removed, err := integrate.RemoveSkillTrees(scope, cwd)
+		removed, err := integrate.RemoveSkillTrees()
 		if err != nil {
 			return err
 		}
@@ -295,10 +291,10 @@ func integrateSkill(opts integrateOptions) error {
 		}
 		return nil
 	}
-	dirs := integrate.SkillTargetDirs(scope, cwd)
+	dirs := integrate.SkillTargetDirs()
 	if !opts.write {
 		fmt.Printf("embedded skills: %s\n", strings.Join(integrate.SkillNames(), ", "))
-		fmt.Printf("skill target dirs (%s):\n", scope)
+		fmt.Println("skill target dirs:")
 		for _, d := range dirs {
 			fmt.Printf("  %s\n", d)
 		}

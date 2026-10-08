@@ -13,7 +13,7 @@ command.
   global event bus, all backed by a single-writer SQLite `state.db`.
 - **agent-runtime** — the CLI / MCP bridge agents talk to. Bare `agent-runtime`
   opens the native GUI window (desktop build), `agent-runtime web` opens the
-  web UI, and `agent-runtime tui` opens the terminal dashboard.
+  web UI.
 - **agent-runtime-shim** — a tiny (<= 4 MB RSS), dependency-free process shim
   that stays put under a running process across an agentd upgrade.
 - **agent-runtime-gui** — deprecated shim that execs `agent-runtime gui`. The

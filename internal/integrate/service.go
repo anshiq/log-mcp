@@ -59,11 +59,11 @@ func Preview(harnessID, scope, kind string) (string, error) {
 		}
 		return "--- " + path + "\n+++ " + path + " (proposed)\n" + lineDiff(before, after), nil
 	}
-	sc, ok := d.Skills.Scopes[scope]
+	sc, ok := d.Skills.Scopes["global"]
 	if !ok {
-		return "", fmt.Errorf("harness %q has no skills scope %q", harnessID, scope)
+		return "", fmt.Errorf("harness %q has no skills scope", harnessID)
 	}
-	return "(skills install to " + expandScopePath(sc.Dir, scope) + ": " +
+	return "(skills install to " + expandHome(sc.Dir) + ": " +
 		strings.Join(SkillNames(), ", ") + ")", nil
 }
 
@@ -205,23 +205,17 @@ func skillDescription(name string) string {
 	return ""
 }
 
-// InstallSkills installs embedded skills into a harness scope.
-func InstallSkills(harnessID, scope string) (SkillInstallResult, error) {
+// InstallSkills installs embedded skills into a harness's global skill dir.
+func InstallSkills(harnessID string) (SkillInstallResult, error) {
 	d, err := FindDescriptor(harnessID)
 	if err != nil {
 		return SkillInstallResult{}, err
 	}
-	sc, ok := d.Skills.Scopes[scope]
+	sc, ok := d.Skills.Scopes["global"]
 	if !ok {
-		return SkillInstallResult{}, fmt.Errorf("harness %q has no skills scope %q", harnessID, scope)
+		return SkillInstallResult{}, fmt.Errorf("harness %q has no skills scope", harnessID)
 	}
 	dir := expandHome(sc.Dir)
-	if scope == "project" {
-		if cwd, err := os.Getwd(); err == nil {
-			dir = strings.ReplaceAll(sc.Dir, "{project}", cwd)
-			dir = expandHome(dir)
-		}
-	}
 	var installed []string
 	for _, sk := range EmbeddedSkills() {
 		dest := filepath.Join(dir, sk.Name)
@@ -236,43 +230,48 @@ func InstallSkills(harnessID, scope string) (SkillInstallResult, error) {
 	return SkillInstallResult{Path: dir, Installed: installed}, nil
 }
 
-// RemoveSkills removes embedded skills from a harness scope.
-func RemoveSkills(harnessID, scope string) error {
-	if scope != "global" && scope != "project" {
-		return fmt.Errorf("scope must be global|project, got %q", scope)
+// RemoveSkills removes embedded skills from a harness's global skill dir.
+func RemoveSkills(harnessID string) error {
+	d, err := FindDescriptor(harnessID)
+	if err != nil {
+		return err
 	}
-	base := ""
-	if scope == "project" {
-		var err error
-		base, err = os.Getwd()
-		if err != nil {
+	sc, ok := d.Skills.Scopes["global"]
+	if !ok {
+		return fmt.Errorf("harness %q has no skills scope", harnessID)
+	}
+	dir := expandHome(sc.Dir)
+	for _, sk := range EmbeddedSkills() {
+		if err := os.RemoveAll(filepath.Join(dir, sk.Name)); err != nil {
 			return err
 		}
 	}
-	_, err := RemoveSkillTrees(Scope(scope), base)
-	return err
+	return nil
 }
 
-// CheckSkillUpdates compares installed and embedded skill versions.
+// CheckSkillUpdates compares installed and embedded skill versions at global
+// scope.
 func CheckSkillUpdates() []SkillUpdate {
 	var out []SkillUpdate
 	for _, d := range Descriptors() {
-		for scopeName, sc := range d.Skills.Scopes {
-			dir := expandHome(sc.Dir)
-			for _, sk := range EmbeddedSkills() {
-				verFile := filepath.Join(dir, sk.Name, "VERSION")
-				have := ""
-				if data, err := os.ReadFile(verFile); err == nil {
-					have = strings.TrimSpace(string(data))
-				} else if _, err := os.Stat(filepath.Join(dir, sk.Name, "SKILL.md")); err != nil {
-					continue // not installed here
-				}
-				if have != sk.Version {
-					out = append(out, SkillUpdate{
-						Name: sk.Name, Have: have, Want: sk.Version,
-						Scope: scopeName, Harness: d.ID, Outdated: true,
-					})
-				}
+		sc, ok := d.Skills.Scopes["global"]
+		if !ok {
+			continue
+		}
+		dir := expandHome(sc.Dir)
+		for _, sk := range EmbeddedSkills() {
+			verFile := filepath.Join(dir, sk.Name, "VERSION")
+			have := ""
+			if data, err := os.ReadFile(verFile); err == nil {
+				have = strings.TrimSpace(string(data))
+			} else if _, err := os.Stat(filepath.Join(dir, sk.Name, "SKILL.md")); err != nil {
+				continue // not installed here
+			}
+			if have != sk.Version {
+				out = append(out, SkillUpdate{
+					Name: sk.Name, Have: have, Want: sk.Version,
+					Scope: "global", Harness: d.ID, Outdated: true,
+				})
 			}
 		}
 	}

@@ -146,17 +146,15 @@ export const IntegrationService = {
     const r = await call<Record<string, never>, { harnesses: Record<string, unknown>[] }>('IntegrationService', 'ListHarnesses', {});
     return (r.harnesses ?? []).map(toHarness);
   },
-  previewInstall: (harness: string, scope: string) => call<{ harness: string; scope: string }, { diff: string }>('IntegrationService', 'PreviewInstall', { harness, scope }),
-  installMCP: (harness: string, scope: string) => call<{ harness: string; scope: string }, { path: string; diff: string; changed?: boolean }>('IntegrationService', 'InstallMCP', { harness, scope }),
-  removeMCP: (harness: string, scope: string) => call<{ harness: string; scope: string }, { path: string; changed?: boolean }>('IntegrationService', 'RemoveMCP', { harness, scope }),
+  previewInstall: (harness: string) => call<{ harness: string; scope: string }, { diff: string }>('IntegrationService', 'PreviewInstall', { harness, scope: 'global' }),
+  installMCP: (harness: string) => call<{ harness: string; scope: string }, { path: string; diff: string; changed?: boolean }>('IntegrationService', 'InstallMCP', { harness, scope: 'global' }),
+  removeMCP: (harness: string) => call<{ harness: string; scope: string }, { path: string; changed?: boolean }>('IntegrationService', 'RemoveMCP', { harness, scope: 'global' }),
   listSkills: async (): Promise<Skill[]> => {
     const r = await call<Record<string, never>, { skills: Record<string, unknown>[] }>('IntegrationService', 'ListSkills', {});
     return (r.skills ?? []).map(toSkill);
   },
-  installSkills: (skillNames: string[], scope: string) => call<{ skillNames: string[]; scope: string }, unknown>('IntegrationService', 'InstallSkills', { skillNames, scope }),
-  removeSkills: (skillNames: string[]) => call<{ skillNames: string[] }, unknown>('IntegrationService', 'RemoveSkills', { skillNames }),
-  installSkillsFor: (harness: string, scope: string) => call<{ harness: string; scope: string }, { installed?: unknown; path?: string }>('IntegrationService', 'InstallSkills', { harness, scope }),
-  removeSkillsFor: (harness: string, scope: string) => call<{ harness: string; scope: string }, { removed?: boolean }>('IntegrationService', 'RemoveSkills', { harness, scope }),
+  installSkillsFor: (harness: string) => call<{ harness: string }, { installed?: unknown; path?: string }>('IntegrationService', 'InstallSkills', { harness }),
+  removeSkillsFor: (harness: string) => call<{ harness: string }, { removed?: boolean }>('IntegrationService', 'RemoveSkills', { harness }),
   checkUpdates: () => call<Record<string, never>, { updates: Record<string, unknown>[] }>('IntegrationService', 'CheckUpdates', {})
 };
 

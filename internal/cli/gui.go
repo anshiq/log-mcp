@@ -19,7 +19,7 @@ func newGuiCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
 		Long: `Open the native GUI application window (desktop build only).
 
 Without the desktop build this prints a hint pointing at
-` + "`agent-runtime web`" + ` and ` + "`agent-runtime tui`" + ` instead.`,
+` + "`agent-runtime web`" + ` instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if socket != "" {
 				_ = os.Setenv("AGENTD_SOCKET", socket)
@@ -43,15 +43,4 @@ Without the desktop build this prints a hint pointing at
 		},
 	})
 	return cmd
-}
-
-func newSetupCmd(loaded *config.Loaded, logger *slog.Logger) *cobra.Command {
-	return &cobra.Command{
-		Use:   "setup",
-		Short: "Open the interactive setup wizard",
-		Long:  "Open the interactive setup wizard (connect AI agents, open the process manager).",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return setupMain(loaded, logger)
-		},
-	}
 }

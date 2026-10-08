@@ -12,8 +12,6 @@
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import Circle from '@lucide/svelte/icons/circle';
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
-  import User from '@lucide/svelte/icons/user';
-  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import { IntegrationService, type Harness, type Skill } from '../../lib/api';
   import { dialogs } from '../../lib/state/dialogs.svelte';
   import { toasts, toastError } from '../../lib/toasts.svelte';
@@ -23,7 +21,6 @@
   import Banner from '../../lib/ui/Banner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
-  import SegmentedControl from '../../lib/ui/SegmentedControl.svelte';
   import DiffView from '../../lib/ui/DiffView.svelte';
   import RelativeTime from '../../lib/ui/RelativeTime.svelte';
   import Spinner from '../../lib/ui/Spinner.svelte';
@@ -32,7 +29,6 @@
     name: string;
     have: string;
     want: string;
-    scope: string;
     harness: string;
     outdated: boolean;
   }
@@ -46,13 +42,11 @@
   let skillError = $state('');
   let checking = $state(false);
   let checkedAt = $state(0);
-  let scope = $state('global');
   let busy = $state('');
   let updatingAll = $state(false);
 
-  let preview = $state<{ harness: Harness; scope: string; diff: string; loading: boolean; error: string; busy: boolean } | null>(null);
+  let preview = $state<{ harness: Harness; diff: string; loading: boolean; error: string; busy: boolean } | null>(null);
 
-  const scopeLabel = $derived(scope === 'global' ? 'user' : 'project');
   const outdated = $derived(updates.filter((u) => u.outdated));
   const detectedCount = $derived(harnesses.filter((h) => h.detected).length);
   const configuredCount = $derived(harnesses.filter((h) => h.mcpGlobal).length);
@@ -106,7 +100,6 @@
         name: String(u['name'] ?? ''),
         have: String(u['have'] ?? u['installedVersion'] ?? ''),
         want: String(u['want'] ?? u['latestVersion'] ?? ''),
-        scope: String(u['scope'] ?? 'global'),
         harness: String(u['harness'] ?? ''),
         outdated: u['outdated'] !== false
       }));
@@ -129,9 +122,9 @@
   }
 
   async function openPreview(h: Harness) {
-    preview = { harness: h, scope, diff: '', loading: true, error: '', busy: false };
+    preview = { harness: h, diff: '', loading: true, error: '', busy: false };
     try {
-      const res = await IntegrationService.previewInstall(h.id, scope);
+      const res = await IntegrationService.previewInstall(h.id);
       if (preview && preview.harness.id === h.id) preview.diff = res.diff;
     } catch (err) {
       if (preview) preview.error = err instanceof Error ? err.message : String(err);
@@ -145,7 +138,7 @@
     const p = preview;
     p.busy = true;
     try {
-      const res = await IntegrationService.installMCP(p.harness.id, p.scope);
+      const res = await IntegrationService.installMCP(p.harness.id);
       toasts.ok(`MCP installed for ${p.harness.displayName}${res.path ? ` · ${res.path}` : ''}`);
       preview = null;
       await load();
@@ -158,7 +151,7 @@
   }
 
   async function removeMCP(h: Harness) {
-    const ok = await dialogs.confirm(`Remove the agent-runtime MCP entry from ${h.displayName} (${scopeLabel} scope)?\n\nThe agent will no longer be able to use agent-runtime tools.`, {
+    const ok = await dialogs.confirm(`Remove the agent-runtime MCP entry from ${h.displayName}?\n\nThe agent will no longer be able to use agent-runtime tools.`, {
       title: `Remove MCP from ${h.displayName}`,
       confirmLabel: 'Remove',
       danger: true
@@ -166,7 +159,7 @@
     if (!ok) return;
     busy = `${h.id}:mcp`;
     try {
-      const res = await IntegrationService.removeMCP(h.id, scope);
+      const res = await IntegrationService.removeMCP(h.id);
       toasts.ok(res.changed === false ? `${h.displayName} had no MCP entry to remove` : `MCP removed from ${h.displayName}`);
       await load();
     } catch (err) {
@@ -179,7 +172,7 @@
   async function installSkills(h: Harness) {
     busy = `${h.id}:skills`;
     try {
-      await IntegrationService.installSkillsFor(h.id, scope);
+      await IntegrationService.installSkillsFor(h.id);
       toasts.ok(`Skills installed for ${h.displayName}`);
       await refresh();
     } catch (err) {
@@ -190,7 +183,7 @@
   }
 
   async function removeSkills(h: Harness) {
-    const ok = await dialogs.confirm(`Remove the agent-runtime skills from ${h.displayName} (${scopeLabel} scope)?`, {
+    const ok = await dialogs.confirm(`Remove the agent-runtime skills from ${h.displayName}?`, {
       title: `Remove skills from ${h.displayName}`,
       confirmLabel: 'Remove skills',
       danger: true
@@ -198,7 +191,7 @@
     if (!ok) return;
     busy = `${h.id}:skills`;
     try {
-      await IntegrationService.removeSkillsFor(h.id, scope);
+      await IntegrationService.removeSkillsFor(h.id);
       toasts.ok(`Skills removed from ${h.displayName}`);
       await refresh();
     } catch (err) {
@@ -209,21 +202,20 @@
   }
 
   async function updateAll() {
-    const targets = new Map<string, { harness: string; scope: string }>();
-    for (const u of outdated) targets.set(`${u.harness}:${u.scope}`, { harness: u.harness, scope: u.scope });
-    if (targets.size === 0) return;
+    const targets = [...new Set(outdated.map((u) => u.harness))];
+    if (targets.length === 0) return;
     updatingAll = true;
     let failed = 0;
-    for (const t of targets.values()) {
+    for (const harness of targets) {
       try {
-        await IntegrationService.installSkillsFor(t.harness, t.scope);
+        await IntegrationService.installSkillsFor(harness);
       } catch {
         failed++;
       }
     }
     updatingAll = false;
-    if (failed) toasts.err(`${failed} of ${targets.size} skill installs failed to update`);
-    else toasts.ok(`Updated skills for ${targets.size} agent${targets.size === 1 ? '' : 's'}`);
+    if (failed) toasts.err(`${failed} of ${targets.length} skill installs failed to update`);
+    else toasts.ok(`Updated skills for ${targets.length} agent${targets.length === 1 ? '' : 's'}`);
     await refresh();
   }
 
@@ -253,18 +245,6 @@
         <p class="muted small">
           {#if loadingHarnesses}Detecting agents…{:else}{detectedCount} detected · {configuredCount} connected{/if}
         </p>
-      </div>
-      <div class="scope">
-        <span class="muted small">Install to</span>
-        <SegmentedControl
-          label="Install scope"
-          size="sm"
-          bind:value={scope}
-          options={[
-            { value: 'global', label: 'User', icon: User },
-            { value: 'project', label: 'Project', icon: FolderKanban }
-          ]}
-        />
       </div>
     </div>
 
@@ -395,7 +375,7 @@
                   {:else}
                     <span class="muted small">Not installed on any agent</span>
                   {/if}
-                  {#each stale as u (u.harness + u.scope)}
+                  {#each stale as u (u.harness)}
                     <span class="muted small">{u.harness}: {u.have || 'unversioned'} → {u.want}</span>
                   {/each}
                 </div>
@@ -412,7 +392,7 @@
   {@const p = preview}
   <Dialog
     title={`Install MCP for ${p.harness.displayName}`}
-    description={`Adds the agent-runtime server to the ${p.scope === 'global' ? 'user' : 'project'} config. A backup is written next to the file.`}
+    description="Adds the agent-runtime server to your user config. A backup is written next to the file."
     icon={FileDiff}
     width={620}
     flush
@@ -461,7 +441,6 @@
   .small {
     font-size: var(--fs-sm);
   }
-  .scope,
   .actions-row {
     display: flex;
     align-items: center;
