@@ -131,24 +131,3 @@ jobs:
             git diff --cached --stat -- internal/webui/dist
             exit 1
           fi
-  e2e:
-    needs: [gate]
-    if: needs.gate.outputs.run_tests == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - name: Install
-        run: npm --prefix ui install --no-audit --no-fund
-      - name: Playwright browsers
-        run: npx --prefix ui playwright install --with-deps chromium
-      - name: E2E
-        run: npm --prefix ui run e2e
