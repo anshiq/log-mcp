@@ -244,7 +244,7 @@
       <button type="button" class:active={mode === 'search'} aria-pressed={mode === 'search'} onclick={() => (mode = 'search')}>Search</button>
     </div>
     <div class="filter" class:bad={!!matcherError}>
-      <Search size={13} />
+      <Search size={14} />
       <input
         placeholder={mode === 'live' ? 'Filter lines…' : 'Search log history…'}
         bind:value={query}
@@ -296,7 +296,7 @@
         title={session.paused ? 'Resume live updates' : 'Freeze the view while logs keep buffering'}
         onclick={() => (session.paused ? session.resume() : session.pause())}
       >
-        {#if session.paused}<Play size={13} />Resume{#if buffered > 0}<span class="badge warn">{buffered.toLocaleString()}</span>{/if}{:else}<Pause size={13} />Pause{/if}
+        {#if session.paused}<Play size={14} />Resume{#if buffered > 0}<span class="badge warn">{buffered.toLocaleString()}</span>{/if}{:else}<Pause size={14} />Pause{/if}
       </button>
       <button type="button" class="btn ghost icon sm" title="Clear view (stored logs are kept)" aria-label="Clear view" onclick={clearView}>
         <Eraser size={14} />
@@ -306,7 +306,7 @@
       <Download size={14} />
     </button>
     <ActionMenu items={moreItems} label="More log actions">
-      <Ellipsis size={15} />
+      <Ellipsis size={14} />
     </ActionMenu>
   </div>
 

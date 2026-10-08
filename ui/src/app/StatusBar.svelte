@@ -6,7 +6,7 @@
   const version = $derived(connection.version ? (connection.version.startsWith('v') ? connection.version : `v${connection.version}`) : '');
 </script>
 
-<footer class="statusbar" aria-live="polite">
+<footer class="statusbar" class:offline={!connection.reachable} aria-live="polite">
   <span class="item">
     <span class="dot" class:ok={connection.reachable} class:warn={!connection.reachable}></span>
     {connection.reachable ? 'Connected' : 'Disconnected'}
@@ -25,25 +25,29 @@
 <style>
   .statusbar {
     display: flex;
-    gap: var(--space-5);
+    gap: 12px;
     align-items: center;
     height: var(--statusbar-h);
     flex: none;
-    padding: 0 var(--space-5);
+    padding: 0 12px;
     background: var(--bg-1);
     border-top: 1px solid var(--border);
-    font-size: var(--fs-xs);
+    font-size: var(--fs-micro);
     color: var(--text-2);
+  }
+  .statusbar.offline {
+    background: color-mix(in srgb, var(--err) 12%, var(--bg-1));
   }
   .item {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     white-space: nowrap;
+    font-family: var(--font-mono);
   }
   .item .dot {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     box-shadow: none;
   }
   .spacer {

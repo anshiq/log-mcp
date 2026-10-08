@@ -76,8 +76,8 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    
+    letter-spacing: 0;
   }
   table {
     width: 100%;

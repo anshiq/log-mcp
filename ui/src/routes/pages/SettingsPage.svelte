@@ -509,7 +509,7 @@
     <section class="about" aria-labelledby="s-about">
       <span class="logo"><Activity size={14} strokeWidth={2.4} /></span>
       <div class="ab">
-        <span id="s-about" class="name"><Info size={13} />agent-runtime</span>
+        <span id="s-about" class="name"><Info size={14} />agent-runtime</span>
         <span class="muted">Dashboard {typeof __APP_VERSION__ === 'string' ? `v${__APP_VERSION__}` : ''} · Daemon {connection.version || 'unknown'}</span>
       </div>
       <span class="spacer"></span>
@@ -607,8 +607,8 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    
+    letter-spacing: 0;
     border-bottom: 1px solid var(--border);
   }
   .group:not(:first-child) {

@@ -11,7 +11,7 @@
 <Dialog title={request.title} width={480} onClose={() => onAnswer(null)}>
   <div class="body">
     <div class="glyph" class:danger>
-      <TriangleAlert size={18} />
+      <TriangleAlert size={16} />
     </div>
     <div class="text">
       <p>{request.message}</p>

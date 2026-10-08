@@ -99,7 +99,7 @@
       </div>
       <div class="row2">
         <button type="button" class="idchip mono" title="Copy process id" aria-label="Copy process id" onclick={() => onCopyId(processId)}>
-          <Copy size={11} />{processId}
+          <Copy size={12} />{processId}
         </button>
         {#if process}
           <span class="dotsep"></span>
@@ -116,7 +116,7 @@
           disabled={!!pending}
           onclick={() => void procActions.restart([processId])}
         >
-          <RotateCw size={13} /> Restart
+          <RotateCw size={14} /> Restart
         </button>
         <button
           type="button"
@@ -128,7 +128,7 @@
           <Square size={12} /> Stop
         </button>
         <ActionMenu {items} label="More process actions" triggerClass="btn icon sm">
-          <Ellipsis size={15} />
+          <Ellipsis size={14} />
         </ActionMenu>
       {/if}
       <button type="button" class="btn ghost icon sm" aria-label={fullPage ? 'Back to processes' : 'Close details'} title={fullPage ? 'Back (Esc)' : 'Close (Esc)'} onclick={onClose}>
@@ -155,7 +155,7 @@
         tabindex={tab === t.id ? 0 : -1}
         onclick={() => selectTab(t.id)}
       >
-        <Icon size={13} />{t.label}
+        <Icon size={14} />{t.label}
       </button>
     {/each}
   </div>
@@ -240,7 +240,7 @@
     border: 1px solid var(--border);
     background: var(--bg-2);
     color: var(--text-1);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -273,7 +273,7 @@
     background: var(--bg-0);
     border: 1px solid var(--border);
     color: var(--text-1);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
   .tablist {
     display: flex;

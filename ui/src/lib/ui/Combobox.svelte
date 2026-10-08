@@ -146,7 +146,7 @@
         onclick={() => choose(o)}
         onkeydown={(e) => e.key === 'Enter' && choose(o)}
       >
-        <span class="tick">{#if o.value === value}<Check size={13} />{/if}</span>
+        <span class="tick">{#if o.value === value}<Check size={14} />{/if}</span>
         <span class="lbl">{o.label}</span>
         {#if o.hint}<span class="hint">{o.hint}</span>{/if}
       </div>

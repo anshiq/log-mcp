@@ -42,8 +42,8 @@
   .track {
     position: relative;
     flex: none;
-    width: 32px;
-    height: 18px;
+    width: 26px;
+    height: 14px;
     border-radius: 999px;
     background: var(--bg-3);
     border: 1px solid var(--border-strong);
@@ -53,10 +53,10 @@
   }
   .thumb {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
+    top: 1px;
+    left: 1px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--text-1);
     box-shadow: var(--shadow-1);
@@ -69,8 +69,8 @@
     border-color: var(--accent);
   }
   input:checked + .track .thumb {
-    transform: translateX(14px);
-    background: #fff;
+    transform: translateX(12px);
+    background: var(--accent-fg);
   }
   .switch:hover input:not(:disabled):not(:checked) + .track {
     border-color: var(--text-2);

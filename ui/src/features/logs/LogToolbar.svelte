@@ -122,7 +122,7 @@
     />
 
     <div class="filter" class:bad={!!matcherError}>
-      <Search size={15} />
+      <Search size={14} />
       <input
         bind:this={input}
         bind:value={ui.query}
@@ -177,7 +177,7 @@
 
     <LogPopover bind:open={viewOpen} align="end" width={300} label="View options">
       {#snippet trigger({ toggle, attrs })}
-        <button type="button" class="btn" onclick={toggle} {...attrs}><SlidersHorizontal size={15} />View</button>
+        <button type="button" class="btn" onclick={toggle} {...attrs}><SlidersHorizontal size={14} />View</button>
       {/snippet}
       {#snippet children()}
         <div class="menu">
@@ -219,14 +219,14 @@
         onclick={() => (session.paused ? session.resume() : session.pause())}
         title={session.paused ? 'Resume live updates' : 'Freeze the view while logs keep buffering'}
       >
-        {#if session.paused}<Play size={15} />Resume{#if buffered > 0}<span class="badge warn">{buffered.toLocaleString()}</span>{/if}{:else}<Pause size={15} />Pause{/if}
+        {#if session.paused}<Play size={14} />Resume{#if buffered > 0}<span class="badge warn">{buffered.toLocaleString()}</span>{/if}{:else}<Pause size={14} />Pause{/if}
       </button>
       <button type="button" class="btn icon" aria-label="Clear view" title="Clear view (stored logs are kept)" onclick={onClear}><Trash2 size={16} /></button>
     {/if}
 
     <LogPopover bind:open={exportOpen} align="end" width={320} label="Export">
       {#snippet trigger({ toggle, attrs })}
-        <button type="button" class="btn" onclick={toggle} {...attrs}><Download size={15} />Export<ChevronDown size={13} /></button>
+        <button type="button" class="btn" onclick={toggle} {...attrs}><Download size={14} />Export<ChevronDown size={14} /></button>
       {/snippet}
       {#snippet children(close)}
         <div class="menu list">
@@ -438,8 +438,8 @@
   .mlabel {
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     color: var(--text-2);
   }
 
@@ -507,8 +507,8 @@
     padding: var(--space-3) 10px var(--space-2);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     color: var(--text-2);
     border-top: 1px solid var(--border);
     margin-top: var(--space-2);

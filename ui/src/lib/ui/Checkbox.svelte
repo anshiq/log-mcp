@@ -53,8 +53,8 @@
   input {
     position: absolute;
     opacity: 0;
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
     margin: 0;
     cursor: inherit;
   }
@@ -63,9 +63,9 @@
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
     border: 1px solid var(--border-strong);
     background: var(--bg-2);
     color: var(--accent-fg);

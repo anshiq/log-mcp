@@ -60,7 +60,7 @@
     align-items: center;
     gap: 8px;
     max-width: 280px;
-    padding: 5px 9px;
+    padding: 3px 6px;
     background: var(--bg-3);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);

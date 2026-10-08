@@ -37,7 +37,7 @@
     }}
   />
   {#if value}
-    <button class="clear" type="button" aria-label="Clear search" onclick={clear}><X size={13} /></button>
+    <button class="clear" type="button" aria-label="Clear search" onclick={clear}><X size={14} /></button>
   {/if}
 </div>
 

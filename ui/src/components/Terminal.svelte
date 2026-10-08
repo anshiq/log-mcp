@@ -47,27 +47,27 @@
 
   function palette() {
     return {
-      background: css('--bg-0', '#0a0a0b'),
-      foreground: css('--text-0', '#f4f1ea'),
-      cursor: css('--accent', '#e4002b'),
-      cursorAccent: css('--bg-0', '#0a0a0b'),
-      selectionBackground: css('--accent-subtle', 'rgba(228,0,43,0.3)'),
-      black: css('--ansi-0', '#101012'),
-      red: css('--ansi-1', '#f04438'),
-      green: css('--ansi-2', '#4caf6d'),
-      yellow: css('--ansi-3', '#d9a227'),
-      blue: css('--ansi-4', '#6ea8ff'),
-      magenta: css('--ansi-5', '#c39bff'),
-      cyan: css('--ansi-6', '#4fd1d9'),
-      white: css('--ansi-7', '#ece7da'),
-      brightBlack: css('--ansi-8', '#6b675c'),
+      background: css('--bg-0', '#0b0d10'),
+      foreground: css('--text-0', '#e6e8eb'),
+      cursor: css('--accent', '#3b82f6'),
+      cursorAccent: css('--bg-0', '#0b0d10'),
+      selectionBackground: css('--accent-subtle', 'rgba(59,130,246,0.3)'),
+      black: css('--ansi-0', '#0d1117'),
+      red: css('--ansi-1', '#f85149'),
+      green: css('--ansi-2', '#3fb950'),
+      yellow: css('--ansi-3', '#d29922'),
+      blue: css('--ansi-4', '#58a6ff'),
+      magenta: css('--ansi-5', '#bc8cff'),
+      cyan: css('--ansi-6', '#39c5cf'),
+      white: css('--ansi-7', '#c9d1d9'),
+      brightBlack: css('--ansi-8', '#6e7681'),
       brightRed: css('--ansi-9', '#ff7b72'),
       brightGreen: css('--ansi-10', '#7ee787'),
       brightYellow: css('--ansi-11', '#e3b341'),
       brightBlue: css('--ansi-12', '#79c0ff'),
       brightMagenta: css('--ansi-13', '#d2a8ff'),
-      brightCyan: css('--ansi-14', '#76e3ea'),
-      brightWhite: css('--ansi-15', '#ffffff')
+      brightCyan: css('--ansi-14', '#56d4dd'),
+      brightWhite: css('--ansi-15', '#f0f3f6')
     };
   }
 
@@ -148,8 +148,8 @@
     term = new Terminal({
       convertEol: false,
       fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace",
-      fontSize: 12.5,
-      lineHeight: 1.25,
+      fontSize: 12,
+      lineHeight: 1.2,
       cursorBlink: canWrite,
       cursorStyle: 'bar',
       disableStdin: !canWrite,
@@ -280,10 +280,10 @@
       <Eraser size={14} />
     </button>
     <button type="button" class="btn ghost sm sig" title="Send Ctrl+C (SIGINT)" disabled={!interactive} onclick={() => void sendSignal('SIGINT')}>
-      <Zap size={13} /> SIGINT
+      <Zap size={14} /> SIGINT
     </button>
     <button type="button" class="btn ghost sm shell" title="Open a new interactive shell in this process workdir and env" disabled={openingShell} onclick={() => void openShellHere()}>
-      <SquareTerminal size={13} /> {openingShell ? 'Opening…' : 'Shell here'}
+      <SquareTerminal size={14} /> {openingShell ? 'Opening…' : 'Shell here'}
     </button>
   </div>
   <div class="term" bind:this={el}></div>
@@ -323,7 +323,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--neutral, #888);
+    background: var(--neutral);
   }
   .conn.on .dot {
     background: var(--ok);

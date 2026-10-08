@@ -29,7 +29,7 @@
   <span class="spacer"></span>
   {@render actions?.()}
   {#if href}
-    <a class="more" href={`#${href}`} use:router.link={href}>{linkLabel}<ArrowRight size={13} /></a>
+    <a class="more" href={`#${href}`} use:router.link={href}>{linkLabel}<ArrowRight size={14} /></a>
   {/if}
 </div>
 

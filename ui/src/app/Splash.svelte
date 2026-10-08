@@ -4,7 +4,7 @@
 </script>
 
 <div class="splash" role="status" aria-live="polite">
-  <span class="logo"><Activity size={26} strokeWidth={2.4} /></span>
+  <span class="logo"><Activity size={20} strokeWidth={1.75} /></span>
   <span class="name">agent-runtime</span>
   <span class="hint"><Spinner size={14} />Connecting to daemon…</span>
 </div>
@@ -27,18 +27,17 @@
     height: 56px;
     border-radius: 4px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-fg);
     box-shadow:
       0 0 0 6px var(--accent-subtle),
       var(--shadow-1);
   }
   .name {
-    font-family: var(--font-display);
-    font-size: 30px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    text-indent: 0.28em;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    
+
   }
   .hint {
     display: inline-flex;

@@ -270,7 +270,7 @@
   }
   .hint {
     color: var(--text-2);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
   }
   .sep {
     height: 1px;
@@ -279,10 +279,10 @@
   }
   .heading {
     padding: 6px 9px 4px;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    
     color: var(--text-2);
   }
 </style>

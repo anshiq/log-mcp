@@ -129,11 +129,11 @@
       <option value="__none">Unidentified</option>
     </select>
     <button class="chip" class:active={changesOnly} onclick={() => (changesOnly = !changesOnly)} aria-pressed={changesOnly} title="Hide Get, List and Watch calls">
-      <Eye size={13} />Changes only
+      <Eye size={14} />Changes only
     </button>
     <span class="grow"></span>
     {#if filtersActive}
-      <button class="btn ghost sm" onclick={clear}><X size={13} />Clear filters</button>
+      <button class="btn ghost sm" onclick={clear}><X size={14} />Clear filters</button>
     {/if}
   </div>
 
@@ -162,7 +162,7 @@
   {:else if rows.length === 0}
     <div class="card">
       <div class="empty-state">
-        <span class="icon-wrap"><ShieldCheck size={22} /></span>
+        <span class="icon-wrap"><ShieldCheck size={20} /></span>
         {#if filtersActive && scoped.length > 0}
           <h3>No matching entries</h3>
           <p>Nothing in the loaded audit history matches these filters.</p>
@@ -266,7 +266,7 @@
   }
   .clk {
     margin-left: 10px;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
   }
   .action {
@@ -280,7 +280,7 @@
     color: var(--text-0);
   }
   .service {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     padding: 0 6px;
     border: 1px solid var(--border);
@@ -303,7 +303,7 @@
     text-transform: capitalize;
   }
   .sid {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     max-width: 180px;
     overflow: hidden;

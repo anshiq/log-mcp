@@ -28,7 +28,7 @@
   );
 </script>
 
-<div class="actions">
+<div class="actions row-actions">
   <button
     type="button"
     class="btn ghost icon sm act lifecycle"
@@ -47,7 +47,7 @@
     disabled={busy || !live}
     onclick={() => void procActions.stop([process.id])}
   >
-    <Square size={13} />
+    <Square size={14} />
   </button>
   <button
     type="button"
@@ -59,7 +59,7 @@
     <ScrollText size={14} />
   </button>
   <ActionMenu {items} label="More actions" triggerClass="btn ghost icon sm act">
-    <Ellipsis size={15} />
+    <Ellipsis size={14} />
   </ActionMenu>
 </div>
 

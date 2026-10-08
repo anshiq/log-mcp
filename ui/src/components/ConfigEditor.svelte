@@ -67,8 +67,8 @@
         theme,
         automaticLayout: true,
         minimap: { enabled: false },
-        fontSize: 13,
-        lineHeight: 21,
+        fontSize: 12,
+        lineHeight: 18,
         fontFamily: monoFontFamily(),
         fontLigatures: false,
         tabSize: 2,
@@ -169,13 +169,13 @@
 <div class="editor" role="group" aria-label="Config editor">
   <div class="toolbar-row">
     <div class="file" title={layerPath}>
-      <FileCode size={15} />
+      <FileCode size={14} />
       <span class="path mono"><bdi>{layerPath}</bdi></span>
       {#if !session.layerInfo?.exists && session.writable}
         <span class="badge">new file</span>
       {/if}
       {#if !session.writable}
-        <span class="badge warn"><Lock size={11} />read-only</span>
+        <span class="badge warn"><Lock size={12} />read-only</span>
       {/if}
       {#if session.dirty}
         <span class="unsaved" title="Unsaved changes"><span class="dot warn"></span><span class="lbl">Unsaved</span></span>
@@ -184,19 +184,19 @@
 
     <div class="actions">
       <button class="btn ghost" onclick={format} disabled={!ready || !session.writable} title="Format document">
-        <AlignLeft size={15} /><span class="lbl">Format</span>
+        <AlignLeft size={14} /><span class="lbl">Format</span>
       </button>
       <button class="btn" onclick={validate} disabled={session.empty || session.validating} title="Validate against the schema">
-        {#if session.validating}<Spinner size={14} />{:else}<ShieldCheck size={15} />{/if}<span class="lbl">Validate</span>
+        {#if session.validating}<Spinner size={14} />{:else}<ShieldCheck size={14} />{/if}<span class="lbl">Validate</span>
       </button>
       <button class="btn" class:active={session.drawerOpen} onclick={() => (session.drawerOpen ? (session.drawerOpen = false) : void session.preview())} disabled={!canPreview} title="Preview planned changes">
-        <GitCompare size={15} /><span class="lbl">Preview changes</span>
+        <GitCompare size={14} /><span class="lbl">Preview changes</span>
       </button>
       <button class="btn ghost" onclick={() => session.discard()} disabled={!session.dirty} title="Discard unsaved edits">
-        <RotateCcw size={15} /><span class="lbl">Discard</span>
+        <RotateCcw size={14} /><span class="lbl">Discard</span>
       </button>
       <button class="btn primary" onclick={() => void session.apply()} disabled={!canApply} title="Apply this config (Ctrl+S)">
-        {#if session.applying}<Spinner size={14} />{:else}<Save size={15} />{/if}<span>Apply</span>
+        {#if session.applying}<Spinner size={14} />{:else}<Save size={14} />{/if}<span>Apply</span>
       </button>
     </div>
   </div>
@@ -205,10 +205,10 @@
     <div class="monaco-wrap">
       <div class="monaco" bind:this={host}></div>
       {#if !ready}
-        <div class="loading"><Spinner size={18} /> Loading editor…</div>
+        <div class="loading"><Spinner size={16} /> Loading editor…</div>
       {:else if session.empty && session.writable}
         <div class="starter">
-          <div class="glyph"><Sparkles size={18} /></div>
+          <div class="glyph"><Sparkles size={16} /></div>
           <strong>This layer is empty</strong>
           <span>Start typing YAML, or begin with a minimal config that defines one app.</span>
           <button class="btn sm" onclick={() => session.insertStarter()}>Insert starter config</button>
@@ -255,17 +255,17 @@
         <span class="s muted">Empty</span>
       {:else if session.invalid}
         <button class="s bad" onclick={() => (problemsOpen = !problemsOpen)} aria-expanded={problemsOpen}>
-          <CircleAlert size={13} />{session.errors.length} error{session.errors.length === 1 ? '' : 's'}
+          <CircleAlert size={14} />{session.errors.length} error{session.errors.length === 1 ? '' : 's'}
           {#if problemsOpen}<ChevronDown size={12} />{:else}<ChevronUp size={12} />{/if}
         </button>
       {:else if session.valid}
-        <span class="s good"><CircleCheck size={13} />Valid</span>
+        <span class="s good"><CircleCheck size={14} />Valid</span>
       {:else}
         <span class="s muted">Not validated</span>
       {/if}
       {#if session.validationWarnings.length > 0}
         <button class="s warn" onclick={() => (problemsOpen = !problemsOpen)}>
-          <TriangleAlert size={13} />{session.validationWarnings.length} warning{session.validationWarnings.length === 1 ? '' : 's'}
+          <TriangleAlert size={14} />{session.validationWarnings.length} warning{session.validationWarnings.length === 1 ? '' : 's'}
         </button>
       {/if}
       <span class="sep"></span>

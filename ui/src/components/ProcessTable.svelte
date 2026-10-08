@@ -177,7 +177,7 @@
     </div>
   {:else if totalCount === 0}
     <div class="empty-state">
-      <div class="icon-wrap"><SquareTerminal size={22} /></div>
+      <div class="icon-wrap"><SquareTerminal size={20} /></div>
       <h3>No processes yet</h3>
       <p>
         Run a dev server, worker or any long-running command and it shows up here with live logs and health. You can
@@ -190,7 +190,7 @@
     </div>
   {:else if rows.length === 0}
     <div class="empty-state">
-      <div class="icon-wrap"><SearchX size={22} /></div>
+      <div class="icon-wrap"><SearchX size={20} /></div>
       <h3>No matching processes</h3>
       <p>Nothing matches the current search and status filter.</p>
       <button class="btn" onclick={onClearFilters}>Clear filters</button>
@@ -276,7 +276,7 @@
               {/if}
             </td>
             <td class="c-restarts num">
-              {#if p.restarts > 0}<span class="badge warn"><RotateCw size={10} />{p.restarts}</span>{:else}<span class="muted">0</span>{/if}
+              {#if p.restarts > 0}<span class="badge warn"><RotateCw size={12} />{p.restarts}</span>{:else}<span class="muted">0</span>{/if}
             </td>
             <td class="c-health">
               {#if tone}
@@ -318,29 +318,29 @@
   }
   .procs-table :global(th),
   .procs-table :global(td) {
-    padding: 0 var(--space-4);
+    padding: 0 var(--cell-px);
     overflow: hidden;
   }
   .procs-table :global(th) {
-    height: 36px;
+    height: var(--row-h);
     padding-top: 0;
     padding-bottom: 0;
   }
   .procs-table tbody tr {
-    height: 52px;
+    height: var(--row-h);
     cursor: pointer;
   }
   .procs-table tbody :global(td) {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding-top: var(--cell-py);
+    padding-bottom: var(--cell-py);
     transition: background var(--dur-fast) var(--ease);
   }
   .procs-table input[type='checkbox'] {
     appearance: none;
     display: inline-grid;
     place-content: center;
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
     margin: 0;
     border: 1.5px solid var(--border-strong);
     border-radius: 4px;
@@ -396,6 +396,13 @@
   .c-actions {
     width: 132px;
     text-align: right;
+  }
+  td.c-actions :global(.row-actions) {
+    opacity: 0;
+  }
+  tr:hover td.c-actions :global(.row-actions),
+  tr:focus-within td.c-actions :global(.row-actions) {
+    opacity: 1;
   }
   th.c-actions {
     padding-right: var(--space-4);
@@ -493,8 +500,8 @@
     min-width: 0;
   }
   .name {
-    font-weight: 600;
-    font-size: var(--fs-md);
+    font-weight: 500;
+    font-size: var(--fs-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -502,7 +509,7 @@
   }
   .name-line .badge {
     flex: none;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     padding: 0 7px;
     max-width: 130px;
     overflow: hidden;
@@ -515,7 +522,7 @@
   .cmd {
     display: block;
     width: 100%;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     color: var(--text-2);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -532,12 +539,19 @@
   }
   .ended {
     color: var(--text-2);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
   .c-uptime {
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
+    font-family: var(--font-mono);
+  }
+  .c-pid,
+  .c-restarts {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
   }
   .num {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
   .badge :global(svg) {
@@ -549,7 +563,7 @@
     flex-wrap: nowrap;
   }
   .port {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
   }
   .badge.port {
     color: var(--info);
@@ -566,7 +580,7 @@
     line-height: 1.55;
   }
   .inline-code {
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     padding: 1px 6px;
     border-radius: 4px;
     background: var(--bg-3);
@@ -594,7 +608,7 @@
     grid-template-columns: 14px 96px 1fr 80px;
     align-items: center;
     gap: var(--space-5);
-    height: 56px;
+    height: var(--row-h);
     padding: 0 var(--space-5);
     border-bottom: 1px solid var(--border);
   }

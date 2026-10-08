@@ -54,7 +54,7 @@
 <div class="wrap">
   <div class="stack">
     <div class="brand">
-      <span class="logo"><Activity size={22} strokeWidth={2.4} /></span>
+      <span class="logo"><Activity size={20} strokeWidth={2.4} /></span>
       <span class="name">agent-runtime</span>
     </div>
 
@@ -67,7 +67,7 @@
       <div class="field">
         <label for="login-token">Access token</label>
         <div class="input" class:invalid={!!error}>
-          <span class="lead"><KeyRound size={15} /></span>
+          <span class="lead"><KeyRound size={14} /></span>
           <input
             id="login-token"
             type={reveal ? 'text' : 'password'}
@@ -82,7 +82,7 @@
             use:focusOnMount
           />
           <button class="eye" type="button" onclick={() => (reveal = !reveal)} aria-label={reveal ? 'Hide token' : 'Show token'} aria-pressed={reveal}>
-            {#if reveal}<EyeOff size={15} />{:else}<Eye size={15} />{/if}
+            {#if reveal}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
           </button>
         </div>
         {#if error}
@@ -96,7 +96,7 @@
       <Checkbox bind:checked={remember}>Remember on this device</Checkbox>
 
       <button class="submit" type="submit" disabled={checking || !token.trim()}>
-        {#if checking}<Spinner size={15} />Checking…{:else}Continue<ArrowRight size={15} />{/if}
+        {#if checking}<Spinner size={14} />Checking…{:else}Continue<ArrowRight size={14} />{/if}
       </button>
 
       <div class="help">
@@ -107,7 +107,7 @@
         <div class="cmd">
           <code><span class="prompt">$</span> {command}</code>
           <button class="copy" type="button" onclick={() => void copy()} aria-label="Copy command">
-            {#if copied}<Check size={13} />{:else}<Copy size={13} />{/if}
+            {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
           </button>
         </div>
         <p class="alt">Or paste the contents of <code>~/.config/agent-runtime/token</code>.</p>
@@ -132,7 +132,7 @@
     align-items: center;
     gap: var(--space-6);
     width: 100%;
-    max-width: 420px;
+    max-width: 360px;
   }
   .brand {
     display: flex;
@@ -146,23 +146,22 @@
     height: 40px;
     border-radius: 3px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-fg);
     box-shadow: 0 0 0 5px var(--accent-subtle);
   }
   .name {
-    font-family: var(--font-display);
-    font-size: 24px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.26em;
-    text-indent: 0.26em;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    
+
   }
   .card {
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
     width: 100%;
-    padding: var(--space-8);
+    padding: 20px;
     background: var(--bg-1);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -185,8 +184,8 @@
     color: var(--text-1);
     font-size: var(--fs-xs);
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
   }
   .input {
     display: flex;
@@ -286,8 +285,8 @@
     color: var(--text-1);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
   }
   .cmd {
     display: flex;

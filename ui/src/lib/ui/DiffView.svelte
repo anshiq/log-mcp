@@ -132,7 +132,7 @@
     display: flex;
     align-items: stretch;
     min-width: max-content;
-    line-height: 20px;
+    line-height: 18px;
     white-space: pre;
   }
   .no {

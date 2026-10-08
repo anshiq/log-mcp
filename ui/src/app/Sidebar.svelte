@@ -68,7 +68,7 @@
         {#each g.items as it}
           {@const Icon = it.icon}
           <button class="item" class:active={isActive(it.path)} onclick={() => void router.navigate(it.path)} title={collapsed ? `${it.label} (${it.key})` : it.key} aria-current={isActive(it.path) ? 'page' : undefined}>
-            <span class="ico"><Icon size={16} strokeWidth={isActive(it.path) ? 2.2 : 1.9} /></span>
+            <span class="ico"><Icon size={14} strokeWidth={isActive(it.path) ? 2 : 1.75} /></span>
             {#if !collapsed}
               <span class="label">{it.label}</span>
               {#if it.path === '/processes' && processes.counts.failed > 0}
@@ -85,7 +85,7 @@
     {/each}
   </div>
   <button class="collapse" onclick={() => prefs.set('sidebarCollapsed', !collapsed)} aria-label="Toggle sidebar" title="Toggle sidebar">
-    <PanelLeft size={16} />
+    <PanelLeft size={14} />
     {#if !collapsed}<span>Collapse</span>{/if}
   </button>
 </nav>
@@ -97,7 +97,7 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: var(--space-4) var(--space-3) var(--space-3);
+    padding: 8px 6px;
     background: var(--bg-1);
     border-right: 1px solid var(--border);
     overflow-y: auto;
@@ -111,20 +111,20 @@
   .groups {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: 12px;
   }
   .group {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
   }
   .title {
-    font-size: 10px;
+    font-size: var(--fs-micro);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.24em;
+    letter-spacing: 0.04em;
     color: var(--text-2);
-    padding: 0 10px 6px;
+    padding: 0 8px 2px;
   }
   .sep {
     height: 1px;
@@ -135,14 +135,15 @@
   .collapse {
     position: relative;
     width: 100%;
+    height: 26px;
     justify-content: flex-start;
-    gap: 10px;
-    padding: 7px 10px;
+    gap: 8px;
+    padding: 0 8px;
     border-color: transparent;
     background: transparent;
     color: var(--text-1);
     font-weight: 500;
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     text-align: left;
   }
   .item:hover:not(:disabled),
@@ -152,7 +153,7 @@
     color: var(--text-0);
   }
   .item.active {
-    background: var(--accent-subtle);
+    background: var(--bg-active);
     color: var(--text-0);
   }
   .item.active .ico {
@@ -161,10 +162,10 @@
   .item.active::before {
     content: '';
     position: absolute;
-    left: -12px;
-    top: 7px;
-    bottom: 7px;
-    width: 3px;
+    left: -6px;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
     background: var(--accent);
   }
   .ico {
@@ -176,14 +177,15 @@
     flex: 1;
   }
   .count {
-    font-size: 10.5px;
-    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
-    padding: 0 7px;
-    border-radius: 2px;
+    padding: 0 5px;
+    border-radius: 3px;
     background: var(--bg-3);
     color: var(--text-1);
-    line-height: 1.7;
+    line-height: 1.6;
   }
   .count.err {
     background: color-mix(in srgb, var(--err) 18%, transparent);
@@ -204,7 +206,7 @@
     padding-inline: 0;
   }
   .collapsed .item.active::before {
-    left: -12px;
+    left: -6px;
   }
   .collapse {
     margin-top: var(--space-4);

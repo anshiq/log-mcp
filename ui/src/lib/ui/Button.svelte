@@ -150,11 +150,11 @@
   .destructive {
     background: var(--err);
     border-color: var(--err);
-    color: #fff;
+    color: var(--accent-fg);
   }
   .destructive:not(:disabled):hover {
-    background: color-mix(in srgb, var(--err) 85%, #000);
-    border-color: color-mix(in srgb, var(--err) 85%, #000);
+    background: color-mix(in srgb, var(--err) 85%, var(--bg-0));
+    border-color: color-mix(in srgb, var(--err) 85%, var(--bg-0));
   }
   .link {
     background: transparent;

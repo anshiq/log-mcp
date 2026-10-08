@@ -157,7 +157,7 @@
       />
       {#if query}
         <button class="clear" type="button" aria-label="Clear search" onclick={() => { query = ''; searchInput?.focus(); }}>
-          <X size={13} />
+          <X size={14} />
         </button>
       {:else}
         <span class="kbd slash">/</span>
@@ -183,12 +183,12 @@
       <div class="bulk" role="toolbar" aria-label="Bulk actions">
         <span class="sel"><strong>{selectedIds.length}</strong> selected</span>
         <span class="divider"></span>
-        <button class="btn sm" onclick={() => void bulk('restart')}><RotateCw size={13} /> Restart</button>
+        <button class="btn sm" onclick={() => void bulk('restart')}><RotateCw size={14} /> Restart</button>
         <button class="btn sm" disabled={!stoppable} onclick={() => void bulk('stop')}><Square size={12} /> Stop</button>
         <ActionMenu items={signalItems} label="Send signal to selection" triggerClass="btn sm" align="start">
-          <Zap size={13} /> Signal <ChevronDown size={12} />
+          <Zap size={14} /> Signal <ChevronDown size={12} />
         </ActionMenu>
-        <button class="btn sm danger" onclick={() => void bulk('remove')}><Trash size={13} /> Remove</button>
+        <button class="btn sm danger" onclick={() => void bulk('remove')}><Trash size={14} /> Remove</button>
         <span class="divider"></span>
         <button class="btn sm ghost icon" aria-label="Clear selection" title="Clear selection" onclick={() => (selected = new Set())}>
           <X size={14} />

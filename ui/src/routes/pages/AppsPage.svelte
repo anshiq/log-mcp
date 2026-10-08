@@ -296,9 +296,9 @@
       </div>
       <div class="actions">
         <button class="btn icon" aria-label="Refresh apps" title="Refresh" onclick={() => void load(wsId)} disabled={loading}>
-          {#if loading}<Spinner size={15} />{:else}<RefreshCw size={15} />{/if}
+          {#if loading}<Spinner size={14} />{:else}<RefreshCw size={14} />{/if}
         </button>
-        <button class="btn" onclick={() => void router.navigate('/config')}><FileCog size={15} />Edit config</button>
+        <button class="btn" onclick={() => void router.navigate('/config')}><FileCog size={14} />Edit config</button>
       </div>
     </div>
 
@@ -316,7 +316,7 @@
         <span class="grow">
           The config has validation errors ({problems.map((p) => `${p.count} in the ${layerNames[p.layer] ?? p.layer} layer`).join(', ')}). Some apps may be missing or stale.
         </span>
-        <button class="btn sm" onclick={() => void router.navigate('/config')}>Open in editor<ArrowRight size={13} /></button>
+        <button class="btn sm" onclick={() => void router.navigate('/config')}>Open in editor<ArrowRight size={14} /></button>
       </div>
     {/if}
 
@@ -334,16 +334,16 @@
     {:else if loadedFor === wsId && apps.length === 0 && !loadError}
       <div class="empty">
         <div class="empty-state">
-          <div class="icon-wrap"><Boxes size={22} /></div>
+          <div class="icon-wrap"><Boxes size={20} /></div>
           <h3>No apps configured</h3>
           <p>Define apps in this workspace's project config and they will show up here, ready to start with one click.</p>
-          <button class="btn primary" onclick={() => void router.navigate('/config')}><FileCog size={15} />Open config editor</button>
+          <button class="btn primary" onclick={() => void router.navigate('/config')}><FileCog size={14} />Open config editor</button>
         </div>
       </div>
     {:else if apps.length > 0}
       <div class="toolbar">
         <div class="input-wrap search">
-          <Search size={15} />
+          <Search size={14} />
           <input bind:value={query} placeholder="Search apps, commands, ports" aria-label="Search apps" spellcheck="false" />
         </div>
         <div class="chips" role="group" aria-label="Filter by status">
@@ -357,7 +357,7 @@
           Select all
         </label>
         <button class="btn primary" disabled={selected.size === 0 || starting} onclick={startStack}>
-          {#if starting}<Spinner size={14} />Starting…{:else}<Rocket size={15} />Start stack{#if selected.size > 0}<span class="sel">{selected.size}</span>{/if}{/if}
+          {#if starting}<Spinner size={14} />Starting…{:else}<Rocket size={14} />Start stack{#if selected.size > 0}<span class="sel">{selected.size}</span>{/if}{/if}
         </button>
       </div>
 
@@ -380,7 +380,7 @@
               {#each stack.order as name, i (name)}
                 {@const st = stackState(name)}
                 <li class={st}>
-                  {#if i > 0}<ArrowRight size={13} class="arrow" />{/if}
+                  {#if i > 0}<ArrowRight size={14} class="arrow" />{/if}
                   <span class="step">
                     <span class="dot" class:ok={st === 'ok'} class:err={st === 'failed'}></span>
                     <span class="mono">{name}</span>
@@ -433,19 +433,19 @@
                 {#if r.app.type}<span class="badge">{r.app.type}</span>{/if}
                 {#if r.app.auto}<span class="badge info" title="Auto-generated from detected run files; editing converts it to yours">auto</span>{/if}
                 {#each r.app.ports as p (p.name)}
-                  <span class="badge info" title={`port ${p.name}`}><Network size={11} />:{p.port}{p.name ? ` ${p.name}` : ''}</span>
+                  <span class="badge info" title={`port ${p.name}`}><Network size={12} />:{p.port}{p.name ? ` ${p.name}` : ''}</span>
                 {/each}
                 {#if r.app.readiness.length > 0}
-                  <span class="badge" title={`Ready when logs match: ${r.app.readiness.join(', ')}`}><Radio size={11} />readiness</span>
+                  <span class="badge" title={`Ready when logs match: ${r.app.readiness.join(', ')}`}><Radio size={12} />readiness</span>
                 {/if}
                 {#if r.app.healthHttp || r.app.healthTcp}
-                  <span class="badge" title={r.app.healthHttp || r.app.healthTcp}><HeartPulse size={11} />health check</span>
+                  <span class="badge" title={r.app.healthHttp || r.app.healthTcp}><HeartPulse size={12} />health check</span>
                 {/if}
                 {#if r.app.restartPolicy && r.app.restartPolicy !== 'never'}
-                  <span class="badge" title="Restart policy"><Repeat size={11} />{r.app.restartPolicy}</span>
+                  <span class="badge" title="Restart policy"><Repeat size={12} />{r.app.restartPolicy}</span>
                 {/if}
-                {#if r.app.autostart}<span class="badge accent"><Zap size={11} />autostart</span>{/if}
-                {#if r.app.lifetime === 'session'}<span class="badge"><Timer size={11} />session</span>{/if}
+                {#if r.app.autostart}<span class="badge accent"><Zap size={12} />autostart</span>{/if}
+                {#if r.app.lifetime === 'session'}<span class="badge"><Timer size={12} />session</span>{/if}
                 {#if r.primary?.stale}<span class="badge warn" title="Config changed since this process started">restart needed</span>{/if}
               </div>
 
@@ -481,7 +481,7 @@
                     </button>
                   {/if}
                   {#if r.primary}
-                    <button class="btn sm" title="Open logs" aria-label={`Logs for ${r.app.name}`} onclick={() => logs(r.primary!)}><ScrollText size={13} />Logs</button>
+                    <button class="btn sm" title="Open logs" aria-label={`Logs for ${r.app.name}`} onclick={() => logs(r.primary!)}><ScrollText size={14} />Logs</button>
                   {/if}
                 </div>
               </footer>

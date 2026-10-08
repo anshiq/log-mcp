@@ -35,7 +35,7 @@
 
 <div class="picker">
   <div class="intro">
-    <div class="icon"><Icon size={22} /></div>
+    <div class="icon"><Icon size={20} /></div>
     <h2>{title}</h2>
     <p>{body}</p>
   </div>
@@ -66,7 +66,7 @@
 
   <form class="open" onsubmit={open}>
     <div class="input-wrap">
-      <FolderPlus size={15} />
+      <FolderPlus size={14} />
       <input bind:value={path} placeholder="Open another folder, e.g. /home/me/projects/app" aria-label="Open workspace by path" spellcheck="false" />
     </div>
     <button class="btn primary" type="submit" disabled={!path.trim() || scopeState.resolving}>

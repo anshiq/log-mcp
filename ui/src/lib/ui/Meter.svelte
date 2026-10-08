@@ -16,7 +16,7 @@
 
 <style>
   .meter {
-    height: 6px;
+    height: 4px;
     background: var(--bg-3);
     border-radius: 999px;
     overflow: hidden;

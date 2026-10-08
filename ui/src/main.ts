@@ -1,6 +1,5 @@
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
-import '@fontsource-variable/bodoni-moda';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';

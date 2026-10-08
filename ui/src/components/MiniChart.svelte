@@ -2,7 +2,7 @@
   let {
     values,
     max = 0,
-    height = 56,
+    height = 16,
     color = 'var(--accent)',
     capacity = 60
   }: { values: number[]; max?: number; height?: number; color?: string; capacity?: number } = $props();

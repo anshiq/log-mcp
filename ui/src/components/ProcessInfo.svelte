@@ -156,10 +156,10 @@
     gap: var(--space-3);
   }
   h3 {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    
     color: var(--text-2);
   }
   .block-head {
@@ -224,7 +224,7 @@
   }
   .sub {
     width: 100%;
-    font-size: 11px;
+    font-size: var(--fs-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -25,7 +25,7 @@
       <span class="val">{it.v || '—'}</span>
       {#if it.copy && it.v}
         <button type="button" class="copy" aria-label={`Copy ${it.k}`} title={`Copy ${it.k}`} onclick={() => void copy(it)}>
-          {#if copied === it.k}<Check size={13} />{:else}<Copy size={13} />{/if}
+          {#if copied === it.k}<Check size={14} />{:else}<Copy size={14} />{/if}
         </button>
       {/if}
     </dd>
@@ -35,7 +35,9 @@
 <style>
   .kv {
     display: grid;
-    grid-template-columns: minmax(80px, var(--kv-label)) 1fr;
+    grid-template-columns: max-content 1fr;
+    column-gap: 12px;
+    row-gap: 4px;
     margin: 0;
     font-size: var(--fs-sm);
   }
@@ -44,8 +46,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    min-height: 34px;
-    padding: 6px 0;
+    min-height: 0;
+    padding: 2px 0;
     border-bottom: 1px solid var(--border);
     margin: 0;
   }

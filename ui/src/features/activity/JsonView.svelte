@@ -24,7 +24,7 @@
 
 <div class="json">
   <button class="btn ghost sm icon copy" onclick={copy} aria-label={`Copy ${label.toLowerCase()}`} title="Copy">
-    {#if copied}<Check size={13} />{:else}<Copy size={13} />{/if}
+    {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
   </button>
   <pre>{#each segments as s, i (i)}<span class={s.kind}>{s.text}</span>{/each}</pre>
 </div>
@@ -41,7 +41,7 @@
     padding: 12px 40px 12px 14px;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    line-height: 1.55;
+    line-height: 1.4;
     overflow: auto;
     max-height: 280px;
     color: var(--text-1);

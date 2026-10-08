@@ -106,10 +106,10 @@
 <div class="revs">
   <section class="list" aria-label="Revision history">
     <header>
-      <History size={15} />
+      <History size={14} />
       <h3>History</h3>
       <span class="count">{revisions.length}</span>
-      {#if session.revisionsLoading}<Spinner size={13} />{/if}
+      {#if session.revisionsLoading}<Spinner size={14} />{/if}
     </header>
     <div class="scroll">
       {#if session.revisionsLoading && revisions.length === 0}
@@ -123,7 +123,7 @@
           <div class="icon-wrap"><History size={20} /></div>
           <h3>No revisions yet</h3>
           <p>Every applied config change is recorded here so you can review and roll it back.</p>
-          {#if onOpenEditor}<button class="btn sm" onclick={onOpenEditor}><Pencil size={13} />Open the editor</button>{/if}
+          {#if onOpenEditor}<button class="btn sm" onclick={onOpenEditor}><Pencil size={14} />Open the editor</button>{/if}
         </div>
       {:else}
         <ol class="timeline">
@@ -141,7 +141,7 @@
                 </span>
                 <span class="msg truncate">{rev.message || 'No message'}</span>
                 <span class="src">
-                  {#if rev.source === 'rollback'}<Undo2 size={11} />{:else if rev.source === 'gui'}<Monitor size={11} />{:else if rev.source === 'api'}<Terminal size={11} />{:else if rev.source === 'auto'}<Zap size={11} />{:else if rev.source === 'learned'}<Sparkles size={11} />{:else if rev.source === 'proposal'}<GitCompare size={11} />{:else if rev.source === 'import'}<Download size={11} />{:else}<Bot size={11} />{/if}
+                  {#if rev.source === 'rollback'}<Undo2 size={12} />{:else if rev.source === 'gui'}<Monitor size={12} />{:else if rev.source === 'api'}<Terminal size={12} />{:else if rev.source === 'auto'}<Zap size={12} />{:else if rev.source === 'learned'}<Sparkles size={12} />{:else if rev.source === 'proposal'}<GitCompare size={12} />{:else if rev.source === 'import'}<Download size={12} />{:else}<Bot size={12} />{/if}
                   {rev.source || 'unknown'}
                   {#if rev.session}<span class="mono sess">{shortSession(rev.session)}</span>{/if}
                 </span>
@@ -159,9 +159,9 @@
         <div class="ttl">
           <h2>Revision <span class="mono">#{selected.id}</span></h2>
           {#if selected.valid}
-            <span class="badge ok"><CircleCheck size={11} />valid</span>
+            <span class="badge ok"><CircleCheck size={12} />valid</span>
           {:else}
-            <span class="badge err"><CircleAlert size={11} />invalid</span>
+            <span class="badge err"><CircleAlert size={12} />invalid</span>
           {/if}
           <span class="badge">{selected.layer || 'project'} layer</span>
           {#if isCurrent}<span class="badge accent">current</span>{/if}
@@ -200,7 +200,7 @@
           <div>
             <dt>Checksum</dt>
             <dd>
-              <button class="sha mono" onclick={() => copySha(selected.sha)} title="Copy full checksum">{selected.sha.slice(0, 12)}<Copy size={11} /></button>
+              <button class="sha mono" onclick={() => copySha(selected.sha)} title="Copy full checksum">{selected.sha.slice(0, 12)}<Copy size={12} /></button>
             </dd>
           </div>
         {/if}
@@ -223,7 +223,7 @@
           <DiffView old={previous} next={content} context={5} emptyText="This revision is identical to the previous one" />
         {:else}
           <div class="file">
-            <div class="file-head"><FileCode size={13} />{lines.length} line{lines.length === 1 ? '' : 's'}</div>
+            <div class="file-head"><FileCode size={14} />{lines.length} line{lines.length === 1 ? '' : 's'}</div>
             <pre class="code">{#each lines as l, i (i)}<span class="ln">{i + 1}</span>{l}
 {/each}</pre>
           </div>
@@ -371,7 +371,7 @@
     opacity: 0.8;
   }
   .badge {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     padding: 0 7px;
   }
   .skeleton {
@@ -441,8 +441,8 @@
   }
   .meta dt {
     font-size: var(--fs-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     font-weight: 600;
     color: var(--text-2);
     margin-bottom: 3px;

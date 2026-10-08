@@ -62,7 +62,7 @@
 <LogPopover bind:open width={400} label="Choose processes" onOpen={focusSearch}>
   {#snippet trigger({ toggle, attrs })}
     <button type="button" class="trigger" class:on={selected.length > 0} onclick={toggle} aria-label="Choose processes to tail" {...attrs}>
-      <Layers size={15} />
+      <Layers size={14} />
       <span class="sum truncate">{summary}</span>
       {#if selected.length === 0}
         <span class="badge">{runningCount}</span>

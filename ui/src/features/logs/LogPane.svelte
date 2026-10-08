@@ -85,7 +85,7 @@
   let pfKey = '';
   let layoutQueued = false;
 
-  const rowH = $derived(Math.round(fontSize * (compact ? 1.42 : 1.62)));
+  const rowH = $derived(Math.round(fontSize * 1.35));
   const noCh = $derived.by(() => {
     void session.version;
     return Math.max(3, String(Math.max(1, session.buffer.endSeq - session.numBase)).length);
@@ -448,8 +448,6 @@
 <style>
   .pane {
     --tl: 68%;
-    --ansi-0: #6b675c;
-    --ansi-7: #d8d2c2;
     position: relative;
     flex: 1;
     min-height: 0;
@@ -622,7 +620,7 @@
     font-size: 0.7em;
     font-weight: 700;
     letter-spacing: 0.04em;
-    text-transform: uppercase;
+    
     color: var(--text-1);
     background: color-mix(in srgb, var(--text-2) 16%, transparent);
   }
@@ -723,14 +721,15 @@
     left: 50%;
     bottom: var(--space-5);
     transform: translateX(-50%);
-    padding: 6px 12px 6px 10px;
-    border-radius: 999px;
+    height: 24px;
+    padding: 0 10px 0 8px;
+    border-radius: 12px;
     border: none;
     background: var(--accent);
     color: var(--accent-fg);
     font-family: var(--font-ui);
-    font-size: var(--fs-sm);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: 500;
     box-shadow: var(--shadow-pop);
     z-index: 3;
   }
@@ -743,6 +742,6 @@
     background: color-mix(in srgb, var(--accent-fg) 20%, transparent);
     border-color: color-mix(in srgb, var(--accent-fg) 30%, transparent);
     color: var(--accent-fg);
-    font-size: 10px;
+    font-size: var(--fs-micro);
   }
 </style>

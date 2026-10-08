@@ -112,7 +112,7 @@
               <span class="tag" style="--h:{processHue(g.proc)}">{labels.get(g.proc) ?? g.proc.slice(-6)}</span>
               <span class="gcount">{g.list.length.toLocaleString()}</span>
             </button>
-            <button type="button" class="btn sm ghost" onclick={() => onOpenLive(g.proc)}><Radio size={13} />Tail live</button>
+            <button type="button" class="btn sm ghost" onclick={() => onOpenLive(g.proc)}><Radio size={14} />Tail live</button>
           </div>
           {#if open}
             {#each g.list.slice(0, limit) as h (h.key)}
@@ -131,8 +131,8 @@
                       <p class="muted nctx">No surrounding lines were retained for this match.</p>
                     {/if}
                     <div class="cact">
-                      <button type="button" class="btn sm" onclick={() => void copy(h.text)}><Copy size={13} />Copy line</button>
-                      <button type="button" class="btn sm" onclick={() => onOpenLive(h.proc)}><Radio size={13} />Tail {labels.get(h.proc) ?? 'process'}</button>
+                      <button type="button" class="btn sm" onclick={() => void copy(h.text)}><Copy size={14} />Copy line</button>
+                      <button type="button" class="btn sm" onclick={() => onOpenLive(h.proc)}><Radio size={14} />Tail {labels.get(h.proc) ?? 'process'}</button>
                     </div>
                   </div>
                 {/if}

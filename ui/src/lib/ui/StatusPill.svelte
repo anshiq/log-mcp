@@ -22,13 +22,15 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 1px 9px 1px 8px;
+    padding: 0 6px;
+    height: 18px;
+    font-family: var(--font-mono);
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--c) 30%, transparent);
     background: color-mix(in srgb, var(--c) 12%, transparent);
     color: var(--c);
-    font-size: var(--fs-xs);
-    font-weight: 500;
+    font-size: var(--fs-micro);
+    font-weight: 400;
     line-height: 1.6;
     white-space: nowrap;
   }

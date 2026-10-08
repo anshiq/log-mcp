@@ -248,7 +248,7 @@
 
     <div class="typepick" bind:this={typeRoot}>
       <button class="btn" class:on={selectedTypes.size > 0} onclick={() => (typeOpen = !typeOpen)} aria-haspopup="true" aria-expanded={typeOpen} aria-label="Event type filter">
-        <ListFilter size={14} />{typeSummary()}<ChevronDown size={13} />
+        <ListFilter size={14} />{typeSummary()}<ChevronDown size={14} />
       </button>
       {#if typeOpen}
         <div class="pop" role="group" aria-label="Event types">
@@ -261,7 +261,7 @@
               {#each g.types as t (t)}
                 {@const k = eventKind(t)}
                 <button class="opt" role="checkbox" aria-checked={selectedTypes.has(t)} onclick={() => toggleType(t)}>
-                  <span class="cb" class:checked={selectedTypes.has(t)}>{#if selectedTypes.has(t)}<Check size={11} />{/if}</span>
+                  <span class="cb" class:checked={selectedTypes.has(t)}>{#if selectedTypes.has(t)}<Check size={12} />{/if}</span>
                   <span class="tdot {k.tone}"></span>
                   <span class="tname">{k.label}</span>
                   <span class="tid mono">{t}</span>
@@ -287,7 +287,7 @@
       {#if paused && pendingCount > 0}<span class="badge info">+{pendingCount} new</span>{/if}
     </span>
     {#if filtersActive}
-      <button class="btn ghost sm" onclick={clearFilters}><X size={13} />Clear filters</button>
+      <button class="btn ghost sm" onclick={clearFilters}><X size={14} />Clear filters</button>
     {/if}
   </div>
 
@@ -303,7 +303,7 @@
       </div>
     {:else if filtered.length === 0}
       <div class="empty-state">
-        <span class="icon-wrap"><Activity size={22} /></span>
+        <span class="icon-wrap"><Activity size={20} /></span>
         {#if filtersActive}
           <h3>No matching events</h3>
           <p>Nothing matches the current filters. Try a different search or clear them.</p>
@@ -327,7 +327,7 @@
                 <button class="row" onclick={() => toggleRow(e.id)} aria-expanded={open}>
                   <span class="chev">{#if open}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}</span>
                   <span class="time mono" title={exactTime(e.ts)}>{clockTime(e.ts)}</span>
-                  <ToneBadge icon={k.icon} tone={eventTone(e)} size={26} />
+                  <ToneBadge icon={k.icon} tone={eventTone(e)} size={20} />
                   <span class="text">
                     <span class="sentence">{eventSentence(e)}</span>
                     <span class="meta">
@@ -350,9 +350,9 @@
                     {#if e.processId}
                       <div class="links">
                         {#if processExists(e.processId)}
-                          <a class="btn sm" href={`#/processes/${e.processId}`} use:router.link={`/processes/${e.processId}`}>Open process<ArrowRight size={13} /></a>
+                          <a class="btn sm" href={`#/processes/${e.processId}`} use:router.link={`/processes/${e.processId}`}>Open process<ArrowRight size={14} /></a>
                         {/if}
-                        <a class="btn sm" href={`#/logs?p=${e.processId}`} use:router.link={`/logs?p=${encodeURIComponent(e.processId)}`}><ScrollText size={13} />View logs</a>
+                        <a class="btn sm" href={`#/logs?p=${e.processId}`} use:router.link={`/logs?p=${encodeURIComponent(e.processId)}`}><ScrollText size={14} />View logs</a>
                       </div>
                     {/if}
                     {#if payloadEmpty(e)}
@@ -443,8 +443,8 @@
     padding: 4px 8px;
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     color: var(--text-2);
   }
   .grp-head:hover {
@@ -509,7 +509,7 @@
   }
   .tid {
     flex: 1;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -556,8 +556,8 @@
     border-bottom: 1px solid var(--border);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     color: var(--text-1);
   }
   .day-n {
@@ -642,11 +642,11 @@
     min-width: 0;
   }
   .etype {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
   }
   .ws {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-1);
     padding: 0 6px;
     border: 1px solid var(--border);
@@ -676,9 +676,9 @@
     min-width: 0;
   }
   .fk {
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--fs-micro);
+    
+    letter-spacing: 0;
     color: var(--text-2);
     font-weight: 600;
   }

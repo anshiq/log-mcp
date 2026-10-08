@@ -54,7 +54,7 @@
       disabled={o.disabled}
       onclick={() => pick(o.value)}
     >
-      {#if Icon}<Icon size={13} />{/if}
+      {#if Icon}<Icon size={14} />{/if}
       {o.label}
     </button>
   {/each}

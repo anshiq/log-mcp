@@ -93,7 +93,7 @@ export function applyMonacoTheme(): string {
       { token: 'string.escape', foreground: c('--warn') }
     ],
     colors: {
-      'editor.background': v('--bg-1'),
+      'editor.background': v('--bg-0'),
       'editor.foreground': v('--text-0'),
       'editorLineNumber.foreground': v('--text-2'),
       'editorLineNumber.activeForeground': v('--text-1'),

@@ -153,7 +153,7 @@
       <input type="search" placeholder="Search client, pid, workspace" aria-label="Search sessions" bind:value={query} />
     </div>
     {#if filtersActive}
-      <button class="btn ghost sm" onclick={clear}><X size={13} />Clear filters</button>
+      <button class="btn ghost sm" onclick={clear}><X size={14} />Clear filters</button>
     {/if}
   </div>
 
@@ -183,7 +183,7 @@
   {:else if rows.length === 0}
     <div class="card">
       <div class="empty-state">
-        <span class="icon-wrap"><Users size={22} /></span>
+        <span class="icon-wrap"><Users size={20} /></span>
         {#if filtersActive && scoped.length > 0}
           <h3>No matching sessions</h3>
           <p>Nothing matches the current filters.</p>
@@ -221,7 +221,7 @@
                   <div class="cname">
                     <strong>{nameOf(s)}{#if s.harnessVersion}<span class="ver mono">{s.harnessVersion}</span>{/if}</strong>
                     <button class="idbtn mono" onclick={() => void copyId(s.id)} title="Copy session id" aria-label={`Copy session id ${s.id}`}>
-                      {s.id}<Copy size={11} />
+                      {s.id}<Copy size={12} />
                     </button>
                   </div>
                 </div>
@@ -246,7 +246,7 @@
               <td class="act">
                 {#if st !== 'closed'}
                   <button class="btn danger sm" onclick={() => void close(s)} disabled={closing.has(s.id)} aria-label={`Close session ${s.id}`}>
-                    {#if closing.has(s.id)}<Spinner size={12} />{:else}<X size={13} />{/if}Close
+                    {#if closing.has(s.id)}<Spinner size={12} />{:else}<X size={14} />{/if}Close
                   </button>
                 {/if}
               </td>
@@ -303,7 +303,7 @@
   }
   .ver {
     margin-left: 8px;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 400;
     color: var(--text-2);
     text-transform: none;
@@ -315,7 +315,7 @@
     border: none;
     background: transparent;
     padding: 0;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     max-width: 200px;
     overflow: hidden;
@@ -337,9 +337,9 @@
     white-space: nowrap;
   }
   .state {
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--fs-micro);
+    
+    letter-spacing: 0;
     font-weight: 600;
     color: var(--text-2);
   }

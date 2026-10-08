@@ -103,7 +103,7 @@
     border-radius: 999px;
     background: var(--bg-3);
     color: var(--text-2);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-variant-numeric: tabular-nums;
     line-height: 1.6;
   }

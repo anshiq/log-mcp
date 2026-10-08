@@ -110,11 +110,11 @@
             <span class="badge warn"><span class="dot warn"></span>unsaved</span>
           {/if}
         </h1>
-        <span class="subtitle path mono" title={scopeState.path}><FolderOpen size={13} /><span class="rtl"><bdi>{scopeState.path}</bdi></span></span>
+        <span class="subtitle path mono" title={scopeState.path}><FolderOpen size={14} /><span class="rtl"><bdi>{scopeState.path}</bdi></span></span>
       </div>
       <div class="actions">
         <div class="layers">
-          <span class="cap"><Layers size={13} />Layer</span>
+          <span class="cap"><Layers size={14} />Layer</span>
           <div class="seg" role="radiogroup" aria-label="Config layer">
             {#each layerMeta as l (l.name)}
               {@const info = session.layers.find((x) => x.name === l.name)}
@@ -126,7 +126,7 @@
                 disabled={!session.loaded || onRevisions}
                 onclick={() => session.setLayer(l.name)}
               >
-                {#if l.name === 'project'}<GitBranch size={13} />{:else}<Users size={13} />{/if}
+                {#if l.name === 'project'}<GitBranch size={14} />{:else}<Users size={14} />{/if}
                 {l.label}
                 <span class="state" class:exists={info?.exists} title={info?.exists ? 'file exists' : 'file not created yet'}></span>
                 {#if session.isDirty(l.name)}<span class="dot warn" title="unsaved edits"></span>{/if}
@@ -167,7 +167,7 @@
           {#if session.external.source}via {session.external.source}{/if}{#if session.external.message}, “{session.external.message}”{/if}.
           {#if session.external.invalid}It failed validation.{/if}
         </span>
-        <button class="btn sm" onclick={() => void session.reloadLatest()}><RefreshCw size={13} />Reload latest</button>
+        <button class="btn sm" onclick={() => void session.reloadLatest()}><RefreshCw size={14} />Reload latest</button>
         <button class="btn sm icon ghost" aria-label="Dismiss" onclick={() => session.dismissExternal()}><X size={14} /></button>
       </div>
     {/if}
@@ -177,14 +177,14 @@
         <span class="grow">
           Your copy is based on revision <span class="mono">{session.stale.base}</span> but the latest is <span class="mono">{session.stale.latest}</span>. Reload before applying so you do not overwrite newer changes.
         </span>
-        <button class="btn sm" onclick={() => void session.reloadLatest()}><RefreshCw size={13} />Reload latest</button>
+        <button class="btn sm" onclick={() => void session.reloadLatest()}><RefreshCw size={14} />Reload latest</button>
       </div>
     {/if}
     {#if session.loadError}
       <div class="banner err" role="alert">
         <TriangleAlert size={16} />
         <span class="grow">{session.loadError}</span>
-        <button class="btn sm" onclick={() => void session.load(wsId)}><RefreshCw size={13} />Retry</button>
+        <button class="btn sm" onclick={() => void session.load(wsId)}><RefreshCw size={14} />Retry</button>
       </div>
     {/if}
     {#each otherWarnings as w}
@@ -201,17 +201,17 @@
 
     <div class="content">
       {#if !session.loaded && (session.loading || !session.loadError)}
-        <div class="loading"><Spinner size={18} /> Loading config…</div>
+        <div class="loading"><Spinner size={16} /> Loading config…</div>
       {:else if session.loaded}
         {#if onRevisions}
           {#await import('./RevisionsPanel.svelte')}
-            <div class="loading"><Spinner size={18} /></div>
+            <div class="loading"><Spinner size={16} /></div>
           {:then { default: RevisionsPanel }}
             <RevisionsPanel {session} onOpenEditor={() => go('/config')} />
           {/await}
         {:else}
           {#await import('../../components/ConfigEditor.svelte')}
-            <div class="loading"><Spinner size={18} /> Loading editor…</div>
+            <div class="loading"><Spinner size={16} /> Loading editor…</div>
           {:then { default: ConfigEditor }}
             <ConfigEditor {session} />
           {/await}
@@ -277,8 +277,8 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
   }
   .seg > button {
     display: inline-flex;

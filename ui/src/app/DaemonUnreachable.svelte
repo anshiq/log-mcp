@@ -42,7 +42,7 @@
 
 <div class="wrap">
   <div class="card" role="alert">
-    <span class="ico"><ServerOff size={26} /></span>
+    <span class="ico"><ServerOff size={20} /></span>
     <h1>Can’t reach the daemon</h1>
     <p class="lead">agent-runtime couldn’t connect to <code>agentd</code>. It may not be running, or it may still be starting up.</p>
 
@@ -131,8 +131,8 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
   }
   .cmd {
     display: flex;

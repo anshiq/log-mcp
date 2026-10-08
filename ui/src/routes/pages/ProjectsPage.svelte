@@ -370,7 +370,7 @@
                 {@const active = scopeState.workspaceId === w.id}
                 {@const missing = w.missing || missingIds.has(w.id)}
                 <div class="ws" class:active>
-                  <span class="wico"><FolderOpen size={15} /></span>
+                  <span class="wico"><FolderOpen size={14} /></span>
                   <div class="wbody">
                     <div class="path mono truncate" title={w.path}>{w.path}</div>
                     <div class="wmeta">
@@ -381,9 +381,9 @@
                     </div>
                   </div>
                   <div class="wactions">
-                    <IconButton label="Copy path" size="sm" onclick={() => void copyPath(w.path)}><Copy size={13} /></IconButton>
+                    <IconButton label="Copy path" size="sm" onclick={() => void copyPath(w.path)}><Copy size={14} /></IconButton>
                     <Button size="sm" variant={active ? 'secondary' : 'primary'} disabled={active} onclick={() => useWorkspace(w)}>
-                      {#if active}<Check size={13} />Selected{:else}Use this workspace{/if}
+                      {#if active}<Check size={14} />Selected{:else}Use this workspace{/if}
                     </Button>
                   </div>
                 </div>
@@ -391,7 +391,7 @@
                 <div class="none"><CircleAlert size={14} />No workspaces linked to this project.</div>
               {/each}
               <div class="foot">
-                <Button size="sm" variant="ghost" onclick={() => openLinkDialog(p)}><Link size={13} />Link another folder</Button>
+                <Button size="sm" variant="ghost" onclick={() => openLinkDialog(p)}><Link size={14} />Link another folder</Button>
               </div>
             </div>
           {/if}

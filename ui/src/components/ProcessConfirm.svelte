@@ -9,7 +9,7 @@
   <Dialog title={req.title} width={420} onClose={() => procActions.answer(false)}>
     {#snippet children()}
       <div class="body">
-        <span class="ico" class:danger={req.danger}><TriangleAlert size={18} /></span>
+        <span class="ico" class:danger={req.danger}><TriangleAlert size={16} /></span>
         <p>{req.message}</p>
       </div>
     {/snippet}
@@ -52,10 +52,10 @@
   .btn.danger {
     background: var(--err);
     border-color: var(--err);
-    color: #fff;
+    color: var(--accent-fg);
   }
   .btn.danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--err) 85%, #000);
+    background: color-mix(in srgb, var(--err) 85%, var(--bg-0));
     border-color: transparent;
   }
 </style>

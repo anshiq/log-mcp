@@ -26,7 +26,7 @@
   <div class="head">
     <span class="lang">{lang}</span>
     <button type="button" class="copy" onclick={() => void copy()} aria-label="Copy code">
-      {#if copied}<Check size={13} />Copied{:else}<Copy size={13} />Copy{/if}
+      {#if copied}<Check size={14} />Copied{:else}<Copy size={14} />Copy{/if}
     </button>
   </div>
   <pre class:wrap style={maxHeight ? `max-height:${maxHeight}` : undefined}>{#if prompt}<span class="prompt">{prompt} </span>{/if}{code}</pre>
@@ -51,8 +51,8 @@
     font-size: var(--fs-xs);
   }
   .lang {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    
+    letter-spacing: 0;
     font-weight: 600;
   }
   .copy {

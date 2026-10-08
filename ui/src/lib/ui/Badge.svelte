@@ -37,7 +37,7 @@
   }
   .badge.sm {
     padding: 0 6px;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     line-height: 1.55;
   }
   .badge.ok {

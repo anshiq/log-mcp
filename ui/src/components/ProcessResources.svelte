@@ -81,7 +81,7 @@
 <div class="res">
   {#if !live}
     <div class="empty">
-      <Activity size={22} />
+      <Activity size={20} />
       <h4>Not running</h4>
       <p>Resource usage is sampled while the process is running.</p>
     </div>
@@ -90,7 +90,7 @@
   {:else}
     <div class="card metric">
       <div class="head">
-        <span class="label"><Cpu size={13} /> CPU</span>
+        <span class="label"><Cpu size={14} /> CPU</span>
         <span class="big">{cpuNow.toFixed(1)}<small>%</small></span>
       </div>
       <MiniChart values={cpu} max={100} color="var(--accent)" capacity={CAPACITY} />
@@ -98,7 +98,7 @@
     </div>
     <div class="card metric">
       <div class="head">
-        <span class="label"><MemoryStick size={13} /> Memory (RSS)</span>
+        <span class="label"><MemoryStick size={14} /> Memory (RSS)</span>
         <span class="big">{bytes(memNow)}</span>
       </div>
       <MiniChart values={mem} color="var(--info)" capacity={CAPACITY} />
@@ -150,10 +150,10 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    
     color: var(--text-2);
   }
   .big {

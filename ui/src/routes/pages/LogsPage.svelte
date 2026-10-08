@@ -355,7 +355,7 @@
       <div class="banner err strip" role="alert">
         <TriangleAlert size={16} />
         <span class="grow">Lost the log stream. Retrying automatically, lines already received are kept.</span>
-        <button type="button" class="btn sm" onclick={() => session.retry()}><RefreshCw size={13} />Retry now</button>
+        <button type="button" class="btn sm" onclick={() => session.retry()}><RefreshCw size={14} />Retry now</button>
       </div>
     {/if}
 
@@ -380,7 +380,7 @@
         {#snippet empty()}
           {#if targetProcs.length === 0}
             <div class="empty-state">
-              <div class="icon-wrap"><ScrollText size={22} /></div>
+              <div class="icon-wrap"><ScrollText size={20} /></div>
               <h3>No running processes to tail</h3>
               <p>
                 {#if ui.selected.length > 0}
@@ -396,7 +396,7 @@
             </div>
           {:else if noFilterHit}
             <div class="empty-state">
-              <div class="icon-wrap"><FilterX size={22} /></div>
+              <div class="icon-wrap"><FilterX size={20} /></div>
               <h3>No lines match</h3>
               <p>{session.total.toLocaleString()} lines are buffered but none pass the current filters.</p>
               <button type="button" class="btn" onclick={clearFilters}>Clear filters</button>
@@ -404,7 +404,7 @@
           {:else}
             <div class="empty-state">
               <div class="icon-wrap">
-                {#if session.conn === 'connecting' || session.conn === 'reconnecting'}<Spinner size={20} />{:else}<ScrollText size={22} />{/if}
+                {#if session.conn === 'connecting' || session.conn === 'reconnecting'}<Spinner size={20} />{:else}<ScrollText size={20} />{/if}
               </div>
               <h3>{session.conn === 'connecting' || session.conn === 'reconnecting' ? 'Connecting to the log stream' : 'Waiting for output'}</h3>
               <p>New lines from {targetProcs.length} {targetProcs.length === 1 ? 'process' : 'processes'} appear here as soon as they are written.</p>

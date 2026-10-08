@@ -38,7 +38,7 @@
     <h3>Review changes</h3>
     <span class="layer badge">{session.layer} layer</span>
     <span class="grow"></span>
-    <button class="btn icon ghost sm" aria-label="Close changes" onclick={() => (session.drawerOpen = false)}><X size={15} /></button>
+    <button class="btn icon ghost sm" aria-label="Close changes" onclick={() => (session.drawerOpen = false)}><X size={14} /></button>
   </header>
 
   <div class="body">
@@ -63,10 +63,10 @@
         <div class="section-title">
           <h4>App changes</h4>
           <div class="chips">
-            {#if counts.added}<span class="badge ok"><Plus size={11} />{counts.added} added</span>{/if}
-            {#if counts.restart}<span class="badge warn"><RotateCw size={11} />{counts.restart} need restart</span>{/if}
-            {#if counts.live}<span class="badge info"><Zap size={11} />{counts.live} live</span>{/if}
-            {#if counts.removed}<span class="badge err"><Minus size={11} />{counts.removed} removed</span>{/if}
+            {#if counts.added}<span class="badge ok"><Plus size={12} />{counts.added} added</span>{/if}
+            {#if counts.restart}<span class="badge warn"><RotateCw size={12} />{counts.restart} need restart</span>{/if}
+            {#if counts.live}<span class="badge info"><Zap size={12} />{counts.live} live</span>{/if}
+            {#if counts.removed}<span class="badge err"><Minus size={12} />{counts.removed} removed</span>{/if}
           </div>
         </div>
         {#if changes.length === 0}
@@ -77,7 +77,7 @@
               {@const k = kinds[c.kind] ?? { label: c.kind, cls: '' }}
               <li class={c.kind}>
                 <span class="mark {k.cls}">
-                  {#if c.kind === 'added'}<Plus size={13} />{:else if c.kind === 'removed'}<Minus size={13} />{:else if c.kind === 'restart-required'}<RotateCw size={13} />{:else}<Pencil size={13} />{/if}
+                  {#if c.kind === 'added'}<Plus size={14} />{:else if c.kind === 'removed'}<Minus size={14} />{:else if c.kind === 'restart-required'}<RotateCw size={14} />{:else}<Pencil size={14} />{/if}
                 </span>
                 <div class="what">
                   <div class="line">
@@ -209,8 +209,8 @@
   }
   h4 {
     font-size: var(--fs-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    
+    letter-spacing: 0;
     color: var(--text-2);
   }
   .none {

@@ -276,7 +276,7 @@
           {@const skillBusy = busy === `${h.id}:skills`}
           <article class="card hcard" class:dim={!h.detected}>
             <div class="hhead">
-              <span class="hico" class:on={h.mcpGlobal}><Bot size={18} /></span>
+              <span class="hico" class:on={h.mcpGlobal}><Bot size={16} /></span>
               <div class="hname">
                 <h3>{h.displayName}</h3>
                 <div class="hsub">
@@ -300,13 +300,13 @@
             <div class="hfoot">
               {#if h.mcpGlobal}
                 <Button size="sm" variant="danger" loading={mcpBusy} disabled={!!busy} onclick={() => void removeMCP(h)}>
-                  {#if !mcpBusy}<Trash2 size={13} />{/if}Remove MCP
+                  {#if !mcpBusy}<Trash2 size={14} />{/if}Remove MCP
                 </Button>
               {:else}
-                <Button size="sm" variant="primary" disabled={!!busy} onclick={() => void openPreview(h)}><Download size={13} />Install MCP</Button>
+                <Button size="sm" variant="primary" disabled={!!busy} onclick={() => void openPreview(h)}><Download size={14} />Install MCP</Button>
               {/if}
               <Button size="sm" variant="ghost" disabled={!!busy} onclick={() => void openPreview(h)} title="Preview the config change before installing">
-                <FileDiff size={13} />Preview diff
+                <FileDiff size={14} />Preview diff
               </Button>
               <span class="grow"></span>
               {#if h.skillsGlobal.length}
@@ -331,10 +331,10 @@
       </div>
       <div class="actions-row">
         <Button size="sm" loading={checking} onclick={() => void checkUpdates(false)}>
-          {#if !checking}<RefreshCw size={13} />{/if}Check for updates
+          {#if !checking}<RefreshCw size={14} />{/if}Check for updates
         </Button>
         <Button size="sm" variant="primary" loading={updatingAll} disabled={outdated.length === 0} onclick={() => void updateAll()}>
-          {#if !updatingAll}<ArrowUp size={13} />{/if}Update all{outdated.length ? ` (${outdated.length})` : ''}
+          {#if !updatingAll}<ArrowUp size={14} />{/if}Update all{outdated.length ? ` (${outdated.length})` : ''}
         </Button>
       </div>
     </div>

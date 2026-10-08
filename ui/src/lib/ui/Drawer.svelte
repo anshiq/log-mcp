@@ -64,7 +64,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: color-mix(in srgb, #000 45%, transparent);
+    background: var(--backdrop);
     z-index: var(--z-drawer, 450);
   }
   .drawer {
@@ -91,7 +91,8 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
+    min-height: 40px;
+    padding: 0 8px 0 12px;
     border-bottom: 1px solid var(--border);
   }
   .titles {
@@ -127,13 +128,13 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: var(--space-5) var(--space-6);
+    padding: 12px;
   }
   .footer {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-3);
-    padding: var(--space-4) var(--space-6);
+    padding: 8px 12px;
     border-top: 1px solid var(--border);
   }
 </style>

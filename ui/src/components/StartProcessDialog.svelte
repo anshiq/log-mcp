@@ -280,7 +280,7 @@
                 onclick={() => removeRow(row.id)}
                 disabled={envRows.length === 1 && !row.key && !row.value}
               >
-                <X size={13} />
+                <X size={14} />
               </button>
               {#if envIssues[i]}<span class="err-text row-err">{envIssues[i]}</span>{/if}
             </div>
@@ -307,7 +307,7 @@
       </div>
 
       {#if error}
-        <div class="banner err"><TriangleAlert size={15} /> <span>{error}</span></div>
+        <div class="banner err"><TriangleAlert size={14} /> <span>{error}</span></div>
       {/if}
       <button type="submit" class="hidden" tabindex="-1" aria-hidden="true"></button>
     </form>
@@ -315,7 +315,7 @@
   {#snippet footer()}
     <button type="button" class="btn" onclick={onClose}>Cancel</button>
     <button type="button" class="btn primary" disabled={starting || noWorkspaces} onclick={doStart}>
-      {#if starting}<Spinner size={13} />{/if}Start
+      {#if starting}<Spinner size={14} />{/if}Start
     </button>
   {/snippet}
 </Dialog>
@@ -344,7 +344,7 @@
     flex: none;
   }
   .scope-path {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     min-width: 0;
   }
   .modes {
@@ -364,7 +364,7 @@
   }
   .form-field .mono {
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
   }
   .form-field :global([aria-invalid='true']) {
     border-color: var(--err);
@@ -393,7 +393,7 @@
     border-radius: var(--radius);
     background: var(--bg-0);
     color: var(--text-1);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 96px;

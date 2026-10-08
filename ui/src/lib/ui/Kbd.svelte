@@ -39,7 +39,7 @@
     background: var(--bg-3);
     color: var(--text-1);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     line-height: 1;
   }
   .then {

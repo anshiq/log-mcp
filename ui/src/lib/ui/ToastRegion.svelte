@@ -56,7 +56,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
-    padding: 10px 8px 10px var(--space-4);
+    padding: 8px 10px;
     background: var(--bg-2);
     border: 1px solid var(--border-strong);
     border-left: 3px solid var(--c);

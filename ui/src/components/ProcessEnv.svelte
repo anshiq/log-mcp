@@ -68,12 +68,12 @@
 <div class="env">
   <div class="bar">
     <div class="input-wrap grow">
-      <Search size={13} />
+      <Search size={14} />
       <input placeholder="Filter variables…" bind:value={filter} aria-label="Filter environment variables" />
     </div>
     <div class="reveal">
       <Switch bind:checked={revealed} label="Reveal secrets" />
-      <span class="lbl">{#if revealed}<Eye size={13} />{:else}<EyeOff size={13} />{/if} Reveal secrets</span>
+      <span class="lbl">{#if revealed}<Eye size={14} />{:else}<EyeOff size={14} />{/if} Reveal secrets</span>
     </div>
   </div>
   <div class="list">
@@ -157,7 +157,7 @@
     gap: var(--space-4);
     padding: 6px var(--space-5);
     border-bottom: 1px solid var(--border);
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
   li:hover {
     background: var(--bg-hover);

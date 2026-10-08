@@ -17,6 +17,7 @@
   import Monitor from '@lucide/svelte/icons/monitor';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Rocket from '@lucide/svelte/icons/rocket';
+  import X from '@lucide/svelte/icons/x';
   import Check from '@lucide/svelte/icons/check';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import ScrollText from '@lucide/svelte/icons/scroll-text';
@@ -59,6 +60,7 @@
   let sessionsLoaded = $state(false);
   let restarting = $state(new Set<string>());
   let quickPath = $state('');
+  let stepsDismissed = $state(false);
 
   async function refresh() {
     const [s, h, l] = await Promise.allSettled([SystemService.stats(), SystemService.health(), SessionService.list()]);
@@ -93,7 +95,7 @@
     sessions.filter((s) => !s.closed && (scopeState.all || !s.workspaceId || s.workspaceId === scopeState.workspaceId))
   );
   const fresh = $derived(scopeState.loaded && scopeState.workspaces.length === 0 && processes.list.length === 0);
-  const showSteps = $derived(fresh || (scopedProcs.length === 0 && sessionsLoaded));
+  const showSteps = $derived(!stepsDismissed && (fresh || (scopedProcs.length === 0 && sessionsLoaded)));
   const uptimeMs = $derived.by(() => (stats ? stats.uptimeSeconds * 1000 + Math.max(0, clock.now - statsAt) : connection.uptimeSeconds * 1000));
 
   const attention = $derived(
@@ -118,10 +120,7 @@
     resources.watch(shownProcs.filter((p) => p.status === 'running' || p.status === 'ready').map((p) => p.id));
   });
 
-  const greeting = $derived.by(() => {
-    const h = new Date(clock.now).getHours();
-    return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  });
+
 
   const daemonOk = $derived(connection.reachable && (daemonStatus === '' || daemonStatus === 'ready'));
 
@@ -198,16 +197,8 @@
 <div class="page ov">
   <header class="page-header">
     <div class="titles">
-      <h1>{greeting}</h1>
-      <p class="subtitle scope-line">
-        <Layers size={13} />
-        <span>{scopeState.all ? 'All workspaces' : scopeState.label}</span>
-        {#if scopeState.all && scopeState.workspaces.length > 0}
-          <span class="sep">·</span><span>{scopeState.workspaces.length} {scopeState.workspaces.length === 1 ? 'workspace' : 'workspaces'}</span>
-        {:else if scopeState.path}
-          <span class="sep">·</span><span class="mono path" title={scopeState.path}>{scopeState.path}</span>
-        {/if}
-      </p>
+      <h1>Overview</h1>
+      <p class="subtitle mono" title={scopeState.path}>{scopeState.all ? 'All workspaces' : scopeState.path || scopeState.label}</p>
     </div>
     <div class="actions">
       <div class="pill" class:bad={!daemonOk} title={connection.socketPath || connection.tcpAddr}>
@@ -222,7 +213,8 @@
   {#if showSteps}
     <section class="card start">
       <div class="start-head">
-        <span class="rocket"><Rocket size={20} /></span>
+        <span class="rocket"><Rocket size={14} /></span>
+        <button class="btn ghost icon sm" aria-label="Dismiss" onclick={() => (stepsDismissed = true)}><X size={14} /></button>
         <div>
           <h2>{fresh ? 'Welcome to agent-runtime' : 'Get this workspace running'}</h2>
           <p>A supervised process runtime your AI agents and you can share. Three steps to get going.</p>
@@ -247,9 +239,9 @@
                 </form>
                 {#if scopeState.error}<span class="err-text">{scopeState.error}</span>{/if}
               {:else if i === 1 && !step.done}
-                <a class="btn sm" href="#/processes" use:router.link={'/processes'}>Go to Processes<ArrowRight size={13} /></a>
+                <a class="btn sm" href="#/processes" use:router.link={'/processes'}>Go to Processes<ArrowRight size={14} /></a>
               {:else if i === 2 && !step.done}
-                <a class="btn sm" href="#/integrations" use:router.link={'/integrations'}>Open Integrations<ArrowRight size={13} /></a>
+                <a class="btn sm" href="#/integrations" use:router.link={'/integrations'}>Open Integrations<ArrowRight size={14} /></a>
               {/if}
             </div>
           </li>
@@ -302,9 +294,9 @@
                     <span class="sub truncate">{attentionText(p)}</span>
                   </div>
                   <div class="btns">
-                    <a class="btn sm" href={`#/logs?p=${p.id}`} use:router.link={`/logs?p=${encodeURIComponent(p.id)}`}><ScrollText size={13} />View logs</a>
+                    <a class="btn sm" href={`#/logs?p=${p.id}`} use:router.link={`/logs?p=${encodeURIComponent(p.id)}`}><ScrollText size={14} />View logs</a>
                     <button class="btn sm" onclick={() => void restart(p)} disabled={restarting.has(p.id)}>
-                      {#if restarting.has(p.id)}<Spinner size={13} />{:else}<RotateCw size={13} />{/if}Restart
+                      {#if restarting.has(p.id)}<Spinner size={14} />{:else}<RotateCw size={14} />{/if}Restart
                     </button>
                   </div>
                 </li>
@@ -349,7 +341,7 @@
                     <div class="res">
                       <Sparkline values={cpuHistory(p.id)} width={64} height={24} tone="info" label="CPU" />
                       <span class="res-text">
-                        <span class="cpu"><Cpu size={11} />{live ? `${live.cpuPercent.toFixed(1)}%` : '—'}</span>
+                        <span class="cpu"><Cpu size={12} />{live ? `${live.cpuPercent.toFixed(1)}%` : '—'}</span>
                         <span class="mem">{live ? bytes(live.rssBytes || live.memoryBytes) : '—'}</span>
                       </span>
                     </div>
@@ -369,7 +361,7 @@
             </ul>
             {#if scopedProcs.length > shownProcs.length}
               <div class="more-row">
-                <a href="#/processes" use:router.link={'/processes'}>{scopedProcs.length - shownProcs.length} more processes<ArrowRight size={13} /></a>
+                <a href="#/processes" use:router.link={'/processes'}>{scopedProcs.length - shownProcs.length} more processes<ArrowRight size={14} /></a>
               </div>
             {/if}
           {/if}
@@ -390,7 +382,7 @@
               {#each recent as e (e.id)}
                 {@const k = eventKind(e.type)}
                 <li class="ev-row">
-                  <ToneBadge icon={k.icon} tone={eventTone(e)} size={26} />
+                  <ToneBadge icon={k.icon} tone={eventTone(e)} size={20} />
                   <div class="grow">
                     {#if e.processId}
                       <a class="sentence" href={`#/processes/${e.processId}`} use:router.link={`/processes/${e.processId}`}>{eventSentence(e)}</a>
@@ -414,14 +406,14 @@
               <span class="icon-wrap"><Bot size={20} /></span>
               <h3>No agents connected</h3>
               <p>Sessions appear when an AI agent or CLI connects to the daemon.</p>
-              <a class="btn sm" href="#/integrations" use:router.link={'/integrations'}><Plug size={13} />Connect an agent</a>
+              <a class="btn sm" href="#/integrations" use:router.link={'/integrations'}><Plug size={14} />Connect an agent</a>
             </div>
           {:else}
             <ul class="list">
               {#each openSessions.slice(0, 6) as s (s.id)}
                 <li class="sess-row">
                   <span class="s-ic">
-                    {#if s.kind === 'cli'}<Terminal size={15} />{:else if s.kind === 'gui'}<Monitor size={15} />{:else}<Bot size={15} />{/if}
+                    {#if s.kind === 'cli'}<Terminal size={14} />{:else if s.kind === 'gui'}<Monitor size={14} />{:else}<Bot size={14} />{/if}
                   </span>
                   <div class="grow">
                     <span class="name plain">{harnessLabel(s)}</span>
@@ -459,15 +451,10 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
-  .scope-line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-  .scope-line .path {
+  .page-header .subtitle {
+    font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    max-width: 420px;
+    max-width: 520px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -521,7 +508,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-4);
-    padding: 12px var(--space-5);
+    padding: 0 var(--space-4);
+    min-height: 26px;
     border-bottom: 1px solid var(--border);
     min-width: 0;
   }
@@ -562,7 +550,7 @@
     color: var(--text-2);
   }
   .ws {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     padding: 0 6px;
     border: 1px solid var(--border);
@@ -625,6 +613,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     color: var(--text-1);
@@ -648,6 +637,7 @@
     flex: none;
   }
   .up {
+    font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     color: var(--text-1);
@@ -709,10 +699,9 @@
     color: var(--text-2);
   }
   .start {
-    padding: var(--space-6);
-    background:
-      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
-      var(--bg-1);
+    padding: 8px 10px;
+    min-height: 56px;
+    background: var(--bg-1);
   }
   .start-head {
     display: flex;
@@ -730,9 +719,9 @@
   .rocket {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
     color: var(--accent);
     background: var(--accent-subtle);
     flex: none;
@@ -772,7 +761,7 @@
   .done .num {
     background: var(--ok);
     border-color: var(--ok);
-    color: #fff;
+    color: var(--accent-fg);
   }
   .step-body {
     display: flex;

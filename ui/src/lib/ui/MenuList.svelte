@@ -105,7 +105,7 @@
     justify-content: flex-start;
     gap: 8px;
     width: 100%;
-    height: 30px;
+    height: 26px;
     padding: 0 8px;
     border: none;
     border-radius: var(--radius-sm);
@@ -160,9 +160,9 @@
   .heading {
     padding: 6px 8px 3px;
     color: var(--text-2);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    
+    letter-spacing: 0;
   }
 </style>

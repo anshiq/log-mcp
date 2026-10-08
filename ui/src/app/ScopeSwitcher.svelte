@@ -54,7 +54,7 @@
 <div class="switcher" bind:this={root}>
   <button class="trigger" class:open onclick={toggle} aria-haspopup="listbox" aria-expanded={open} aria-label="Workspace scope">
     <span class="ico">
-      {#if scopeState.all}<Layers size={15} />{:else}<FolderOpen size={15} />{/if}
+      {#if scopeState.all}<Layers size={14} />{:else}<FolderOpen size={14} />{/if}
     </span>
     <span class="text">
       <span class="name">{scopeState.label}</span>
@@ -67,19 +67,19 @@
     <div class="panel" role="listbox" aria-label="Workspaces">
       <div class="section">Scope</div>
       <button class="item" role="option" aria-selected={scopeState.all} onclick={() => choose('')}>
-        <Layers size={15} />
+        <Layers size={14} />
         <span class="col"><span class="n">All workspaces</span><span class="p">Show everything across projects</span></span>
-        {#if scopeState.all}<Check size={15} class="tick" />{/if}
+        {#if scopeState.all}<Check size={14} class="tick" />{/if}
       </button>
       {#each scopeState.workspaces as w (w.id)}
         <button class="item" role="option" aria-selected={scopeState.workspaceId === w.id} onclick={() => choose(w.id)}>
-          <FolderOpen size={15} />
+          <FolderOpen size={14} />
           <span class="col">
             <span class="n">{scopeState.workspaceLabel(w.id)}</span>
             <span class="p mono">{w.path}</span>
           </span>
           {#if w.missing}<span class="badge warn">missing</span>{/if}
-          {#if scopeState.workspaceId === w.id}<Check size={15} class="tick" />{/if}
+          {#if scopeState.workspaceId === w.id}<Check size={14} class="tick" />{/if}
         </button>
       {/each}
       {#if scopeState.workspaces.length === 0}
@@ -141,7 +141,7 @@
     text-overflow: ellipsis;
   }
   .path {
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     color: var(--text-2);
     font-family: var(--font-mono);
     overflow: hidden;
@@ -168,8 +168,8 @@
   .section {
     font-size: var(--fs-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    
+    letter-spacing: 0;
     color: var(--text-2);
     padding: 6px 8px 4px;
   }
@@ -203,7 +203,7 @@
     font-weight: 550;
   }
   .p {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     color: var(--text-2);
     overflow: hidden;
     text-overflow: ellipsis;

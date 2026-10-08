@@ -113,7 +113,7 @@
               onclick={() => run(i)}
               onkeydown={(e) => e.key === 'Enter' && run(i)}
             >
-              <span class="tile">{#if Icon}<Icon size={15} />{/if}</span>
+              <span class="tile">{#if Icon}<Icon size={14} />{/if}</span>
               <span class="title">
                 {#each highlight(item.title, palette.query) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}
               </span>
@@ -123,7 +123,7 @@
                 </span>
               {/if}
               {#if item.keys}<span class="keys"><Kbd keys={item.keys} /></span>{/if}
-              {#if i === palette.activeIndex}<span class="enter"><CornerDownLeft size={13} /></span>{/if}
+              {#if i === palette.activeIndex}<span class="enter"><CornerDownLeft size={14} /></span>{/if}
             </div>
           {/each}
         {/if}
@@ -146,7 +146,7 @@
     align-items: flex-start;
     justify-content: center;
     padding: 12vh var(--space-5) 0;
-    background: color-mix(in srgb, #000 50%, transparent);
+    background: color-mix(in srgb, var(--bg-0) 50%, transparent);
     backdrop-filter: blur(2px);
     z-index: var(--z-palette, 700);
   }
@@ -168,7 +168,7 @@
     align-items: center;
     gap: var(--space-4);
     padding: 0 var(--space-5);
-    height: 52px;
+    height: 36px;
     flex: none;
     border-bottom: 1px solid var(--border);
     color: var(--text-2);
@@ -198,16 +198,16 @@
   .group {
     padding: 10px var(--space-3) 4px;
     color: var(--text-2);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
+    
+    letter-spacing: 0;
   }
   .item {
     display: flex;
     align-items: center;
     gap: var(--space-4);
-    height: 38px;
+    height: 28px;
     padding: 0 var(--space-3) 0 6px;
     border-radius: var(--radius);
     color: var(--text-0);
@@ -250,7 +250,7 @@
   }
   .hint.mono {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--fs-micro);
   }
   .keys {
     margin-left: auto;
