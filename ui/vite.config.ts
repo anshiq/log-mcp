@@ -22,7 +22,7 @@ export default defineConfig({
   base: target === 'web' ? '/' : './',
   build: {
     outDir: target === 'web' ? 'dist-web' : 'dist',
-    sourcemap: true,
+    sourcemap: target !== 'web',
     target: 'es2022',
     chunkSizeWarningLimit: 2000,
     rollupOptions: {

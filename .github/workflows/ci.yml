@@ -121,6 +121,16 @@ jobs:
         run: npm --prefix ui run build
       - name: Build web
         run: npm --prefix ui run build:web
+      - name: Embed
+        run: make ui-web-embed
+      - name: Dist freshness
+        run: |
+          git add -A -- internal/webui/dist
+          if ! git diff --cached --quiet -- internal/webui/dist; then
+            echo "internal/webui/dist is stale: run 'make ui-web' and commit the result"
+            git diff --cached --stat -- internal/webui/dist
+            exit 1
+          fi
   e2e:
     needs: [gate]
     if: needs.gate.outputs.run_tests == 'true'

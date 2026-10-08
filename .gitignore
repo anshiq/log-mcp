@@ -9,8 +9,7 @@ ui/dist/
 ui/dist-web/
 
 !/internal/webui/dist/
-/internal/webui/dist/*
-!/internal/webui/dist/index.html
+/internal/webui/dist/.build.json
 
 !/internal/gui/dist/
 /internal/gui/dist/*
